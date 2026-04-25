@@ -114,26 +114,36 @@ export function CaseTabs({
   const [isPending, startTransition] = useTransition();
 
   // Notification deep-links point at `/cases/{id}#note-{noteId}`. The anchor
-  // target only exists once the Notes tab is active, so on mount (and on
-  // hash changes) switch to Notes if the hash is a note anchor, then let
-  // the browser scroll once the element is painted.
+  // target only exists once the Notes tab is active, so we handle this in
+  // two stages: (1) if the hash is a note anchor, flip to the Notes tab;
+  // (2) once the Notes tab has actually mounted its DOM, scroll to the
+  // element. Doing the scroll here instead of in the same effect as
+  // setActive avoids a race where rAF fires before React commits.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     function syncTabFromHash() {
-      const hash = window.location.hash;
-      if (hash.startsWith('#note-')) {
+      if (window.location.hash.startsWith('#note-')) {
         setActive('notes');
-        // Defer the scroll until after the tab content is rendered.
-        requestAnimationFrame(() => {
-          const el = document.getElementById(hash.slice(1));
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        });
       }
     }
     syncTabFromHash();
     window.addEventListener('hashchange', syncTabFromHash);
     return () => window.removeEventListener('hashchange', syncTabFromHash);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (active !== 'notes') return;
+    const hash = window.location.hash;
+    if (!hash.startsWith('#note-')) return;
+    // Notes tab just committed — the anchor element is now in the DOM.
+    const id = hash.slice(1);
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [active]);
 
   function transitionStatus(target: string, reason?: string) {
     startTransition(async () => {

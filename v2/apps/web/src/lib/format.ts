@@ -40,19 +40,19 @@ export function formatDateTime(d: Date | string | null | undefined, locale = 'en
 
 export function relativeTime(d: Date | string, locale = 'en-US'): string {
   const date = typeof d === 'string' ? new Date(d) : d;
-  const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const diffSec = Math.round(diffMs / 1000);
-  const diffMin = Math.round(diffSec / 60);
-  const diffHr = Math.round(diffMin / 60);
-  const diffDay = Math.round(diffHr / 24);
-
+  const diffMs = date.getTime() - Date.now();
+  // Every unit is derived directly from `diffMs`. Chaining rounded
+  // intermediates (sec → min → hr → day) causes unit promotion at the
+  // boundaries — e.g. 23h 31m would round to -24 hours, fail the
+  // `< 24` check, and silently bubble up to "yesterday".
+  const absSec = Math.abs(diffMs) / 1000;
+  const sign = diffMs < 0 ? -1 : 1;
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-  if (Math.abs(diffSec) < 60) return rtf.format(diffSec, 'second');
-  if (Math.abs(diffMin) < 60) return rtf.format(diffMin, 'minute');
-  if (Math.abs(diffHr) < 24) return rtf.format(diffHr, 'hour');
-  if (Math.abs(diffDay) < 30) return rtf.format(diffDay, 'day');
-  const diffMonth = Math.round(diffDay / 30);
-  if (Math.abs(diffMonth) < 12) return rtf.format(diffMonth, 'month');
-  return rtf.format(Math.round(diffMonth / 12), 'year');
+
+  if (absSec < 60) return rtf.format(sign * Math.round(absSec), 'second');
+  if (absSec < 3600) return rtf.format(sign * Math.round(absSec / 60), 'minute');
+  if (absSec < 86_400) return rtf.format(sign * Math.round(absSec / 3600), 'hour');
+  if (absSec < 30 * 86_400) return rtf.format(sign * Math.round(absSec / 86_400), 'day');
+  if (absSec < 365 * 86_400) return rtf.format(sign * Math.round(absSec / (30 * 86_400)), 'month');
+  return rtf.format(sign * Math.round(absSec / (365 * 86_400)), 'year');
 }
