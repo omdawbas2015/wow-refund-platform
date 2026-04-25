@@ -1,0 +1,40 @@
+{
+  "name": "wow-refund-v2",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Enterprise Refund Management Platform — v2 rewrite (Next.js 15 + tRPC + Prisma + Auth.js)",
+  "author": "omdawbas2015",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.14.0",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:generate": "pnpm --filter @wow/db generate",
+    "db:push": "pnpm --filter @wow/db push",
+    "db:migrate": "pnpm --filter @wow/db migrate",
+    "db:seed": "pnpm --filter @wow/db seed",
+    "db:studio": "pnpm --filter @wow/db studio",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json,yaml,yml}\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md,json,yaml,yml}\" --ignore-path .gitignore"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "prettier": "^3.3.3",
+    "prettier-plugin-tailwindcss": "^0.6.8",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "@auth/core": "0.37.2"
+    }
+  }
+}
