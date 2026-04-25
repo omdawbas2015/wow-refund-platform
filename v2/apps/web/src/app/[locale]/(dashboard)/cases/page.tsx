@@ -1,40 +1,215 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import Link from 'next/link';
+import { prisma } from '@wow/db';
+import { caseListFiltersSchema } from '@wow/validators';
 import { Button } from '@/components/ui/button';
-import { FileText, Plus } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Plus, FileText } from 'lucide-react';
+import { CaseFiltersBar } from './case-filters-bar';
+import { CasesTable, type CaseRow } from './cases-table';
+import type { CaseStatus } from '@/components/ui/case-status-stepper';
+import { auth } from '@/auth';
 
-export default function CasesPage() {
+export const dynamic = 'force-dynamic';
+
+export default async function CasesPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ locale: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { locale } = await params;
+  const sp = await searchParams;
+  const session = await auth();
+  const role = session?.user?.role ?? null;
+  const canApprove = role === 'ADMIN' || role === 'MANAGER';
+
+  const parsedFilters = caseListFiltersSchema.safeParse({
+    q: sp['q'],
+    countryId: sp['countryId'],
+    brandId: sp['brandId'],
+    status: sp['status'],
+    assignedToId: sp['assignedToId'],
+    fromDate: sp['fromDate'],
+    toDate: sp['toDate'],
+    page: sp['page'] ?? '1',
+    pageSize: sp['pageSize'] ?? '25',
+  });
+  const filters = parsedFilters.success
+    ? parsedFilters.data
+    : { page: 1, pageSize: 25 };
+
+  // Include deleted cases by default — they render with a "Deleted" badge so
+  // users keep a full audit view. A future `?includeDeleted=false` flag could
+  // hide them when needed.
+  const where: Record<string, unknown> = {};
+  if (filters.q) {
+    // Case-insensitive search: Postgres needs `mode: 'insensitive'`; SQLite's
+    // LIKE is already case-insensitive for ASCII so the mode is dropped there
+    // (Prisma's SQLite provider rejects the field entirely).
+    const isPg = (process.env.DATABASE_URL ?? '').startsWith('postgres');
+    const ciContains = (value: string) =>
+      isPg ? { contains: value, mode: 'insensitive' as const } : { contains: value };
+    where['OR'] = [
+      { caseNumber: ciContains(filters.q) },
+      { customerName: ciContains(filters.q) },
+      { customerEmail: ciContains(filters.q) },
+      { orderNumber: ciContains(filters.q) },
+    ];
+  }
+  if (filters.countryId) where['countryId'] = filters.countryId;
+  if (filters.brandId) where['brandId'] = filters.brandId;
+  if (filters.status) where['status'] = filters.status;
+  if (filters.assignedToId) where['assignedToId'] = filters.assignedToId;
+  if (filters.fromDate || filters.toDate) {
+    const createdAt: Record<string, Date> = {};
+    if (filters.fromDate) createdAt['gte'] = filters.fromDate;
+    if (filters.toDate) createdAt['lte'] = filters.toDate;
+    where['createdAt'] = createdAt;
+  }
+
+  const [countries, brands, total, cases] = await Promise.all([
+    prisma.country.findMany({
+      where: { isActive: true },
+      include: { registry: true },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    prisma.brand.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
+    prisma.refundCase.count({ where }),
+    prisma.refundCase.findMany({
+      where,
+      include: {
+        country: { include: { registry: true } },
+        brand: true,
+        rootCause: true,
+        createdBy: { select: { name: true } },
+        assignedTo: { select: { name: true } },
+        components: {
+          select: {
+            paymentMethod: { select: { key: true, label: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (filters.page - 1) * filters.pageSize,
+      take: filters.pageSize,
+    }),
+  ]);
+
+  const rows: CaseRow[] = cases.map((c) => ({
+    id: c.id,
+    caseNumber: c.caseNumber,
+    status: c.status as CaseStatus,
+    customerName: c.customerName,
+    customerEmail: c.customerEmail,
+    customerPhone: c.customerPhone,
+    brandName: c.brand.name,
+    countryName: c.country.registry.nameEn,
+    countryFlag: c.country.registry.flag ?? '',
+    orderNumber: c.orderNumber,
+    orderDate: c.orderDate.toISOString(),
+    orderAmount: c.orderAmount,
+    orderCurrency: c.orderCurrency,
+    totalRefundAmount: c.totalRefundAmount,
+    isPartial: c.isPartial,
+    createdAt: c.createdAt.toISOString(),
+    createdByName: c.createdBy?.name ?? null,
+    rootCause: c.rootCause?.label ?? null,
+    isDeleted: !!c.deletedAt,
+    paymentMethods: c.components.map((cc) => ({
+      key: cc.paymentMethod.key,
+      label: cc.paymentMethod.label,
+    })),
+  }));
+
+  const totalPages = Math.max(1, Math.ceil(total / filters.pageSize));
+
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-display-md font-normal tracking-tight text-heading">Refund Cases</h1>
           <p className="mt-2 text-body">Create, track, and manage customer refund cases.</p>
         </div>
-        <Button disabled>
-          <Plus className="h-4 w-4" />
-          New case
+        <Button asChild>
+          <Link href={`/${locale}/cases/new`}>
+            <Plus className="h-4 w-4" />
+            New case
+          </Link>
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Phase 2 placeholder</CardTitle>
-          <CardDescription>
-            Case creation, listing, and details will be implemented in Phase 2. The data model is
-            already complete — see <code className="font-mono text-xs">packages/db/prisma/schema.prisma</code>.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="py-12">
-          <div className="flex flex-col items-center gap-2 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-subtle">
-              <FileText className="h-6 w-6 text-muted-foreground" />
+      <CaseFiltersBar
+        countries={countries.map((c) => ({
+          id: c.id,
+          code: c.registry.code,
+          name: c.registry.nameEn,
+          flag: c.registry.flag ?? '',
+        }))}
+        brands={brands.map((b) => ({ id: b.id, name: b.name }))}
+      />
+
+      {cases.length === 0 ? (
+        <Card>
+          <CardContent className="py-16">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-subtle">
+                <FileText className="h-7 w-7 text-muted-foreground" />
+              </div>
+              <h3 className="text-heading-sm text-heading">No cases found</h3>
+              <p className="max-w-md text-sm text-muted-foreground">
+                Try adjusting your filters, or create a new refund case to get started.
+              </p>
+              <Button asChild className="mt-2">
+                <Link href={`/${locale}/cases/new`}>
+                  <Plus className="h-4 w-4" />
+                  New case
+                </Link>
+              </Button>
             </div>
-            <p className="text-sm text-muted-foreground">
-              No cases yet. Case creation ships in Phase 2.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <CasesTable locale={locale} cases={rows} canApprove={canApprove} />
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-border px-4 py-3">
+                <div className="text-xs text-muted-foreground">
+                  Page {filters.page} of {totalPages} · {total} cases
+                </div>
+                <div className="flex gap-2">
+                  {filters.page > 1 && (
+                    <Button asChild variant="outline" size="sm">
+                      <Link
+                        href={{
+                          pathname: `/${locale}/cases`,
+                          query: { ...sp, page: filters.page - 1 },
+                        }}
+                      >
+                        Previous
+                      </Link>
+                    </Button>
+                  )}
+                  {filters.page < totalPages && (
+                    <Button asChild variant="outline" size="sm">
+                      <Link
+                        href={{
+                          pathname: `/${locale}/cases`,
+                          query: { ...sp, page: filters.page + 1 },
+                        }}
+                      >
+                        Next
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

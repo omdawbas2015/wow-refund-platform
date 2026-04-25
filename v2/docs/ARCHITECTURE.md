@@ -265,14 +265,49 @@ See `apps/web/.env.example`. Key flags:
 
 | Phase | Scope | Status |
 |---|---|---|
-| **1** | Monorepo, auth, admin approvals, design system, i18n, schema | ✅ this PR |
-| **2** | Refund cases (create/list/details), components, Aura sidecar, state machine, duplicate detection, customer lookup, notes + @mentions | 🚧 partial (schema done, UI stubs) |
+| **1** | Monorepo, auth, admin approvals, design system, i18n, schema | ✅ shipped |
+| **2** | Refund cases (create/list/details), components, Aura sidecar, state machine, duplicate detection, customer lookup, notes + @mentions, in-app notifications scaffold | ✅ this PR |
 | 3 | Approval batches, KNET batches, Aura batches, ARN suggestions, Refund Operations Desk | ☐ |
 | 4 | Promo system (both types) + Stores Communication module | ☐ |
 | 5 | Full admin panel (dynamic configs for all domain knobs) | ☐ |
 | 6 | In-app notifications, global search, bulk ops, SLA tracking, fraud signals | ☐ |
 | 7 | Reports, analytics, Excel export, saved views, scheduled reports | ☐ |
 | 8 | Polish: onboarding tour, keyboard shortcuts, changelog, dark mode refinements | ☐ |
+
+---
+
+### Phase 2 — delivered in this PR
+
+**New server actions** (`apps/web/src/app/actions/cases.ts`):
+- `createCaseAction` — validates with `createCaseSchema`, auto-generates case number `REF-{COUNTRY}-{YEAR}-{SEQ}`, enforces KNET auth-code requirement, blocks refund-exceeds-order, flags duplicates on `(orderNumber, brandId)`. Creates `RefundCase` + `RefundComponent` rows and emits `ActivityLog` + `AuditLog` in one transaction.
+- `updateCaseStatusAction` — enforces the state machine via `canTransition()` from `@wow/validators`. Writes activity + audit. Rejects illegal transitions server-side regardless of what the client sent.
+- `addCaseNoteAction` — creates a `CaseNote`, attaches `CaseNoteMention` rows, and fans out a `Notification` (`type=CASE_NOTE_MENTION`) to each mentioned user with an href back to the note anchor.
+- `markNotificationReadAction`, `markAllNotificationsReadAction` — used by the bell dropdown.
+
+**UI surfaces:**
+- `/cases` — server-rendered table with filters (q / country / brand / status), pagination (25/page), empty-state card, Stripe-design badges.
+- `/cases/new` — single-page form with per-component inputs, live total calculation, auth-code requirement driven by `PaymentMethod.requiresAuthCode`, in-line duplicate warning with "View existing" / "Create anyway" actions.
+- `/cases/[caseId]` — header + status badge + top action bar (submit / approve / reject / start execution / mark refunded / cancel with reason) + four tabs:
+  - **Overview** — customer, order, Aura sidecar, root cause, people, embedded **customer history** panel.
+  - **Components** — payment-method breakdown with auth code, last 4, ARN, per-component status badge.
+  - **Notes** — textarea + mention picker (`@`) + posted notes with author, relative time, highlighted mentions.
+  - **Activity** — reverse-chronological timeline driven by `ActivityLog`.
+- `/api/customer-history` — returns prior cases + promo allocations for a given email; consumed by the Overview panel.
+- `/api/notifications` — returns notifications + unread count; polled every 30s by the bell.
+- Top-bar **Notifications bell** with unread badge, dropdown, per-item + bulk mark-read.
+
+**State machine (enforced server-side):**
+
+```
+DRAFT ────────── submit ────▶ PENDING_APPROVAL ──┬── approve ──▶ APPROVED ──▶ IN_EXECUTION ──▶ PARTIALLY_REFUNDED ──▶ REFUNDED
+  │                                              ├── reject ───▶ REJECTED                       │
+  │                                              └── cancel ───▶ CANCELLED                      ├── refunded ─▶ REFUNDED
+  └── cancel ─▶ CANCELLED                                                                       └── cancel   ─▶ CANCELLED
+```
+
+Allowed transitions live in `packages/validators/src/case.ts::CASE_STATE_TRANSITIONS`. Any attempt to skip a state is rejected with a clear error — the UI only reveals buttons for the currently-valid next states.
+
+**Demo data:** seed script accepts `SEED_DEMO_CASES=1` to create 5 sample cases across statuses (DRAFT / PENDING_APPROVAL / APPROVED / PARTIALLY_REFUNDED / REFUNDED) plus two notes and a welcome notification for the default admin. Skipped by default so production-seeded databases stay clean.
 
 ---
 
