@@ -83,10 +83,14 @@ export default async function CasesPage({
   const countWhere: Record<string, unknown> = { ...where };
   delete countWhere['status'];
 
-  const [countries, total, cases, bucketGroups] = await Promise.all([
+  const [countries, brands, total, cases, bucketGroups] = await Promise.all([
     prisma.country.findMany({
       where: { isActive: true },
       include: { registry: true },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    prisma.brand.findMany({
+      where: { isActive: true },
       orderBy: { sortOrder: 'asc' },
     }),
     prisma.refundCase.count({ where }),
@@ -179,6 +183,7 @@ export default async function CasesPage({
           name: c.registry.nameEn,
           flag: c.registry.flag ?? '',
         }))}
+        brands={brands.map((b) => ({ id: b.id, name: b.name }))}
         counts={counts}
       />
 

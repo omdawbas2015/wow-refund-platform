@@ -19,8 +19,9 @@ import {
 import { CustomerHistory } from './customer-history';
 import { CaseStatusStepper, type CaseStatus } from '@/components/ui/case-status-stepper';
 import { PaymentMethodIcons } from '@/components/ui/payment-method-icons';
+import { AuraLogo } from '@/components/ui/aura-logo';
 import { CopyButton } from '@/components/ui/copy-button';
-import { Sparkles } from 'lucide-react';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 type CaseData = {
   id: string;
@@ -44,9 +45,9 @@ type CaseData = {
   countryName: string;
   countryFlag: string;
   branchName: string | null;
-  createdBy: { id: string; name: string } | null;
-  assignedTo: { id: string; name: string } | null;
-  approvedBy: { id: string; name: string } | null;
+  createdBy: { id: string; name: string; avatarUrl: string | null } | null;
+  assignedTo: { id: string; name: string; avatarUrl: string | null } | null;
+  approvedBy: { id: string; name: string; avatarUrl: string | null } | null;
   approvedAt: string | null;
 };
 
@@ -469,14 +470,12 @@ function OverviewTab({
           </Section>
 
           {/* Aura — presented like Payment so the sidecar compensation is
-              legible at a glance (icon + amount + status badge). */}
+              legible at a glance (logo + points + status badge). */}
           {caseData.auraPoints ? (
             <Section title="Aura Points">
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400">
-                    <Sparkles className="h-4 w-4" />
-                  </span>
+                  <AuraLogo size={28} />
                   <span className="text-sm font-medium text-heading">Aura</span>
                 </div>
                 <div className="font-mono text-sm font-medium">
@@ -511,9 +510,21 @@ function OverviewTab({
         <div className="space-y-5">
           <Section title="People">
             <div className="space-y-3 p-4">
-              <FieldInline label="Created by" value={caseData.createdBy?.name ?? '---'} />
-              <FieldInline label="Assigned to" value={caseData.assignedTo?.name ?? 'Unassigned'} />
-              <FieldInline label="Approved by" value={caseData.approvedBy?.name ?? '---'} />
+              <PersonRow
+                label="Created by"
+                user={caseData.createdBy}
+                fallback="---"
+              />
+              <PersonRow
+                label="Assigned to"
+                user={caseData.assignedTo}
+                fallback="Unassigned"
+              />
+              <PersonRow
+                label="Approved by"
+                user={caseData.approvedBy}
+                fallback="---"
+              />
               {caseData.approvedAt && (
                 <FieldInline label="Approved at" value={formatDateTime(caseData.approvedAt)} />
               )}
@@ -787,6 +798,35 @@ function FieldInline({ label, value }: { label: string; value: React.ReactNode }
     <div>
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
       <div className="mt-0.5 text-sm text-foreground">{value}</div>
+    </div>
+  );
+}
+
+/**
+ * Labeled row for the People sidebar: shows a small avatar (initials or
+ * uploaded photo) alongside the user's name. Falls back to a subtle
+ * "Unassigned" chip when no user is set.
+ */
+function PersonRow({
+  label,
+  user,
+  fallback,
+}: {
+  label: string;
+  user: { name: string; avatarUrl: string | null } | null;
+  fallback: string;
+}) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      {user ? (
+        <div className="mt-1 flex items-center gap-2">
+          <UserAvatar name={user.name} image={user.avatarUrl} size="sm" />
+          <span className="text-sm font-medium text-foreground">{user.name}</span>
+        </div>
+      ) : (
+        <div className="mt-0.5 text-sm text-muted-foreground">{fallback}</div>
+      )}
     </div>
   );
 }

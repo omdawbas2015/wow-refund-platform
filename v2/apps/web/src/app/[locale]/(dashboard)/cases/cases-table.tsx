@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { BrandAvatar } from '@/components/ui/brand-avatar';
 import { CaseStatusBadge } from '@/components/ui/case-status-badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import type { CaseStatus } from '@/components/ui/case-status-stepper';
@@ -108,20 +107,20 @@ export function CasesTable({
                   </div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
-                  <div className="flex items-center gap-2.5">
-                    <BrandAvatar name={c.brandName} />
-                    <div className="min-w-0 leading-tight">
-                      <div className="flex items-center gap-1.5 text-sm text-heading">
-                        <span className="text-base leading-none">
-                          {c.countryFlag || '\uD83C\uDF10'}
-                        </span>
-                        <span>{c.countryName}</span>
-                      </div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {c.brandName}
-                        {c.branchName ? ` · ${c.branchName}` : ''}
-                      </div>
+                  <div className="leading-tight">
+                    <div className="flex items-center gap-1.5 text-sm text-heading">
+                      <span className="text-base leading-none">
+                        {c.countryFlag || '\uD83C\uDF10'}
+                      </span>
+                      <span>{c.countryName}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="font-medium">{c.brandName}</span>
                     </div>
+                    {c.branchName && (
+                      <div className="truncate text-xs text-muted-foreground">
+                        {c.branchName}
+                      </div>
+                    )}
                   </div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-end">
@@ -183,14 +182,11 @@ export function CasesTable({
                   <CaseStatusBadge status={c.status} />
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <BrandAvatar name={c.brandName} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-heading">{c.customerName}</div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    <span>{c.countryFlag}</span> {c.countryName} · {c.brandName}
-                    {c.branchName ? ` · ${c.branchName}` : ''}
-                  </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-heading">{c.customerName}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  <span>{c.countryFlag}</span> {c.countryName} · {c.brandName}
+                  {c.branchName ? ` · ${c.branchName}` : ''}
                 </div>
               </div>
               <div className="mt-2 flex items-center justify-between gap-2">

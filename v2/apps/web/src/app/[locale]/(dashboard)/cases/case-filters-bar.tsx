@@ -28,9 +28,11 @@ type Counts = {
 
 export function CaseFiltersBar({
   countries,
+  brands,
   counts,
 }: {
   countries: Array<{ id: string; code: string; name: string; flag: string }>;
+  brands: Array<{ id: string; name: string }>;
   counts: Counts;
 }) {
   const router = useRouter();
@@ -53,6 +55,7 @@ export function CaseFiltersBar({
   const currentBucket = (searchParams.get('bucket') ?? 'all') as 'all' | keyof typeof STATUS_BUCKETS;
   const currentStatus = searchParams.get('status') ?? '';
   const currentCountry = searchParams.get('countryId') ?? '';
+  const currentBrand = searchParams.get('brandId') ?? '';
   const fromDate = searchParams.get('fromDate');
   const toDate = searchParams.get('toDate');
 
@@ -117,7 +120,7 @@ export function CaseFiltersBar({
             setParams({ countryId: v === ALL_VALUE ? null : v })
           }
         >
-          <SelectTrigger className="h-10 w-[190px]">
+          <SelectTrigger className="h-10 w-[180px]">
             <SelectValue placeholder="All countries" />
           </SelectTrigger>
           <SelectContent>
@@ -127,6 +130,27 @@ export function CaseFiltersBar({
                 <SelectItem key={c.id} value={c.id}>
                   <span className="me-1.5">{c.flag}</span>
                   {c.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={currentBrand || ALL_VALUE}
+          onValueChange={(v) =>
+            setParams({ brandId: v === ALL_VALUE ? null : v })
+          }
+        >
+          <SelectTrigger className="h-10 w-[170px]">
+            <SelectValue placeholder="All brands" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_VALUE}>All brands</SelectItem>
+            <SelectGroup>
+              {brands.map((b) => (
+                <SelectItem key={b.id} value={b.id}>
+                  {b.name}
                 </SelectItem>
               ))}
             </SelectGroup>

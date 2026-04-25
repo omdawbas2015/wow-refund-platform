@@ -27,9 +27,9 @@ export default async function CaseDetailsPage({
       brand: true,
       branch: true,
       rootCause: true,
-      createdBy: { select: { id: true, name: true, email: true } },
-      assignedTo: { select: { id: true, name: true, email: true } },
-      approvedBy: { select: { id: true, name: true, email: true } },
+      createdBy: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      assignedTo: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      approvedBy: { select: { id: true, name: true, email: true, avatarUrl: true } },
       components: {
         include: { paymentMethod: true },
         orderBy: { createdAt: 'asc' },
@@ -134,13 +134,25 @@ export default async function CaseDetailsPage({
           countryFlag: refundCase.country.registry.flag ?? '',
           branchName: refundCase.branch?.name ?? null,
           createdBy: refundCase.createdBy
-            ? { id: refundCase.createdBy.id, name: refundCase.createdBy.name }
+            ? {
+                id: refundCase.createdBy.id,
+                name: refundCase.createdBy.name,
+                avatarUrl: refundCase.createdBy.avatarUrl,
+              }
             : null,
           assignedTo: refundCase.assignedTo
-            ? { id: refundCase.assignedTo.id, name: refundCase.assignedTo.name }
+            ? {
+                id: refundCase.assignedTo.id,
+                name: refundCase.assignedTo.name,
+                avatarUrl: refundCase.assignedTo.avatarUrl,
+              }
             : null,
           approvedBy: refundCase.approvedBy
-            ? { id: refundCase.approvedBy.id, name: refundCase.approvedBy.name }
+            ? {
+                id: refundCase.approvedBy.id,
+                name: refundCase.approvedBy.name,
+                avatarUrl: refundCase.approvedBy.avatarUrl,
+              }
             : null,
           approvedAt: refundCase.approvedAt?.toISOString() ?? null,
         }}
