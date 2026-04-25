@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from '@wow/db';
+import { prisma, Prisma } from '@wow/db';
 import {
   createCaseSchema,
   addNoteSchema,
@@ -28,10 +28,19 @@ function canApprove(role: string | null | undefined): boolean {
   return !!role && APPROVE_ROLES.has(role);
 }
 
-async function generateCaseNumber(countryCode: string): Promise<string> {
+/**
+ * Generate the next REF-<country>-<year>-<seq> case number. Takes a Prisma
+ * transaction client so the read participates in the caller's transaction —
+ * paired with the retry loop in `createCaseAction`, this prevents duplicate
+ * case numbers under concurrent writes.
+ */
+async function generateCaseNumber(
+  tx: Prisma.TransactionClient,
+  countryCode: string,
+): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `REF-${countryCode}-${year}-`;
-  const last = await prisma.refundCase.findFirst({
+  const last = await tx.refundCase.findFirst({
     where: { caseNumber: { startsWith: prefix } },
     orderBy: { caseNumber: 'desc' },
     select: { caseNumber: true },
@@ -96,10 +105,13 @@ export async function createCaseAction(
     }
 
     const paymentMethods = await prisma.paymentMethod.findMany({
-      where: { id: { in: data.components.map((c) => c.paymentMethodId) } },
+      where: {
+        id: { in: data.components.map((c) => c.paymentMethodId) },
+        isActive: true,
+      },
     });
     if (paymentMethods.length !== new Set(data.components.map((c) => c.paymentMethodId)).size) {
-      return { ok: false, error: 'One or more payment methods are invalid.' };
+      return { ok: false, error: 'One or more payment methods are invalid or inactive.' };
     }
 
     // Enforce KNET auth code requirement
@@ -119,68 +131,102 @@ export async function createCaseAction(
       return { ok: false, error: 'Total refund exceeds order amount.' };
     }
 
-    const caseNumber = await generateCaseNumber(country.registry.code);
     const isPartial = Math.abs(totalRefundAmount - data.orderAmount) > 0.001;
 
-    const created = await prisma.$transaction(async (tx) => {
-      const newCase = await tx.refundCase.create({
-        data: {
-          caseNumber,
-          countryId: data.countryId,
-          branchId: data.branchId || null,
-          brandId: data.brandId,
-          customerName: data.customerName,
-          customerEmail: data.customerEmail,
-          customerPhone: data.customerPhone,
-          customerNotes: data.customerNotes || null,
-          orderNumber: data.orderNumber,
-          orderDate: data.orderDate,
-          orderAmount: data.orderAmount,
-          orderCurrency: data.orderCurrency,
-          totalRefundAmount,
-          isPartial,
-          auraPoints: data.auraPoints ?? null,
-          auraStatus: data.auraPoints ? 'PENDING' : 'NONE',
-          status: 'DRAFT',
-          rootCauseId: data.rootCauseId || null,
-          rootCauseNotes: data.rootCauseNotes || null,
-          createdById: user.id,
-          components: {
-            create: data.components.map((c) => ({
-              paymentMethodId: c.paymentMethodId,
-              amount: c.amount,
-              currency: data.orderCurrency,
-              authCode: c.authCode || null,
-              last4: c.last4 || null,
-              status: 'PENDING',
-            })),
-          },
-        },
-      });
+    // Case-number generation + insert run inside the same transaction so the
+    // sequence read sees committed state only. If two concurrent requests
+    // still race (e.g. on a DB that doesn't serialize reads), the unique
+    // constraint on `caseNumber` makes the loser throw P2002 — we retry with
+    // a fresh sequence. Cap at 5 retries to avoid pathological loops.
+    const MAX_RETRIES = 5;
+    let created: Awaited<ReturnType<typeof prisma.refundCase.create>> | null = null;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        created = await prisma.$transaction(async (tx) => {
+          const caseNumber = await generateCaseNumber(tx, country.registry.code);
+          const newCase = await tx.refundCase.create({
+            data: {
+              caseNumber,
+              countryId: data.countryId,
+              branchId: data.branchId || null,
+              brandId: data.brandId,
+              customerName: data.customerName,
+              customerEmail: data.customerEmail,
+              customerPhone: data.customerPhone,
+              customerNotes: data.customerNotes || null,
+              orderNumber: data.orderNumber,
+              orderDate: data.orderDate,
+              orderAmount: data.orderAmount,
+              orderCurrency: data.orderCurrency,
+              totalRefundAmount,
+              isPartial,
+              auraPoints: data.auraPoints ?? null,
+              auraStatus: data.auraPoints ? 'PENDING' : 'NONE',
+              status: 'DRAFT',
+              rootCauseId: data.rootCauseId || null,
+              rootCauseNotes: data.rootCauseNotes || null,
+              createdById: user.id,
+              components: {
+                create: data.components.map((c) => ({
+                  paymentMethodId: c.paymentMethodId,
+                  amount: c.amount,
+                  currency: data.orderCurrency,
+                  authCode: c.authCode || null,
+                  last4: c.last4 || null,
+                  status: 'PENDING',
+                })),
+              },
+            },
+          });
 
-      await tx.activityLog.create({
-        data: {
-          caseId: newCase.id,
-          actorId: user.id,
-          actorLabel: user.name,
-          kind: 'case.created',
-          message: `Case ${caseNumber} created`,
-        },
-      });
+          await tx.activityLog.create({
+            data: {
+              caseId: newCase.id,
+              actorId: user.id,
+              actorLabel: user.name,
+              kind: 'case.created',
+              message: `Case ${caseNumber} created`,
+            },
+          });
 
-      await tx.auditLog.create({
-        data: {
-          actorId: user.id,
-          actorEmail: user.email,
-          action: 'case.created',
-          entityType: 'CASE',
-          entityId: newCase.id,
-          afterData: JSON.stringify({ caseNumber, totalRefundAmount }),
-        },
-      });
+          await tx.auditLog.create({
+            data: {
+              actorId: user.id,
+              actorEmail: user.email,
+              action: 'case.created',
+              entityType: 'CASE',
+              entityId: newCase.id,
+              afterData: JSON.stringify({ caseNumber, totalRefundAmount }),
+            },
+          });
 
-      return newCase;
-    });
+          return newCase;
+        });
+        break;
+      } catch (err) {
+        // P2002 = unique constraint violation. If it's on `caseNumber`, retry
+        // with the next sequence; otherwise rethrow.
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002' &&
+          Array.isArray(err.meta?.target) &&
+          (err.meta.target as string[]).includes('caseNumber')
+        ) {
+          if (attempt === MAX_RETRIES - 1) {
+            return {
+              ok: false,
+              error: 'Could not allocate a unique case number; please retry.',
+            };
+          }
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    if (!created) {
+      return { ok: false, error: 'Case creation failed.' };
+    }
 
     revalidatePath('/cases');
     return { ok: true, data: { id: created.id, caseNumber: created.caseNumber } };
