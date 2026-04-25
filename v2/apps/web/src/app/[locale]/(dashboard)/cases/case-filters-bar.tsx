@@ -68,8 +68,11 @@ export function CaseFiltersBar({
         ] as readonly string[])
       : (STATUS_BUCKETS[currentBucket] as readonly string[]);
 
+  // `bucket` is a tab selection, not a clearable filter — exclude it so the
+  // Clear button only appears when an actual filter (search, country, brand,
+  // status, date range) is applied.
   const hasAnyFilter = [...searchParams.keys()].some(
-    (k) => k !== 'page' && k !== 'pageSize',
+    (k) => k !== 'page' && k !== 'pageSize' && k !== 'bucket',
   );
 
   return (
@@ -191,7 +194,15 @@ export function CaseFiltersBar({
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => router.push(pathname)}
+            onClick={() => {
+              // Preserve the current bucket so clearing filters doesn't yank
+              // the user out of the tab they were inspecting.
+              const sp = new URLSearchParams();
+              const b = searchParams.get('bucket');
+              if (b) sp.set('bucket', b);
+              const qs = sp.toString();
+              router.push(qs ? `${pathname}?${qs}` : pathname);
+            }}
           >
             <X className="h-4 w-4" />
             Clear
@@ -203,8 +214,10 @@ export function CaseFiltersBar({
 }
 
 function CountBadge({ value }: { value: number }) {
+  // The TabsTrigger is a `group`, so we read its active state via
+  // group-data-[state=active] rather than the span's own data attribute.
   return (
-    <span className="ms-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-surface-subtle px-1.5 text-[10px] font-semibold text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
+    <span className="ms-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-surface-subtle px-1.5 text-[10px] font-semibold text-muted-foreground group-data-[state=active]:bg-primary/10 group-data-[state=active]:text-primary">
       {value}
     </span>
   );

@@ -105,6 +105,16 @@ export function CasesTable({
                   <div className="max-w-[220px] truncate font-medium text-heading">
                     {c.customerName}
                   </div>
+                  <div className="group/email inline-flex max-w-[220px] items-center gap-1 text-xs text-muted-foreground">
+                    <span className="truncate">{c.customerEmail}</span>
+                    <span className="shrink-0 opacity-0 transition-opacity group-hover/email:opacity-100">
+                      <CopyButton
+                        value={c.customerEmail}
+                        size="xs"
+                        label="Copy email"
+                      />
+                    </span>
+                  </div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   <div className="leading-tight">
