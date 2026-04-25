@@ -3,11 +3,10 @@ import { prisma } from '@wow/db';
 import { caseListFiltersSchema } from '@wow/validators';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Plus, FileText, Search } from 'lucide-react';
-import { CaseStatusBadge } from '@/components/ui/case-status-badge';
-import { formatDate, formatMoney } from '@/lib/format';
+import { Plus, FileText } from 'lucide-react';
 import { CaseFiltersBar } from './case-filters-bar';
+import { CasesTable, type CaseRow } from './cases-table';
+import type { CaseStatus } from '@/components/ui/case-status-stepper';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,6 +68,7 @@ export default async function CasesPage({
       include: {
         country: { include: { registry: true } },
         brand: true,
+        rootCause: true,
         createdBy: { select: { name: true } },
         assignedTo: { select: { name: true } },
       },
@@ -77,6 +77,27 @@ export default async function CasesPage({
       take: filters.pageSize,
     }),
   ]);
+
+  const rows: CaseRow[] = cases.map((c) => ({
+    id: c.id,
+    caseNumber: c.caseNumber,
+    status: c.status as CaseStatus,
+    customerName: c.customerName,
+    customerEmail: c.customerEmail,
+    customerPhone: c.customerPhone,
+    brandName: c.brand.name,
+    countryName: c.country.registry.nameEn,
+    countryFlag: c.country.registry.flag ?? '',
+    orderNumber: c.orderNumber,
+    orderDate: c.orderDate.toISOString(),
+    orderAmount: c.orderAmount,
+    orderCurrency: c.orderCurrency,
+    totalRefundAmount: c.totalRefundAmount,
+    isPartial: c.isPartial,
+    createdAt: c.createdAt.toISOString(),
+    createdByName: c.createdBy?.name ?? null,
+    rootCause: c.rootCause?.label ?? null,
+  }));
 
   const totalPages = Math.max(1, Math.ceil(total / filters.pageSize));
 
@@ -128,69 +149,7 @@ export default async function CasesPage({
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-surface-subtle text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 text-start font-medium">Case #</th>
-                    <th className="px-4 py-3 text-start font-medium">Customer</th>
-                    <th className="px-4 py-3 text-start font-medium">Brand · Country</th>
-                    <th className="px-4 py-3 text-start font-medium">Order</th>
-                    <th className="px-4 py-3 text-end font-medium">Refund</th>
-                    <th className="px-4 py-3 text-start font-medium">Status</th>
-                    <th className="px-4 py-3 text-start font-medium">Created</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {cases.map((c) => (
-                    <tr
-                      key={c.id}
-                      className="hover:bg-surface-subtle/50 transition-colors"
-                    >
-                      <td className="px-4 py-3">
-                        <Link
-                          href={`/${locale}/cases/${c.id}`}
-                          className="font-mono text-sm font-medium text-primary hover:underline"
-                        >
-                          {c.caseNumber}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{c.customerName}</div>
-                        <div className="text-xs text-muted-foreground">{c.customerEmail}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-lg leading-none">{c.country.registry.flag ?? '🌐'}</span>
-                          <div>
-                            <div className="text-sm font-medium">{c.brand.name}</div>
-                            <div className="text-xs text-muted-foreground">{c.country.registry.nameEn}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="font-mono text-xs">{c.orderNumber}</div>
-                        <div className="text-xs text-muted-foreground">{formatDate(c.orderDate)}</div>
-                      </td>
-                      <td className="px-4 py-3 text-end font-mono">
-                        {formatMoney(c.totalRefundAmount, c.orderCurrency)}
-                        {c.isPartial && (
-                          <div className="text-xs font-normal text-muted-foreground">
-                            of {formatMoney(c.orderAmount, c.orderCurrency)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <CaseStatusBadge status={c.status} />
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {formatDate(c.createdAt)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <CasesTable locale={locale} cases={rows} />
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between border-t border-border px-4 py-3">

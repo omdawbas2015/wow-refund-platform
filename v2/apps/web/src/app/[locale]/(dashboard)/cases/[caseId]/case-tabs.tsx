@@ -18,6 +18,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { CustomerHistory } from './customer-history';
+import { CaseStatusStepper, type CaseStatus } from '@/components/ui/case-status-stepper';
 
 type CaseData = {
   id: string;
@@ -129,6 +130,9 @@ export function CaseTabs({
 
   return (
     <div className="space-y-4">
+      {/* Status stepper */}
+      <CaseStatusStepper status={caseData.status as CaseStatus} locale={locale} />
+
       {/* Action bar */}
       {(canSubmit || canApprove || canStartExecution || canMarkRefunded) && (
         <div className="flex flex-wrap gap-2 rounded-md border border-border bg-surface-subtle/40 p-2">
