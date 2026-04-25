@@ -257,15 +257,33 @@ async function applyAuraConfirmation(
   batchNumber: string,
   rawBody: string,
 ): Promise<ProcessOutcome> {
-  const batch = await prisma.auraBatch.findUnique({ where: { batchNumber } });
+  const batch = await prisma.auraBatch.findUnique({
+    where: { batchNumber },
+    include: {
+      cases: { select: { id: true, caseNumber: true, auraStatus: true } },
+    },
+  });
   if (!batch) return { intent: 'IGNORED', payload: { reason: 'unknown aura batch', batchNumber } };
+  if (batch.status === 'COMPLETED' || batch.status === 'CANCELLED') {
+    return { intent: 'IGNORED', payload: { reason: 'batch closed', batchNumber } };
+  }
 
-  // Aura confirmation is much simpler: we trust per-case decisions parsed from
-  // the body, defaulting to COMPLETED when keywords are positive.
+  // Aura confirmation reuses the approval parser: per-case decisions when the
+  // team lists case numbers, plus a blanket fallback for simple replies like
+  // "all done" / "confirmed" / "تم". APPROVED → COMPLETED, REJECTED → FAILED.
   const parsed = parseApprovalReply(rawBody);
   const decisions = new Map<string, 'COMPLETED' | 'FAILED'>();
   for (const entry of parsed.perCase) {
     decisions.set(entry.caseNumber, entry.decision === 'APPROVED' ? 'COMPLETED' : 'FAILED');
+  }
+  if (decisions.size === 0 && parsed.blanket) {
+    const blanketStatus: 'COMPLETED' | 'FAILED' =
+      parsed.blanket === 'APPROVED' ? 'COMPLETED' : 'FAILED';
+    for (const c of batch.cases) {
+      if (c.auraStatus === 'PENDING' || c.auraStatus === 'IN_BATCH') {
+        decisions.set(c.caseNumber, blanketStatus);
+      }
+    }
   }
 
   if (decisions.size === 0) {

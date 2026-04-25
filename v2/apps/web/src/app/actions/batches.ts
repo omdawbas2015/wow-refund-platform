@@ -295,10 +295,15 @@ export async function cancelApprovalBatchAction(input: unknown): Promise<ActionR
         return { ok: false as const, error: `Batch is already ${batch.status}.` };
       }
 
-      await tx.approvalBatch.update({
-        where: { id: batchId },
+      // Guarded transition — if a parallel email reply / magic-link decision
+      // has already closed the batch, refuse to clobber the terminal state.
+      const guarded = await tx.approvalBatch.updateMany({
+        where: { id: batchId, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
         data: { status: 'CANCELLED', completedAt: new Date() },
       });
+      if (guarded.count === 0) {
+        return { ok: false as const, error: 'Batch was already closed by another action.' };
+      }
 
       await tx.refundCase.updateMany({
         where: { approvalBatchId: batchId, status: 'PENDING_APPROVAL' },
@@ -617,6 +622,7 @@ export async function createAuraBatchAction(
 
     const caseWhere: Prisma.RefundCaseWhereInput = {
       auraStatus: 'PENDING',
+      auraBatchId: null,
       auraPoints: { gt: 0 },
       deletedAt: null,
       status: { in: ['APPROVED', 'IN_EXECUTION', 'PARTIALLY_REFUNDED', 'REFUNDED'] },
