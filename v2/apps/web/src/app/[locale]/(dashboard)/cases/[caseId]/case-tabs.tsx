@@ -332,13 +332,6 @@ function OverviewTab({
   return (
     <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
       <div className="space-y-4">
-        {paymentMethods.length > 0 && (
-          <Section title="Payment">
-            <div className="py-1">
-              <PaymentMethodIcons methods={paymentMethods} size="md" />
-            </div>
-          </Section>
-        )}
         <Section title="Customer">
           <Field label="Name" value={caseData.customerName} />
           <Field label="Email" value={caseData.customerEmail} />
@@ -364,6 +357,12 @@ function OverviewTab({
               </span>
             }
           />
+          {paymentMethods.length > 0 && (
+            <Field
+              label="Payment"
+              value={<PaymentMethodIcons methods={paymentMethods} size="sm" />}
+            />
+          )}
           <Field label="Brand · Country" value={`${caseData.brandName} · ${caseData.countryFlag} ${caseData.countryName}`} />
           {caseData.branchName && <Field label="Branch" value={caseData.branchName} />}
         </Section>

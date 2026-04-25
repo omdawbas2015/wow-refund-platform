@@ -343,20 +343,11 @@ function CaseQuickDrawer({
             />
           </div>
 
-          {/* Payment methods */}
-          {caseRow.paymentMethods.length > 0 && (
-            <div className="mb-5">
-              <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Payment methods
-              </div>
-              <PaymentMethodIcons methods={caseRow.paymentMethods} />
-            </div>
-          )}
-
-          {/* Overview grid */}
+          {/* Overview grid — payment sits inline here with order info so it
+              reads like an invoice line, not a separate header block. */}
           <div className="mb-5 grid grid-cols-2 gap-4 text-sm">
             <InfoRow label="Brand">
-              <span className="mr-1.5 text-base leading-none">{caseRow.countryFlag || '🌐'}</span>
+              <span className="me-1.5 text-base leading-none">{caseRow.countryFlag || '🌐'}</span>
               {caseRow.brandName}
             </InfoRow>
             <InfoRow label="Country">{caseRow.countryName}</InfoRow>
@@ -381,6 +372,11 @@ function CaseQuickDrawer({
                 </span>
               )}
             </InfoRow>
+            {caseRow.paymentMethods.length > 0 && (
+              <InfoRow label="Payment" wide>
+                <PaymentMethodIcons methods={caseRow.paymentMethods} size="sm" />
+              </InfoRow>
+            )}
             <InfoRow label="Customer email" wide>
               <span className="break-all">{caseRow.customerEmail}</span>
             </InfoRow>
