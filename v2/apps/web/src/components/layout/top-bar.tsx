@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { LogOut, Globe, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { NotificationsBell } from './notifications-bell';
 
 interface TopBarProps {
   userName: string;
@@ -41,6 +42,7 @@ export function TopBar({ userName, userEmail, currentLocale }: TopBarProps) {
         <span>{userEmail}</span>
       </div>
       <div className="flex items-center gap-2">
+        <NotificationsBell locale={currentLocale} />
         <Button variant="ghost" size="sm" onClick={toggleLocale} aria-label="Toggle language">
           <Globe className="h-4 w-4" />
           <span className="ms-1 uppercase">{currentLocale === 'en' ? 'AR' : 'EN'}</span>

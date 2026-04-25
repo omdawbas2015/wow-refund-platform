@@ -211,6 +211,198 @@ async function seedDefaultAdmin() {
   console.log(`→ Created default admin: ${email} / ${password}`);
 }
 
+async function seedDemoCases() {
+  // Only seed demo cases when explicitly requested.
+  if (process.env['SEED_DEMO_CASES'] !== '1') {
+    console.log('→ Skipping demo cases (set SEED_DEMO_CASES=1 to seed)');
+    return;
+  }
+
+  // Skip if any cases already exist
+  const existing = await prisma.refundCase.count();
+  if (existing > 0) {
+    console.log(`→ Demo cases skipped (${existing} cases already exist)`);
+    return;
+  }
+
+  console.log('→ Seeding demo refund cases...');
+
+  const admin = await prisma.user.findUnique({ where: { email: 'admin@wow.local' } });
+  const kuwait = await prisma.country.findUnique({ where: { registryCode: 'KW' } });
+  const saudi = await prisma.country.findUnique({ where: { registryCode: 'SA' } });
+  const chipotle = await prisma.brand.findUnique({ where: { slug: 'chipotle' } });
+  const starbucks = await prisma.brand.findUnique({ where: { slug: 'starbucks' } });
+  const applePay = await prisma.paymentMethod.findUnique({ where: { key: 'APPLE_PAY' } });
+  const knet = await prisma.paymentMethod.findUnique({ where: { key: 'KNET' } });
+  const card = await prisma.paymentMethod.findUnique({ where: { key: 'CREDIT_CARD' } });
+  const rootCause = await prisma.rootCause.findFirst();
+
+  if (!admin || !kuwait || !saudi || !chipotle || !starbucks || !applePay || !knet || !card) {
+    console.log('  ! Missing prerequisites, skipping demo cases');
+    return;
+  }
+
+  type Demo = {
+    countryId: string;
+    brandId: string;
+    customerName: string;
+    customerEmail: string;
+    customerPhone: string;
+    orderNumber: string;
+    orderAmount: number;
+    orderCurrency: string;
+    status: string;
+    components: Array<{ paymentMethodId: string; amount: number; authCode?: string; last4?: string }>;
+    notes?: string[];
+  };
+
+  const demos: Demo[] = [
+    {
+      countryId: kuwait.id,
+      brandId: chipotle.id,
+      customerName: 'Sara Al-Fahad',
+      customerEmail: 'sara.fahad@example.com',
+      customerPhone: '+96599887766',
+      orderNumber: 'CHP-KW-89231',
+      orderAmount: 12.5,
+      orderCurrency: 'KWD',
+      status: 'DRAFT',
+      components: [{ paymentMethodId: applePay.id, amount: 12.5, last4: '4242' }],
+      notes: ['Customer reported missing items in delivery.'],
+    },
+    {
+      countryId: kuwait.id,
+      brandId: starbucks.id,
+      customerName: 'Omar Khan',
+      customerEmail: 'omar.k@example.com',
+      customerPhone: '+96566554433',
+      orderNumber: 'SBX-KW-44102',
+      orderAmount: 8.75,
+      orderCurrency: 'KWD',
+      status: 'PENDING_APPROVAL',
+      components: [{ paymentMethodId: knet.id, amount: 8.75, authCode: 'A12B34' }],
+      notes: ['Drink prepared incorrectly twice.', 'Manager confirmed full refund.'],
+    },
+    {
+      countryId: saudi.id,
+      brandId: chipotle.id,
+      customerName: 'Layla Hussain',
+      customerEmail: 'layla.h@example.com',
+      customerPhone: '+966500112233',
+      orderNumber: 'CHP-SA-77345',
+      orderAmount: 95.0,
+      orderCurrency: 'SAR',
+      status: 'APPROVED',
+      components: [{ paymentMethodId: card.id, amount: 95.0, last4: '8821' }],
+    },
+    {
+      countryId: kuwait.id,
+      brandId: chipotle.id,
+      customerName: 'Yousef Al-Mutairi',
+      customerEmail: 'yousef.m@example.com',
+      customerPhone: '+96598765432',
+      orderNumber: 'CHP-KW-92044',
+      orderAmount: 22.0,
+      orderCurrency: 'KWD',
+      status: 'PARTIALLY_REFUNDED',
+      components: [
+        { paymentMethodId: applePay.id, amount: 12.0, last4: '5454' },
+        { paymentMethodId: knet.id, amount: 8.0, authCode: 'C44D77' },
+      ],
+    },
+    {
+      countryId: saudi.id,
+      brandId: starbucks.id,
+      customerName: 'Reem Al-Saud',
+      customerEmail: 'reem.s@example.com',
+      customerPhone: '+966512345678',
+      orderNumber: 'SBX-SA-22198',
+      orderAmount: 60.0,
+      orderCurrency: 'SAR',
+      status: 'REFUNDED',
+      components: [{ paymentMethodId: card.id, amount: 60.0, last4: '1234' }],
+      notes: ['Refund completed via Stripe.'],
+    },
+  ];
+
+  for (let i = 0; i < demos.length; i++) {
+    const d = demos[i]!;
+    const country = await prisma.country.findUnique({
+      where: { id: d.countryId },
+      include: { registry: true },
+    });
+    if (!country) continue;
+
+    const year = new Date().getFullYear();
+    const caseNumber = `REF-${country.registry.code}-${year}-${(i + 1).toString().padStart(6, '0')}`;
+    const totalRefund = d.components.reduce((s, c) => s + c.amount, 0);
+    const isPartial = Math.abs(totalRefund - d.orderAmount) > 0.001;
+
+    const created = await prisma.refundCase.create({
+      data: {
+        caseNumber,
+        countryId: d.countryId,
+        brandId: d.brandId,
+        customerName: d.customerName,
+        customerEmail: d.customerEmail,
+        customerPhone: d.customerPhone,
+        orderNumber: d.orderNumber,
+        orderDate: new Date(Date.now() - (i + 1) * 86_400_000),
+        orderAmount: d.orderAmount,
+        orderCurrency: d.orderCurrency,
+        totalRefundAmount: totalRefund,
+        isPartial,
+        status: d.status as never,
+        rootCauseId: rootCause?.id ?? null,
+        createdById: admin.id,
+        approvedById: ['APPROVED', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(d.status) ? admin.id : null,
+        approvedAt: ['APPROVED', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(d.status) ? new Date() : null,
+        components: {
+          create: d.components.map((c) => ({
+            paymentMethodId: c.paymentMethodId,
+            amount: c.amount,
+            currency: d.orderCurrency,
+            authCode: c.authCode ?? null,
+            last4: c.last4 ?? null,
+            status: d.status === 'REFUNDED' ? 'REFUNDED' : d.status === 'PARTIALLY_REFUNDED' ? 'AWAITING_BATCH' : 'PENDING',
+          })),
+        },
+      },
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        caseId: created.id,
+        actorId: admin.id,
+        actorLabel: admin.name,
+        kind: 'case.created',
+        message: `Case ${caseNumber} created`,
+      },
+    });
+
+    if (d.notes) {
+      for (const body of d.notes) {
+        await prisma.caseNote.create({
+          data: { caseId: created.id, authorId: admin.id, body },
+        });
+      }
+    }
+  }
+
+  console.log(`→ Seeded ${demos.length} demo cases.`);
+
+  // Add a couple of unread notifications for the admin
+  await prisma.notification.create({
+    data: {
+      userId: admin.id,
+      type: 'CASE_ASSIGNED',
+      title: 'Welcome — review your refund cases',
+      body: 'Demo data has been seeded. Open the Cases page to explore.',
+      href: '/cases',
+    },
+  });
+}
+
 async function seedFeatureFlags() {
   const flags = [
     { key: 'feature.promo.compensation', enabled: true, description: 'Enable customer compensation promos' },
@@ -246,6 +438,7 @@ async function main() {
   await seedDefaultBrands();
   await seedDefaultAdmin();
   await seedFeatureFlags();
+  await seedDemoCases();
 
   console.log('\n✓ Seed complete.');
 }
