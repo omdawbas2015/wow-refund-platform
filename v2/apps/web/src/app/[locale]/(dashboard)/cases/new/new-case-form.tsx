@@ -70,7 +70,11 @@ export function NewCaseForm({
 
   async function submit(acknowledgeDuplicate = false) {
     setError(null);
-    if (!acknowledgeDuplicate) setDuplicate(null);
+    // Always clear any prior duplicate alert; the server response below is
+    // the source of truth (it will re-populate `duplicate` if one is still
+    // detected). This prevents a stale warning from lingering when a
+    // "Create anyway" retry fails with an unrelated validation error.
+    setDuplicate(null);
 
     const payload = {
       countryId,

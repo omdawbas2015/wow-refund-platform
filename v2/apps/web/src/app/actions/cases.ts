@@ -202,10 +202,6 @@ export async function updateCaseStatusAction(input: unknown): Promise<ActionResu
 
     const { caseId, target, reason } = parsed.data;
 
-    const existing = await prisma.refundCase.findUnique({ where: { id: caseId } });
-    if (!existing) return { ok: false, error: 'Case not found' };
-    if (existing.deletedAt) return { ok: false, error: 'Case is archived' };
-
     if (target === 'REJECTED') {
       // Rejection is driven by the manager email flow, not by UI actions.
       return {
@@ -221,22 +217,38 @@ export async function updateCaseStatusAction(input: unknown): Promise<ActionResu
       };
     }
 
-    if (!canTransition(existing.status as CaseStatusValue, target)) {
-      return {
-        ok: false,
-        error: `Cannot move case from ${existing.status} to ${target}.`,
-      };
-    }
+    // Read, validate, and write inside a single transaction, with an
+    // optimistic-concurrency guard on `updateMany` so two concurrent
+    // transitions from the same source status can't both succeed.
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.refundCase.findUnique({ where: { id: caseId } });
+      if (!existing) return { ok: false as const, error: 'Case not found' };
+      if (existing.deletedAt) return { ok: false as const, error: 'Case is archived' };
+      if (!canTransition(existing.status as CaseStatusValue, target)) {
+        return {
+          ok: false as const,
+          error: `Cannot move case from ${existing.status} to ${target}.`,
+        };
+      }
 
-    const patch: Record<string, unknown> = { status: target };
-    if (target === 'CANCELLED') patch['cancelledReason'] = reason ?? null;
-    if (target === 'APPROVED') {
-      patch['approvedById'] = user.id;
-      patch['approvedAt'] = new Date();
-    }
+      const patch: Record<string, unknown> = { status: target };
+      if (target === 'CANCELLED') patch['cancelledReason'] = reason ?? null;
+      if (target === 'APPROVED') {
+        patch['approvedById'] = user.id;
+        patch['approvedAt'] = new Date();
+      }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.refundCase.update({ where: { id: caseId }, data: patch });
+      const guarded = await tx.refundCase.updateMany({
+        where: { id: caseId, status: existing.status, deletedAt: null },
+        data: patch,
+      });
+      if (guarded.count === 0) {
+        return {
+          ok: false as const,
+          error: 'Case was modified by another user. Please refresh and retry.',
+        };
+      }
+
       await tx.activityLog.create({
         data: {
           caseId,
@@ -257,7 +269,11 @@ export async function updateCaseStatusAction(input: unknown): Promise<ActionResu
           afterData: JSON.stringify({ status: target, reason }),
         },
       });
+
+      return { ok: true as const };
     });
+
+    if (!result.ok) return result;
 
     revalidatePath(`/cases/${caseId}`);
     revalidatePath('/cases');
