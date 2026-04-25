@@ -5,109 +5,179 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { caseStatuses } from '@wow/validators';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { STATUS_BUCKETS, STATUS_LABELS } from './case-status-buckets';
 
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Draft',
-  PENDING_APPROVAL: 'Pending approval',
-  APPROVED: 'Approved',
-  IN_EXECUTION: 'In execution',
-  PARTIALLY_REFUNDED: 'Partially refunded',
-  REFUNDED: 'Refunded',
-  REJECTED: 'Rejected',
-  CANCELLED: 'Cancelled',
+const ALL_VALUE = '__all__';
+
+type Counts = {
+  all: number;
+  open: number;
+  resolved: number;
+  closed: number;
 };
 
 export function CaseFiltersBar({
   countries,
-  brands,
+  counts,
 }: {
   countries: Array<{ id: string; code: string; name: string; flag: string }>;
-  brands: Array<{ id: string; name: string }>;
+  counts: Counts;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const setParam = useCallback(
-    (key: string, value: string | null) => {
+  const setParams = useCallback(
+    (updates: Record<string, string | null>) => {
       const sp = new URLSearchParams(searchParams.toString());
-      if (value === null || value === '') sp.delete(key);
-      else sp.set(key, value);
+      for (const [k, v] of Object.entries(updates)) {
+        if (v === null || v === '') sp.delete(k);
+        else sp.set(k, v);
+      }
       sp.delete('page');
       router.push(`${pathname}?${sp.toString()}`);
     },
     [pathname, router, searchParams],
   );
 
-  const hasAnyFilter = [...searchParams.keys()].some((k) => k !== 'page' && k !== 'pageSize');
+  const currentBucket = (searchParams.get('bucket') ?? 'all') as 'all' | keyof typeof STATUS_BUCKETS;
+  const currentStatus = searchParams.get('status') ?? '';
+  const currentCountry = searchParams.get('countryId') ?? '';
+  const fromDate = searchParams.get('fromDate');
+  const toDate = searchParams.get('toDate');
+
+  const statusesInBucket =
+    currentBucket === 'all'
+      ? ([...STATUS_BUCKETS.open, ...STATUS_BUCKETS.resolved, ...STATUS_BUCKETS.closed] as readonly string[])
+      : (STATUS_BUCKETS[currentBucket] as readonly string[]);
+
+  const hasAnyFilter = [...searchParams.keys()].some(
+    (k) => k !== 'page' && k !== 'pageSize',
+  );
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2">
-      <div className="relative flex-1 min-w-[220px] max-w-sm">
-        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          type="search"
-          defaultValue={searchParams.get('q') ?? ''}
-          placeholder="Search case #, customer, order…"
-          className="ps-9"
-          onBlur={(e) => setParam('q', e.currentTarget.value.trim() || null)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') setParam('q', e.currentTarget.value.trim() || null);
-          }}
-        />
-      </div>
-
-      <select
-        className="h-10 rounded-md border border-border bg-surface px-3 text-sm"
-        defaultValue={searchParams.get('countryId') ?? ''}
-        onChange={(e) => setParam('countryId', e.currentTarget.value || null)}
+    <div className="mb-5 space-y-3">
+      {/* Status bucket tabs */}
+      <Tabs
+        value={currentBucket}
+        onValueChange={(v) =>
+          setParams({ bucket: v === 'all' ? null : v, status: null })
+        }
       >
-        <option value="">All countries</option>
-        {countries.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.flag} {c.name}
-          </option>
-        ))}
-      </select>
+        <TabsList className="h-10">
+          <TabsTrigger value="all">
+            All <CountBadge value={counts.all} />
+          </TabsTrigger>
+          <TabsTrigger value="open">
+            Open <CountBadge value={counts.open} />
+          </TabsTrigger>
+          <TabsTrigger value="resolved">
+            Resolved <CountBadge value={counts.resolved} />
+          </TabsTrigger>
+          <TabsTrigger value="closed">
+            Closed <CountBadge value={counts.closed} />
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      <select
-        className="h-10 rounded-md border border-border bg-surface px-3 text-sm"
-        defaultValue={searchParams.get('brandId') ?? ''}
-        onChange={(e) => setParam('brandId', e.currentTarget.value || null)}
-      >
-        <option value="">All brands</option>
-        {brands.map((b) => (
-          <option key={b.id} value={b.id}>
-            {b.name}
-          </option>
-        ))}
-      </select>
+      {/* Secondary controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1 max-w-md">
+          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            defaultValue={searchParams.get('q') ?? ''}
+            placeholder="Search case #, customer, order…"
+            className="ps-9"
+            onBlur={(e) => setParams({ q: e.currentTarget.value.trim() || null })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter')
+                setParams({ q: e.currentTarget.value.trim() || null });
+            }}
+          />
+        </div>
 
-      <select
-        className="h-10 rounded-md border border-border bg-surface px-3 text-sm"
-        defaultValue={searchParams.get('status') ?? ''}
-        onChange={(e) => setParam('status', e.currentTarget.value || null)}
-      >
-        <option value="">All statuses</option>
-        {caseStatuses.map((s) => (
-          <option key={s} value={s}>
-            {STATUS_LABELS[s] ?? s}
-          </option>
-        ))}
-      </select>
-
-      {hasAnyFilter && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => router.push(pathname)}
+        <Select
+          value={currentCountry || ALL_VALUE}
+          onValueChange={(v) =>
+            setParams({ countryId: v === ALL_VALUE ? null : v })
+          }
         >
-          <X className="h-4 w-4" />
-          Clear
-        </Button>
-      )}
+          <SelectTrigger className="h-10 w-[190px]">
+            <SelectValue placeholder="All countries" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_VALUE}>All countries</SelectItem>
+            <SelectGroup>
+              {countries.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  <span className="me-1.5">{c.flag}</span>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={currentStatus || ALL_VALUE}
+          onValueChange={(v) =>
+            setParams({ status: v === ALL_VALUE ? null : v })
+          }
+        >
+          <SelectTrigger className="h-10 w-[200px]">
+            <SelectValue placeholder="Any status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_VALUE}>Any status</SelectItem>
+            {statusesInBucket.map((s) => (
+              <SelectItem key={s} value={s}>
+                {STATUS_LABELS[s] ?? s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <DateRangePicker
+          value={{ from: fromDate, to: toDate }}
+          onChange={(r) =>
+            setParams({
+              fromDate: r.from,
+              toDate: r.to,
+            })
+          }
+        />
+
+        {hasAnyFilter && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push(pathname)}
+          >
+            <X className="h-4 w-4" />
+            Clear
+          </Button>
+        )}
+      </div>
     </div>
+  );
+}
+
+function CountBadge({ value }: { value: number }) {
+  return (
+    <span className="ms-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-surface-subtle px-1.5 text-[10px] font-semibold text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
+      {value}
+    </span>
   );
 }

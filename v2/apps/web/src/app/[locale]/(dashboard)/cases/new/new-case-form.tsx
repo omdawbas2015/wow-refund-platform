@@ -7,7 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertTriangle, Check } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { AlertTriangle, Check, MinusCircle, Percent } from 'lucide-react';
 import Link from 'next/link';
 import { PaymentBrand } from '@/components/ui/payment-method-icons';
 import { cn } from '@/lib/utils';
@@ -175,35 +182,34 @@ export function NewCaseForm({
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="country">Country</Label>
-          <select
-            id="country"
-            value={countryId}
-            onChange={(e) => setCountryId(e.target.value)}
-            className="flex h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
-            required
-          >
-            {countries.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.flag} {c.name}
-              </option>
-            ))}
-          </select>
+          <Select value={countryId} onValueChange={setCountryId}>
+            <SelectTrigger id="country">
+              <SelectValue placeholder="Select country" />
+            </SelectTrigger>
+            <SelectContent>
+              {countries.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  <span className="me-1.5">{c.flag}</span>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="brand">Brand</Label>
-          <select
-            id="brand"
-            value={brandId}
-            onChange={(e) => setBrandId(e.target.value)}
-            className="flex h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
-            required
-          >
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+          <Select value={brandId} onValueChange={setBrandId}>
+            <SelectTrigger id="brand">
+              <SelectValue placeholder="Select brand" />
+            </SelectTrigger>
+            <SelectContent>
+              {brands.map((b) => (
+                <SelectItem key={b.id} value={b.id}>
+                  {b.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </section>
 
@@ -390,80 +396,71 @@ export function NewCaseForm({
       </section>
 
       {/* ── Refund ── */}
-      <section className="space-y-4">
+      <section className="space-y-3">
         <h3 className="text-heading-sm text-heading">Refund</h3>
-        <div className="rounded-lg border border-border bg-surface-subtle/50 p-4">
-          <div className="flex items-center gap-1 rounded-md bg-surface p-0.5 border border-border w-fit">
-            <button
-              type="button"
-              onClick={() => { setRefundType('full'); setRefundAmount(''); }}
-              className={cn(
-                'rounded-md px-4 py-1.5 text-sm font-medium transition-all',
-                refundType === 'full'
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-heading',
-              )}
-            >
-              Full refund
-            </button>
-            <button
-              type="button"
-              onClick={() => setRefundType('partial')}
-              className={cn(
-                'rounded-md px-4 py-1.5 text-sm font-medium transition-all',
-                refundType === 'partial'
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-heading',
-              )}
-            >
-              Partial refund
-            </button>
-          </div>
+        <div
+          role="radiogroup"
+          aria-label="Refund type"
+          className="grid gap-3 sm:grid-cols-2"
+        >
+          <RefundTypeCard
+            selected={refundType === 'full'}
+            onClick={() => {
+              setRefundType('full');
+              setRefundAmount('');
+            }}
+            icon={<Check className="h-4 w-4" />}
+            title="Full refund"
+            description={
+              orderNum > 0
+                ? `Refund the entire order — ${orderNum.toFixed(3)} ${currency}`
+                : 'Refund the entire order amount.'
+            }
+          />
+          <RefundTypeCard
+            selected={refundType === 'partial'}
+            onClick={() => setRefundType('partial')}
+            icon={<Percent className="h-4 w-4" />}
+            title="Partial refund"
+            description="Refund a specific amount up to the order total."
+          />
+        </div>
 
-          <div className="mt-4">
-            {refundType === 'full' ? (
-              orderNum > 0 ? (
-                <div className="flex items-baseline gap-2">
-                  <span className="text-sm text-muted-foreground">Refund amount:</span>
-                  <span className="text-lg font-semibold font-mono text-heading">
-                    {orderNum.toFixed(3)}
-                  </span>
-                  <span className="text-sm text-muted-foreground">{currency}</span>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Enter the order amount above — it will be used as the refund total.
-                </p>
-              )
-            ) : (
-              <div className="space-y-2">
-                {orderNum > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Order total: <span className="font-mono font-medium">{orderNum.toFixed(3)} {currency}</span>
-                  </p>
-                )}
-                <div className="space-y-1.5">
-                  <Label htmlFor="refundAmount">Refund amount ({currency})</Label>
-                  <Input
-                    id="refundAmount"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    max={orderNum || undefined}
-                    value={refundAmount}
-                    onChange={(e) => setRefundAmount(e.target.value)}
-                    required
-                    placeholder={orderNum > 0 ? `Max ${orderNum.toFixed(3)}` : '0.000'}
-                    className="bg-surface font-mono"
-                  />
-                  {exceedsOrder && (
-                    <p className="text-xs text-destructive">Refund exceeds the order amount.</p>
-                  )}
-                </div>
+        {refundType === 'partial' && (
+          <div className="rounded-lg border border-border bg-surface-subtle/40 p-4">
+            <div className="flex items-end gap-3">
+              <div className="flex-1 space-y-1.5">
+                <Label htmlFor="refundAmount">Refund amount ({currency})</Label>
+                <Input
+                  id="refundAmount"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  max={orderNum || undefined}
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(e.target.value)}
+                  required
+                  placeholder={orderNum > 0 ? `Max ${orderNum.toFixed(3)}` : '0.000'}
+                  className="bg-surface font-mono"
+                />
               </div>
+              {orderNum > 0 && (
+                <div className="pb-2 text-xs text-muted-foreground">
+                  of{' '}
+                  <span className="font-mono font-medium text-heading">
+                    {orderNum.toFixed(3)} {currency}
+                  </span>
+                </div>
+              )}
+            </div>
+            {exceedsOrder && (
+              <p className="mt-2 flex items-center gap-1 text-xs text-destructive">
+                <MinusCircle className="h-3 w-3" />
+                Refund exceeds the order amount.
+              </p>
             )}
           </div>
-        </div>
+        )}
       </section>
 
       {/* ── Root cause ── */}
@@ -472,19 +469,22 @@ export function NewCaseForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="rootCause">Category</Label>
-            <select
-              id="rootCause"
-              value={rootCauseId}
-              onChange={(e) => setRootCauseId(e.target.value)}
-              className="flex h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
+            <Select
+              value={rootCauseId || '__none__'}
+              onValueChange={(v) => setRootCauseId(v === '__none__' ? '' : v)}
             >
-              <option value="">Select...</option>
-              {rootCauses.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="rootCause">
+                <SelectValue placeholder="Select…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">None</SelectItem>
+                {rootCauses.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="rootCauseNotes">Notes</Label>
@@ -515,5 +515,52 @@ export function NewCaseForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+function RefundTypeCard({
+  selected,
+  onClick,
+  icon,
+  title,
+  description,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onClick}
+      className={cn(
+        'relative flex items-start gap-3 rounded-lg border bg-surface p-4 text-start transition-all',
+        selected
+          ? 'border-primary shadow-sm ring-2 ring-primary/20'
+          : 'border-border hover:border-heading/30 hover:shadow-sm',
+      )}
+    >
+      <span
+        className={cn(
+          'mt-0.5 flex h-8 w-8 items-center justify-center rounded-md',
+          selected ? 'bg-primary/10 text-primary' : 'bg-surface-subtle text-muted-foreground',
+        )}
+      >
+        {icon}
+      </span>
+      <div className="flex-1">
+        <div className="font-medium text-heading">{title}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>
+      </div>
+      {selected && (
+        <span className="absolute end-3 top-3 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+          <Check className="h-2.5 w-2.5" />
+        </span>
+      )}
+    </button>
   );
 }

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Plus, FileText } from 'lucide-react';
 import { CaseFiltersBar } from './case-filters-bar';
+import { STATUS_BUCKETS } from './case-status-buckets';
 import { CasesTable, type CaseRow } from './cases-table';
 import type { CaseStatus } from '@/components/ui/case-status-stepper';
 import { auth } from '@/auth';
@@ -39,14 +40,19 @@ export default async function CasesPage({
     ? parsedFilters.data
     : { page: 1, pageSize: 25 };
 
+  const bucketParam =
+    typeof sp['bucket'] === 'string' ? (sp['bucket'] as string) : null;
+  const bucket: 'all' | keyof typeof STATUS_BUCKETS =
+    bucketParam === 'open' ||
+    bucketParam === 'resolved' ||
+    bucketParam === 'closed'
+      ? bucketParam
+      : 'all';
+
   // Include deleted cases by default — they render with a "Deleted" badge so
-  // users keep a full audit view. A future `?includeDeleted=false` flag could
-  // hide them when needed.
+  // users keep a full audit view.
   const where: Record<string, unknown> = {};
   if (filters.q) {
-    // Case-insensitive search: Postgres needs `mode: 'insensitive'`; SQLite's
-    // LIKE is already case-insensitive for ASCII so the mode is dropped there
-    // (Prisma's SQLite provider rejects the field entirely).
     const isPg = (process.env.DATABASE_URL ?? '').startsWith('postgres');
     const ciContains = (value: string) =>
       isPg ? { contains: value, mode: 'insensitive' as const } : { contains: value };
@@ -59,7 +65,11 @@ export default async function CasesPage({
   }
   if (filters.countryId) where['countryId'] = filters.countryId;
   if (filters.brandId) where['brandId'] = filters.brandId;
-  if (filters.status) where['status'] = filters.status;
+  if (filters.status) {
+    where['status'] = filters.status;
+  } else if (bucket !== 'all') {
+    where['status'] = { in: [...STATUS_BUCKETS[bucket]] };
+  }
   if (filters.assignedToId) where['assignedToId'] = filters.assignedToId;
   if (filters.fromDate || filters.toDate) {
     const createdAt: Record<string, Date> = {};
@@ -68,13 +78,17 @@ export default async function CasesPage({
     where['createdAt'] = createdAt;
   }
 
-  const [countries, brands, total, cases] = await Promise.all([
+  // Bucket counts — ignore bucket/status from `where` so tabs reflect the
+  // full picture under the other filters (country, date, search).
+  const countWhere: Record<string, unknown> = { ...where };
+  delete countWhere['status'];
+
+  const [countries, total, cases, bucketGroups] = await Promise.all([
     prisma.country.findMany({
       where: { isActive: true },
       include: { registry: true },
       orderBy: { sortOrder: 'asc' },
     }),
-    prisma.brand.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
     prisma.refundCase.count({ where }),
     prisma.refundCase.findMany({
       where,
@@ -94,7 +108,24 @@ export default async function CasesPage({
       skip: (filters.page - 1) * filters.pageSize,
       take: filters.pageSize,
     }),
+    prisma.refundCase.groupBy({
+      by: ['status'],
+      where: countWhere,
+      _count: { _all: true },
+    }),
   ]);
+
+  const byStatus = new Map<string, number>(
+    bucketGroups.map((g) => [g.status, g._count._all]),
+  );
+  const sumIn = (list: readonly string[]) =>
+    list.reduce((acc, s) => acc + (byStatus.get(s) ?? 0), 0);
+  const counts = {
+    all: Array.from(byStatus.values()).reduce((a, b) => a + b, 0),
+    open: sumIn(STATUS_BUCKETS.open),
+    resolved: sumIn(STATUS_BUCKETS.resolved),
+    closed: sumIn(STATUS_BUCKETS.closed),
+  };
 
   const rows: CaseRow[] = cases.map((c) => ({
     id: c.id,
@@ -146,7 +177,7 @@ export default async function CasesPage({
           name: c.registry.nameEn,
           flag: c.registry.flag ?? '',
         }))}
-        brands={brands.map((b) => ({ id: b.id, name: b.name }))}
+        counts={counts}
       />
 
       {cases.length === 0 ? (
@@ -172,7 +203,7 @@ export default async function CasesPage({
       ) : (
         <Card>
           <CardContent className="p-0">
-            <CasesTable locale={locale} cases={rows} canApprove={canApprove} />
+            <CasesTable locale={locale} cases={rows} />
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between border-t border-border px-4 py-3">

@@ -11,6 +11,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PaymentBrand } from '@/components/ui/payment-method-icons';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
   Plus,
@@ -356,15 +363,15 @@ function AddMethodForm({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="pm-exec">Execution type</Label>
-          <select
-            id="pm-exec"
-            value={executionType}
-            onChange={(e) => setExecutionType(e.target.value)}
-            className="flex h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
-          >
-            <option value="MANUAL">Manual</option>
-            <option value="BATCH">Batch</option>
-          </select>
+          <Select value={executionType} onValueChange={setExecutionType}>
+            <SelectTrigger id="pm-exec">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="MANUAL">Manual</SelectItem>
+              <SelectItem value="BATCH">Batch</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="pm-sort">Sort order</Label>
@@ -450,14 +457,15 @@ function EditMethodRow({ method, onClose }: { method: MethodRow; onClose: () => 
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Execution</Label>
-            <select
-              value={executionType}
-              onChange={(e) => setExecutionType(e.target.value)}
-              className="flex h-8 w-full rounded-md border border-border bg-surface px-2 text-sm"
-            >
-              <option value="MANUAL">Manual</option>
-              <option value="BATCH">Batch</option>
-            </select>
+            <Select value={executionType} onValueChange={setExecutionType}>
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="MANUAL">Manual</SelectItem>
+                <SelectItem value="BATCH">Batch</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Sort order</Label>
