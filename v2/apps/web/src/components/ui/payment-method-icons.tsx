@@ -150,8 +150,8 @@ function VisaBadge({ label, size }: RendererProps) {
 
 function MastercardBadge({ label, size }: RendererProps) {
   // Classic overlapping red + yellow circles on a near-black field.
-  const circle = size === 'md' ? 'h-5 w-5' : 'h-3 w-3';
-  const overlap = size === 'md' ? '-ms-2' : '-ms-1.5';
+  const circle = size === 'md' ? 'h-4 w-4' : 'h-2.5 w-2.5';
+  const overlap = size === 'md' ? '-ms-1.5' : '-ms-1';
   return (
     <Chip label={label} size={size} className="bg-[#11151f]">
       <span className="relative inline-flex items-center">
@@ -207,7 +207,7 @@ function KnetBadge({ label, size }: RendererProps) {
 
 function AuraBadge({ label, size }: RendererProps) {
   return (
-    <Chip label={label} size={size} className="bg-primary/10 text-primary ring-primary/20">
+    <Chip label={label} size={size} className="bg-white">
       <AuraGlyph size={size} />
     </Chip>
   );
@@ -251,14 +251,22 @@ function AppleLogo({ size }: { size: PaymentSize }) {
 }
 
 function AuraGlyph({ size }: { size: PaymentSize }) {
+  // Aura brand mark: pink circle with Arabic calligraphy "نور" inside.
+  const cls = size === 'md' ? 'h-6 w-6' : 'h-3.5 w-3.5';
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className={size === 'md' ? 'h-4 w-4' : 'h-3 w-3'}
-      fill="currentColor"
-      aria-hidden
-    >
-      <path d="M12 2l2.09 6.26L20 9l-5 4.18L16.18 20 12 16.77 7.82 20 9 13.18 4 9l5.91-.74L12 2z" />
+    <svg viewBox="0 0 48 48" className={cls} aria-hidden fill="none">
+      <circle cx="24" cy="24" r="20" stroke="#E6007E" strokeWidth="3" fill="none" />
+      <text
+        x="24"
+        y="28"
+        textAnchor="middle"
+        fontFamily="Arial, sans-serif"
+        fontWeight="700"
+        fontSize="16"
+        fill="#E6007E"
+      >
+        نور
+      </text>
     </svg>
   );
 }

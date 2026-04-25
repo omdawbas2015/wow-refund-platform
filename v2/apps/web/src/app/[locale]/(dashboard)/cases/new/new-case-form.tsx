@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertTriangle, Check, Star } from 'lucide-react';
+import { AlertTriangle, Check } from 'lucide-react';
 import Link from 'next/link';
 import { PaymentBrand } from '@/components/ui/payment-method-icons';
 import { cn } from '@/lib/utils';
@@ -122,7 +122,7 @@ export function NewCaseForm({
 
   return (
     <form
-      className="space-y-6"
+      className="space-y-8"
       onSubmit={(e) => {
         e.preventDefault();
         void submit(false);
@@ -175,6 +175,7 @@ export function NewCaseForm({
         </Alert>
       )}
 
+      {/* ── Country & Brand ── */}
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="country">Country</Label>
@@ -211,6 +212,7 @@ export function NewCaseForm({
         </div>
       </section>
 
+      {/* ── Customer ── */}
       <section className="space-y-3">
         <h3 className="text-heading-sm text-heading">Customer</h3>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -249,6 +251,7 @@ export function NewCaseForm({
         </div>
       </section>
 
+      {/* ── Order ── */}
       <section className="space-y-3">
         <h3 className="text-heading-sm text-heading">Order</h3>
         <div className="grid gap-4 sm:grid-cols-3">
@@ -287,7 +290,8 @@ export function NewCaseForm({
         </div>
       </section>
 
-      <section className="space-y-3">
+      {/* ── Payment method + Aura ── */}
+      <section className="space-y-4">
         <div className="flex items-end justify-between gap-4">
           <h3 className="text-heading-sm text-heading">Payment method</h3>
           <p className="text-xs text-muted-foreground">
@@ -310,10 +314,10 @@ export function NewCaseForm({
                 aria-checked={selected}
                 onClick={() => setPaymentMethodId(m.id)}
                 className={cn(
-                  'relative flex items-center gap-2 rounded-lg border bg-surface px-3 py-2.5 text-sm transition-colors',
+                  'relative flex items-center gap-2 rounded-lg border bg-surface px-3 py-2.5 text-sm transition-all',
                   selected
-                    ? 'border-primary ring-2 ring-primary/20'
-                    : 'border-border hover:border-heading/30',
+                    ? 'border-primary shadow-sm ring-2 ring-primary/20'
+                    : 'border-border hover:border-heading/30 hover:shadow-sm',
                 )}
               >
                 <PaymentBrand brandKey={m.key} size="sm" />
@@ -326,8 +330,33 @@ export function NewCaseForm({
               </button>
             );
           })}
+
+          {/* Aura Points — add-on toggle alongside payment methods */}
+          <button
+            type="button"
+            aria-pressed={includeAura}
+            onClick={() => {
+              setIncludeAura(!includeAura);
+              if (includeAura) setAuraPoints('');
+            }}
+            className={cn(
+              'relative flex items-center gap-2 rounded-lg border bg-surface px-3 py-2.5 text-sm transition-all',
+              includeAura
+                ? 'border-[#E6007E] shadow-sm ring-2 ring-[#E6007E]/20'
+                : 'border-border hover:border-heading/30 hover:shadow-sm',
+            )}
+          >
+            <PaymentBrand brandKey="AURA" size="sm" />
+            <span className="font-medium text-heading">Aura</span>
+            {includeAura && (
+              <span className="absolute end-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#E6007E] text-white">
+                <Check className="h-2.5 w-2.5" />
+              </span>
+            )}
+          </button>
         </div>
 
+        {/* Auth code — shown when KNET (or any requiresAuthCode method) is selected */}
         {selectedMethod?.requiresAuthCode && (
           <div className="space-y-1.5">
             <Label htmlFor="authCode">Auth code</Label>
@@ -344,147 +373,144 @@ export function NewCaseForm({
             </p>
           </div>
         )}
-      </section>
 
-      <section className="space-y-3">
-        <h3 className="text-heading-sm text-heading">Refund</h3>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => { setRefundType('full'); setRefundAmount(''); }}
-            className={cn(
-              'rounded-lg border px-4 py-2 text-sm font-medium transition-colors',
-              refundType === 'full'
-                ? 'border-primary bg-primary/5 text-primary ring-2 ring-primary/20'
-                : 'border-border bg-surface text-heading hover:border-heading/30',
-            )}
-          >
-            Full refund
-          </button>
-          <button
-            type="button"
-            onClick={() => setRefundType('partial')}
-            className={cn(
-              'rounded-lg border px-4 py-2 text-sm font-medium transition-colors',
-              refundType === 'partial'
-                ? 'border-primary bg-primary/5 text-primary ring-2 ring-primary/20'
-                : 'border-border bg-surface text-heading hover:border-heading/30',
-            )}
-          >
-            Partial refund
-          </button>
-        </div>
-
-        {refundType === 'full' && orderNum > 0 && (
-          <p className="text-sm text-muted-foreground">
-            Full refund of <span className="font-mono font-medium text-heading">{orderNum.toFixed(3)} {currency}</span>
-          </p>
-        )}
-
-        {refundType === 'partial' && (
-          <div className="space-y-1.5">
-            <Label htmlFor="refundAmount">Refund amount ({currency})</Label>
-            <Input
-              id="refundAmount"
-              type="number"
-              step="0.001"
-              min="0"
-              max={orderNum || undefined}
-              value={refundAmount}
-              onChange={(e) => setRefundAmount(e.target.value)}
-              required
-              placeholder={`Max ${orderNum.toFixed(3)}`}
-            />
-            {exceedsOrder && (
-              <p className="text-xs text-destructive">Refund exceeds the order amount.</p>
-            )}
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-heading-sm text-heading">
-          Aura points{' '}
-          <span className="text-sm font-normal text-muted-foreground">
-            (optional sidecar)
-          </span>
-        </h3>
-        <button
-          type="button"
-          onClick={() => {
-            setIncludeAura(!includeAura);
-            if (includeAura) setAuraPoints('');
-          }}
-          className={cn(
-            'flex items-center gap-2.5 rounded-lg border px-4 py-3 text-sm transition-colors',
-            includeAura
-              ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-              : 'border-border bg-surface hover:border-heading/30',
-          )}
-        >
-          <span className={cn(
-            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
-            includeAura ? 'bg-primary/10 text-primary' : 'bg-surface-subtle text-muted-foreground',
-          )}>
-            <Star className="h-4 w-4" />
-          </span>
-          <span className="font-medium text-heading">Aura Points</span>
-          {includeAura && (
-            <span className="ms-auto flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Check className="h-3 w-3" />
-            </span>
-          )}
-        </button>
-
+        {/* Aura points input — shown when Aura is toggled on */}
         {includeAura && (
-          <div className="space-y-1.5">
-            <Label htmlFor="auraPoints">Points to refund</Label>
-            <Input
-              id="auraPoints"
-              type="number"
-              min="0"
-              step="1"
-              value={auraPoints}
-              onChange={(e) => setAuraPoints(e.target.value)}
-              placeholder="Enter points"
-              required
-            />
+          <div className="rounded-lg border border-[#E6007E]/20 bg-[#E6007E]/5 p-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="auraPoints" className="text-sm font-medium">
+                Aura points to refund
+              </Label>
+              <Input
+                id="auraPoints"
+                type="number"
+                min="0"
+                step="1"
+                value={auraPoints}
+                onChange={(e) => setAuraPoints(e.target.value)}
+                placeholder="Enter points"
+                required
+                className="bg-surface"
+              />
+            </div>
           </div>
         )}
       </section>
 
+      {/* ── Refund ── */}
+      <section className="space-y-4">
+        <h3 className="text-heading-sm text-heading">Refund</h3>
+
+        <div className="rounded-lg border border-border bg-surface-subtle/50 p-4">
+          <div className="flex items-center gap-1 rounded-md bg-surface p-0.5 border border-border w-fit">
+            <button
+              type="button"
+              onClick={() => { setRefundType('full'); setRefundAmount(''); }}
+              className={cn(
+                'rounded-md px-4 py-1.5 text-sm font-medium transition-all',
+                refundType === 'full'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-heading',
+              )}
+            >
+              Full refund
+            </button>
+            <button
+              type="button"
+              onClick={() => setRefundType('partial')}
+              className={cn(
+                'rounded-md px-4 py-1.5 text-sm font-medium transition-all',
+                refundType === 'partial'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-heading',
+              )}
+            >
+              Partial refund
+            </button>
+          </div>
+
+          <div className="mt-4">
+            {refundType === 'full' ? (
+              orderNum > 0 ? (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm text-muted-foreground">Refund amount:</span>
+                  <span className="text-lg font-semibold font-mono text-heading">
+                    {orderNum.toFixed(3)}
+                  </span>
+                  <span className="text-sm text-muted-foreground">{currency}</span>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Enter the order amount above — it will be used as the refund total.
+                </p>
+              )
+            ) : (
+              <div className="space-y-2">
+                {orderNum > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Order total: <span className="font-mono font-medium">{orderNum.toFixed(3)} {currency}</span>
+                  </p>
+                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="refundAmount">Refund amount ({currency})</Label>
+                  <Input
+                    id="refundAmount"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    max={orderNum || undefined}
+                    value={refundAmount}
+                    onChange={(e) => setRefundAmount(e.target.value)}
+                    required
+                    placeholder={orderNum > 0 ? `Max ${orderNum.toFixed(3)}` : '0.000'}
+                    className="bg-surface font-mono"
+                  />
+                  {exceedsOrder && (
+                    <p className="text-xs text-destructive">Refund exceeds the order amount.</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Root cause ── */}
       <section className="space-y-3">
         <h3 className="text-heading-sm text-heading">Root cause</h3>
-        <div className="space-y-1.5">
-          <Label htmlFor="rootCause">Category</Label>
-          <select
-            id="rootCause"
-            value={rootCauseId}
-            onChange={(e) => setRootCauseId(e.target.value)}
-            className="flex h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
-          >
-            <option value="">Select…</option>
-            {rootCauses.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="rootCauseNotes">Notes</Label>
-          <textarea
-            id="rootCauseNotes"
-            value={rootCauseNotes}
-            onChange={(e) => setRootCauseNotes(e.target.value)}
-            className="flex min-h-[90px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-            placeholder="Anything useful for the approver…"
-            maxLength={2000}
-          />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="rootCause">Category</Label>
+            <select
+              id="rootCause"
+              value={rootCauseId}
+              onChange={(e) => setRootCauseId(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
+            >
+              <option value="">Select...</option>
+              {rootCauses.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="rootCauseNotes">Notes</Label>
+            <textarea
+              id="rootCauseNotes"
+              value={rootCauseNotes}
+              onChange={(e) => setRootCauseNotes(e.target.value)}
+              className="flex min-h-[80px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+              placeholder="Anything useful for the approver..."
+              maxLength={2000}
+            />
+          </div>
         </div>
       </section>
 
-      <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
+      {/* ── Actions ── */}
+      <div className="flex items-center justify-end gap-3 border-t border-border pt-5">
         <Button
           type="button"
           variant="ghost"
@@ -494,7 +520,7 @@ export function NewCaseForm({
           Cancel
         </Button>
         <Button type="submit" disabled={isPending || exceedsOrder}>
-          {isPending ? 'Creating…' : 'Create case'}
+          {isPending ? 'Creating...' : 'Create case'}
         </Button>
       </div>
     </form>
