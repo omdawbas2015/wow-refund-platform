@@ -174,7 +174,6 @@ export async function createCaseAction(
                   amount: c.amount,
                   currency: data.orderCurrency,
                   authCode: c.authCode || null,
-                  last4: c.last4 || null,
                   status: 'PENDING',
                 })),
               },

@@ -17,16 +17,16 @@ export type CaseStatusValue = (typeof caseStatuses)[number];
 export const auraStatuses = ['NONE', 'PENDING', 'COMPLETED', 'FAILED'] as const;
 export const auraStatusSchema = z.enum(auraStatuses);
 
+/**
+ * A refund case captures exactly one payment method — the network the
+ * customer tapped. We don't split a refund across multiple rails, and we
+ * don't store card numbers (agents only pick a brand). KNET carries an
+ * auth code; everything else doesn't.
+ */
 export const refundComponentInput = z.object({
   paymentMethodId: nonEmptyString,
   amount: z.coerce.number().positive('Amount must be greater than zero'),
   authCode: z.string().trim().optional().nullable(),
-  last4: z
-    .string()
-    .trim()
-    .regex(/^\d{4}$/, 'Must be exactly 4 digits')
-    .optional()
-    .nullable(),
 });
 export type RefundComponentInput = z.infer<typeof refundComponentInput>;
 
@@ -50,7 +50,12 @@ export const createCaseSchema = z.object({
   orderAmount: z.coerce.number().positive(),
   orderCurrency: z.string().trim().length(3),
 
-  components: z.array(refundComponentInput).min(1, 'Add at least one payment component'),
+  // Exactly one payment component. Validated as a length-1 array so the
+  // shape stays aligned with the `case_component` table (1-N in schema)
+  // and we keep the door open for split-payment later without a migration.
+  components: z
+    .array(refundComponentInput)
+    .length(1, 'A case must record exactly one payment method'),
 
   auraPoints: z.coerce.number().int().nonnegative().optional().nullable(),
 

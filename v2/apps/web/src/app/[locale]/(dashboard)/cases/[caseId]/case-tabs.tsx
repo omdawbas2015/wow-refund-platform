@@ -56,7 +56,6 @@ type Component = {
   amount: number;
   currency: string;
   authCode: string | null;
-  last4: string | null;
   arn: string | null;
   status: string;
 };
@@ -417,7 +416,6 @@ function ComponentsTab({ components }: { components: Component[] }) {
             <th className="px-4 py-2 text-start font-medium">Payment method</th>
             <th className="px-4 py-2 text-end font-medium">Amount</th>
             <th className="px-4 py-2 text-start font-medium">Auth code</th>
-            <th className="px-4 py-2 text-start font-medium">Last 4</th>
             <th className="px-4 py-2 text-start font-medium">ARN</th>
             <th className="px-4 py-2 text-start font-medium">Status</th>
           </tr>
@@ -438,7 +436,6 @@ function ComponentsTab({ components }: { components: Component[] }) {
                 {formatMoney(c.amount, c.currency)}
               </td>
               <td className="px-4 py-3 font-mono text-xs">{c.authCode ?? '—'}</td>
-              <td className="px-4 py-3 font-mono text-xs">{c.last4 ? `•••• ${c.last4}` : '—'}</td>
               <td className="px-4 py-3 font-mono text-xs">{c.arn ?? '—'}</td>
               <td className="px-4 py-3">
                 <ComponentStatusBadge status={c.status} />

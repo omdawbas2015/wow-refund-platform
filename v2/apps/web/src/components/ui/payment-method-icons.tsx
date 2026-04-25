@@ -6,13 +6,15 @@ type PaymentMethodInfo = {
   label: string;
 };
 
-type Size = 'sm' | 'md';
+export type PaymentSize = 'sm' | 'md';
 
 /**
- * Stripe-checkout-style payment-method badges. Every badge shares the same
- * card-chip footprint (32×20 / 40×24) so a row of them reads like accepted-
- * methods marks on a real payment page — tight, consistent, and scannable.
- * We show brand glyphs only; the human-readable label lives in the tooltip.
+ * Payment-method badges styled after real-world brand marks on a Stripe
+ * checkout: fixed card-chip aspect ratio, authentic colors, glyphs / short
+ * wordmarks only. The label never appears on the chip itself — it lives
+ * in the native tooltip — so rows stay tight and scannable across brands.
+ *
+ * Sizes: sm = 36×22 (list rows), md = 56×36 (form picker / hero).
  */
 export function PaymentMethodIcons({
   methods,
@@ -20,7 +22,7 @@ export function PaymentMethodIcons({
   className,
 }: {
   methods: PaymentMethodInfo[];
-  size?: Size;
+  size?: PaymentSize;
   className?: string;
 }) {
   if (methods.length === 0) {
@@ -35,150 +37,221 @@ export function PaymentMethodIcons({
   });
 
   return (
-    <div className={cn('inline-flex flex-wrap items-center gap-1', className)}>
+    <div className={cn('inline-flex flex-wrap items-center gap-1.5', className)}>
       {unique.map((m) => (
-        <PaymentMethodBadge key={m.key} info={m} size={size} />
+        <PaymentBrand key={m.key} brandKey={m.key} label={m.label} size={size} />
       ))}
     </div>
   );
 }
 
-function PaymentMethodBadge({ info, size }: { info: PaymentMethodInfo; size: Size }) {
-  // Fixed card-chip aspect ratio keeps a row of mixed methods visually tidy.
-  const sizing =
-    size === 'md'
-      ? 'h-6 w-10 rounded-[5px]'
-      : 'h-5 w-8 rounded-[4px]';
-  const Renderer = RENDERERS[info.key] ?? FallbackBadge;
-  return <Renderer label={info.label} sizing={sizing} size={size} />;
+/**
+ * Render a single brand chip by key. Exposed so the New Case form can
+ * render larger picker tiles without reconstructing a `methods` array.
+ */
+export function PaymentBrand({
+  brandKey,
+  label,
+  size = 'sm',
+}: {
+  brandKey: string;
+  label?: string;
+  size?: PaymentSize;
+}) {
+  const name = label ?? defaultLabel(brandKey);
+  const Renderer = RENDERERS[brandKey] ?? FallbackBadge;
+  return <Renderer label={name} size={size} />;
 }
 
-type RendererProps = { label: string; sizing: string; size: Size };
+function defaultLabel(key: string): string {
+  switch (key) {
+    case 'VISA':
+      return 'Visa';
+    case 'MASTERCARD':
+      return 'Mastercard';
+    case 'MADA':
+      return 'Mada';
+    case 'APPLE_PAY':
+      return 'Apple Pay';
+    case 'KNET':
+      return 'KNET';
+    case 'AURA':
+      return 'Aura';
+    case 'CREDIT_CARD':
+      return 'Credit card';
+    default:
+      return key;
+  }
+}
+
+type RendererProps = { label: string; size: PaymentSize };
 type Renderer = (p: RendererProps) => React.ReactElement;
 
 const RENDERERS: Record<string, Renderer> = {
-  APPLE_PAY: ApplePayBadge,
-  CREDIT_CARD: CreditCardBadge,
-  KNET: KnetBadge,
+  VISA: VisaBadge,
+  MASTERCARD: MastercardBadge,
   MADA: MadaBadge,
+  APPLE_PAY: ApplePayBadge,
+  KNET: KnetBadge,
   AURA: AuraBadge,
+  CREDIT_CARD: CreditCardBadge,
 };
 
-function ApplePayBadge({ label, sizing, size }: RendererProps) {
+// Shared shell so every brand sits on the same card-chip footprint. The
+// chip carries a subtle border to separate it from the row background.
+function Chip({
+  children,
+  label,
+  size,
+  className,
+}: {
+  children: React.ReactNode;
+  label: string;
+  size: PaymentSize;
+  className?: string;
+}) {
   return (
     <span
       title={label}
       aria-label={label}
+      role="img"
       className={cn(
-        'inline-flex items-center justify-center bg-[#0b0b0b] text-white ring-1 ring-black/10',
-        sizing,
+        'inline-flex shrink-0 items-center justify-center overflow-hidden ring-1 ring-inset ring-black/10',
+        size === 'md' ? 'h-9 w-14 rounded-md' : 'h-[22px] w-9 rounded-[5px]',
+        className,
       )}
     >
-      <AppleLogo size={size} />
+      {children}
     </span>
   );
 }
 
-function KnetBadge({ label, sizing, size }: RendererProps) {
+function VisaBadge({ label, size }: RendererProps) {
   return (
-    <span
-      title={label}
-      aria-label={label}
-      className={cn(
-        'inline-flex items-center justify-center bg-white ring-1 ring-border',
-        sizing,
-      )}
-    >
+    <Chip label={label} size={size} className="bg-white">
       <span
         className={cn(
-          'font-extrabold leading-none tracking-[0.04em]',
-          size === 'md' ? 'text-[10px]' : 'text-[8px]',
+          'font-black italic leading-none tracking-[-0.02em] text-[#1a1f71]',
+          size === 'md' ? 'text-[14px]' : 'text-[9px]',
+        )}
+      >
+        VISA
+      </span>
+    </Chip>
+  );
+}
+
+function MastercardBadge({ label, size }: RendererProps) {
+  // Classic overlapping red + yellow circles on a near-black field.
+  const circle = size === 'md' ? 'h-5 w-5' : 'h-3 w-3';
+  const overlap = size === 'md' ? '-ms-2' : '-ms-1.5';
+  return (
+    <Chip label={label} size={size} className="bg-[#11151f]">
+      <span className="relative inline-flex items-center">
+        <span className={cn('rounded-full bg-[#eb001b]', circle)} />
+        <span
+          className={cn(
+            'rounded-full bg-[#f79e1b] mix-blend-screen',
+            circle,
+            overlap,
+          )}
+        />
+      </span>
+    </Chip>
+  );
+}
+
+function MadaBadge({ label, size }: RendererProps) {
+  // mada brand uses lowercase wordmark with a teal "m" and "d".
+  return (
+    <Chip label={label} size={size} className="bg-white">
+      <span
+        className={cn(
+          'font-black lowercase leading-none tracking-[-0.02em]',
+          size === 'md' ? 'text-[13px]' : 'text-[8px]',
+        )}
+      >
+        <span className="text-[#84cdde]">m</span>
+        <span className="text-[#231f20]">a</span>
+        <span className="text-[#84cdde]">d</span>
+        <span className="text-[#231f20]">a</span>
+      </span>
+    </Chip>
+  );
+}
+
+function ApplePayBadge({ label, size }: RendererProps) {
+  // White "Pay" badge with the apple glyph — matches Apple's marketing mark
+  // (what you see on a device's Wallet, not the black app icon).
+  return (
+    <Chip label={label} size={size} className="bg-white">
+      <span
+        className={cn(
+          'inline-flex items-center gap-[1px] font-semibold text-black',
+          size === 'md' ? 'text-[11px]' : 'text-[7px]',
+        )}
+      >
+        <AppleLogo size={size} />
+        <span className="leading-none">Pay</span>
+      </span>
+    </Chip>
+  );
+}
+
+function KnetBadge({ label, size }: RendererProps) {
+  // KNET's wordmark-on-white treatment, compact to the card-chip footprint.
+  return (
+    <Chip label={label} size={size} className="bg-white">
+      <span
+        className={cn(
+          'font-black uppercase leading-none tracking-[0.06em]',
+          size === 'md' ? 'text-[11px]' : 'text-[7px]',
         )}
       >
         <span className="text-[#00a651]">K</span>
         <span className="text-[#58595b]">NET</span>
       </span>
-    </span>
+    </Chip>
   );
 }
 
-function CreditCardBadge({ label, sizing, size }: RendererProps) {
+function AuraBadge({ label, size }: RendererProps) {
   return (
-    <span
-      title={label}
-      aria-label={label}
-      className={cn(
-        'inline-flex items-center justify-center bg-[#1a1f36] text-white ring-1 ring-black/10',
-        sizing,
-      )}
-    >
-      <CreditCard className={size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3'} strokeWidth={2} />
-    </span>
-  );
-}
-
-function MadaBadge({ label, sizing, size }: RendererProps) {
-  return (
-    <span
-      title={label}
-      aria-label={label}
-      className={cn(
-        'inline-flex items-center justify-center bg-white ring-1 ring-border',
-        sizing,
-      )}
-    >
-      <span
-        className={cn(
-          'font-bold leading-none tracking-[0.04em]',
-          size === 'md' ? 'text-[10px]' : 'text-[8px]',
-        )}
-      >
-        <span className="text-[#84cdde]">m</span>
-        <span className="text-[#58595b]">a</span>
-        <span className="text-[#84cdde]">d</span>
-        <span className="text-[#58595b]">a</span>
-      </span>
-    </span>
-  );
-}
-
-function AuraBadge({ label, sizing, size }: RendererProps) {
-  return (
-    <span
-      title={label}
-      aria-label={label}
-      className={cn(
-        'inline-flex items-center justify-center bg-primary/10 text-primary ring-1 ring-primary/20',
-        sizing,
-      )}
-    >
+    <Chip label={label} size={size} className="bg-primary/10 text-primary ring-primary/20">
       <AuraGlyph size={size} />
-    </span>
+    </Chip>
   );
 }
 
-function FallbackBadge({ label, sizing, size }: RendererProps) {
+function CreditCardBadge({ label, size }: RendererProps) {
   return (
-    <span
-      title={label}
-      aria-label={label}
-      className={cn(
-        'inline-flex items-center justify-center bg-surface-subtle text-muted-foreground ring-1 ring-border',
-        sizing,
-      )}
-    >
-      <CreditCard className={size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3'} strokeWidth={1.75} />
-    </span>
+    <Chip label={label} size={size} className="bg-[#1a1f36] text-white">
+      <CreditCard
+        className={size === 'md' ? 'h-4 w-4' : 'h-3 w-3'}
+        strokeWidth={2}
+      />
+    </Chip>
+  );
+}
+
+function FallbackBadge({ label, size }: RendererProps) {
+  return (
+    <Chip label={label} size={size} className="bg-surface-subtle text-muted-foreground">
+      <CreditCard
+        className={size === 'md' ? 'h-4 w-4' : 'h-3 w-3'}
+        strokeWidth={1.75}
+      />
+    </Chip>
   );
 }
 
 /* ---------- Glyphs ---------- */
 
-function AppleLogo({ size }: { size: Size }) {
+function AppleLogo({ size }: { size: PaymentSize }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      className={size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3'}
+      className={size === 'md' ? 'h-3 w-3' : 'h-[7px] w-[7px]'}
       fill="currentColor"
       aria-hidden
     >
@@ -187,11 +260,11 @@ function AppleLogo({ size }: { size: Size }) {
   );
 }
 
-function AuraGlyph({ size }: { size: Size }) {
+function AuraGlyph({ size }: { size: PaymentSize }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      className={size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3'}
+      className={size === 'md' ? 'h-4 w-4' : 'h-3 w-3'}
       fill="currentColor"
       aria-hidden
     >

@@ -7,22 +7,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check } from 'lucide-react';
 import Link from 'next/link';
+import { PaymentBrand } from '@/components/ui/payment-method-icons';
+import { cn } from '@/lib/utils';
 
 type Country = { id: string; code: string; name: string; flag: string; currency: string };
 type Brand = { id: string; name: string };
-type PaymentMethod = { id: string; label: string; requiresAuthCode: boolean };
+type PaymentMethod = { id: string; key: string; label: string; requiresAuthCode: boolean };
 type RootCause = { id: string; name: string };
-
-type ComponentRow = {
-  paymentMethodId: string;
-  amount: string;
-  authCode: string;
-  last4: string;
-};
-
-const empty: ComponentRow = { paymentMethodId: '', amount: '', authCode: '', last4: '' };
 
 export function NewCaseForm({
   locale,
@@ -48,11 +41,15 @@ export function NewCaseForm({
   const [orderNumber, setOrderNumber] = useState('');
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [orderAmount, setOrderAmount] = useState('');
+  const [refundAmount, setRefundAmount] = useState('');
   const [rootCauseId, setRootCauseId] = useState('');
   const [rootCauseNotes, setRootCauseNotes] = useState('');
   const [auraPoints, setAuraPoints] = useState('');
 
-  const [components, setComponents] = useState<ComponentRow[]>([{ ...empty }]);
+  // Single payment method per case. No card numbers — the agent only
+  // records the network the customer used (Visa / Mastercard / KNET / …).
+  const [paymentMethodId, setPaymentMethodId] = useState('');
+  const [authCode, setAuthCode] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<{ caseNumber: string; id: string } | null>(null);
@@ -60,21 +57,29 @@ export function NewCaseForm({
   const country = countries.find((c) => c.id === countryId);
   const currency = country?.currency ?? 'USD';
 
-  const totalRefund = components.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
-  const orderAmountNum = Number(orderAmount) || 0;
-  const exceedsOrder = totalRefund > orderAmountNum + 0.001;
-
-  function updateComponent(idx: number, patch: Partial<ComponentRow>) {
-    setComponents((prev) => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
-  }
+  const selectedMethod = paymentMethods.find((m) => m.id === paymentMethodId);
+  const refundNum = Number(refundAmount) || 0;
+  const orderNum = Number(orderAmount) || 0;
+  const exceedsOrder = refundNum > orderNum + 0.001;
 
   async function submit(acknowledgeDuplicate = false) {
     setError(null);
-    // Always clear any prior duplicate alert; the server response below is
-    // the source of truth (it will re-populate `duplicate` if one is still
-    // detected). This prevents a stale warning from lingering when a
-    // "Create anyway" retry fails with an unrelated validation error.
+    // Always clear any prior duplicate alert; the server response is the
+    // source of truth and will re-populate it if the conflict still stands.
     setDuplicate(null);
+
+    if (!paymentMethodId) {
+      setError('Pick the payment method the customer used.');
+      return;
+    }
+    if (selectedMethod?.requiresAuthCode && !authCode.trim()) {
+      setError(`${selectedMethod.label} requires an auth code.`);
+      return;
+    }
+    if (refundNum <= 0) {
+      setError('Refund amount must be greater than zero.');
+      return;
+    }
 
     const payload = {
       countryId,
@@ -84,16 +89,15 @@ export function NewCaseForm({
       customerPhone: customerPhone.trim() || undefined,
       orderNumber: orderNumber.trim(),
       orderDate,
-      orderAmount: Number(orderAmount),
+      orderAmount: orderNum,
       orderCurrency: currency,
-      components: components
-        .filter((c) => c.paymentMethodId && Number(c.amount) > 0)
-        .map((c) => ({
-          paymentMethodId: c.paymentMethodId,
-          amount: Number(c.amount),
-          authCode: c.authCode.trim() || null,
-          last4: c.last4.trim() || null,
-        })),
+      components: [
+        {
+          paymentMethodId,
+          amount: refundNum,
+          authCode: selectedMethod?.requiresAuthCode ? authCode.trim() : null,
+        },
+      ],
       auraPoints: auraPoints ? Number(auraPoints) : undefined,
       rootCauseId: rootCauseId || undefined,
       rootCauseNotes: rootCauseNotes.trim() || undefined,
@@ -265,9 +269,7 @@ export function NewCaseForm({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="orderAmount">
-              Order amount ({currency})
-            </Label>
+            <Label htmlFor="orderAmount">Order amount ({currency})</Label>
             <Input
               id="orderAmount"
               type="number"
@@ -282,112 +284,88 @@ export function NewCaseForm({
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-heading-sm text-heading">Refund components</h3>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setComponents((prev) => [...prev, { ...empty }])}
-          >
-            <Plus className="h-4 w-4" />
-            Add component
-          </Button>
+        <div className="flex items-end justify-between gap-4">
+          <h3 className="text-heading-sm text-heading">Payment method</h3>
+          <p className="text-xs text-muted-foreground">
+            Pick the network the customer tapped — one per case.
+          </p>
         </div>
 
-        <div className="space-y-3">
-          {components.map((c, idx) => {
-            const pm = paymentMethods.find((p) => p.id === c.paymentMethodId);
+        <div
+          role="radiogroup"
+          aria-label="Payment method"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5"
+        >
+          {paymentMethods.map((m) => {
+            const selected = m.id === paymentMethodId;
             return (
-              <div
-                key={idx}
-                className="grid gap-3 rounded-md border border-border bg-surface-subtle/30 p-3 sm:grid-cols-[1fr_1fr_1fr_auto]"
-              >
-                <div className="space-y-1.5">
-                  <Label>Payment method</Label>
-                  <select
-                    value={c.paymentMethodId}
-                    onChange={(e) => updateComponent(idx, { paymentMethodId: e.target.value })}
-                    className="flex h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
-                    required
-                  >
-                    <option value="">Select…</option>
-                    {paymentMethods.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label}
-                        {p.requiresAuthCode ? ' · needs auth code' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Amount ({currency})</Label>
-                  <Input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={c.amount}
-                    onChange={(e) => updateComponent(idx, { amount: e.target.value })}
-                    required
-                  />
-                </div>
-
-                {pm?.requiresAuthCode ? (
-                  <div className="space-y-1.5">
-                    <Label>Auth code</Label>
-                    <Input
-                      value={c.authCode}
-                      onChange={(e) => updateComponent(idx, { authCode: e.target.value })}
-                      required
-                      className="font-mono"
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Label>
-                      Card last 4 <span className="text-muted-foreground">(optional)</span>
-                    </Label>
-                    <Input
-                      value={c.last4}
-                      onChange={(e) => updateComponent(idx, { last4: e.target.value.replace(/\D/g, '').slice(0, 4) })}
-                      className="font-mono"
-                      maxLength={4}
-                    />
-                  </div>
+              <button
+                key={m.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setPaymentMethodId(m.id)}
+                className={cn(
+                  'relative flex h-16 flex-col items-center justify-center gap-1.5 rounded-md border bg-surface px-3 text-xs transition-colors',
+                  selected
+                    ? 'border-primary ring-2 ring-primary/20'
+                    : 'border-border hover:border-heading/30',
                 )}
-
-                <div className="flex items-end">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() =>
-                      setComponents((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev))
-                    }
-                    disabled={components.length === 1}
-                    aria-label="Remove component"
-                  >
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                </div>
-              </div>
+              >
+                <PaymentBrand brandKey={m.key} size="md" />
+                <span className="font-medium text-heading">{m.label}</span>
+                {selected && (
+                  <span className="absolute end-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check className="h-3 w-3" />
+                  </span>
+                )}
+              </button>
             );
           })}
         </div>
 
-        <div className="flex items-center justify-between rounded-md bg-surface-subtle/50 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">Total refund</span>
-          <span className={`font-mono font-medium ${exceedsOrder ? 'text-destructive' : ''}`}>
-            {totalRefund.toFixed(3)} {currency}
-            {exceedsOrder && <span className="ms-2 text-xs">exceeds order</span>}
-          </span>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="refundAmount">Refund amount ({currency})</Label>
+            <Input
+              id="refundAmount"
+              type="number"
+              step="0.001"
+              min="0"
+              value={refundAmount}
+              onChange={(e) => setRefundAmount(e.target.value)}
+              required
+            />
+            {exceedsOrder && (
+              <p className="text-xs text-destructive">Refund exceeds the order amount.</p>
+            )}
+          </div>
+
+          {selectedMethod?.requiresAuthCode && (
+            <div className="space-y-1.5">
+              <Label htmlFor="authCode">Auth code</Label>
+              <Input
+                id="authCode"
+                value={authCode}
+                onChange={(e) => setAuthCode(e.target.value)}
+                required
+                className="font-mono"
+                placeholder="A12B34"
+              />
+              <p className="text-xs text-muted-foreground">
+                Printed on the KNET receipt. Required for the batch.
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
       <section className="space-y-3">
         <h3 className="text-heading-sm text-heading">
-          Aura points <span className="text-sm font-normal text-muted-foreground">(optional sidecar, not a payment method)</span>
+          Aura points{' '}
+          <span className="text-sm font-normal text-muted-foreground">
+            (optional sidecar, not a payment method)
+          </span>
         </h3>
         <div className="space-y-1.5">
           <Label htmlFor="auraPoints">Points</Label>
@@ -435,7 +413,12 @@ export function NewCaseForm({
       </section>
 
       <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
-        <Button type="button" variant="ghost" onClick={() => router.push(`/${locale}/cases`)} disabled={isPending}>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => router.push(`/${locale}/cases`)}
+          disabled={isPending}
+        >
           Cancel
         </Button>
         <Button type="submit" disabled={isPending || exceedsOrder}>

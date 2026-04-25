@@ -1,6 +1,10 @@
 /**
  * Default payment methods.
- * Admin can add more from the admin panel (Mada, Tabby, Tamara, PayPal, etc.).
+ * Admin can add more from the admin panel (Tabby, Tamara, PayPal, QPay, etc.).
+ *
+ * Credit cards are modeled as two separate network-level methods (VISA and
+ * MASTERCARD) so a case shows the actual brand the customer tapped, not a
+ * generic "Credit Card" chip.
  */
 
 export interface PaymentMethodSeed {
@@ -16,6 +20,36 @@ export interface PaymentMethodSeed {
 
 export const paymentMethods: readonly PaymentMethodSeed[] = [
   {
+    key: 'VISA',
+    label: 'Visa',
+    labelAr: 'فيزا',
+    iconSlug: 'visa',
+    color: '#1a1f71',
+    requiresAuthCode: false,
+    executionType: 'MANUAL',
+    sortOrder: 10,
+  },
+  {
+    key: 'MASTERCARD',
+    label: 'Mastercard',
+    labelAr: 'ماستركارد',
+    iconSlug: 'mastercard',
+    color: '#000000',
+    requiresAuthCode: false,
+    executionType: 'MANUAL',
+    sortOrder: 20,
+  },
+  {
+    key: 'MADA',
+    label: 'Mada',
+    labelAr: 'مدى',
+    iconSlug: 'mada',
+    color: '#84cdde',
+    requiresAuthCode: false,
+    executionType: 'MANUAL',
+    sortOrder: 30,
+  },
+  {
     key: 'APPLE_PAY',
     label: 'Apple Pay',
     labelAr: 'آبل باي',
@@ -23,17 +57,7 @@ export const paymentMethods: readonly PaymentMethodSeed[] = [
     color: '#000000',
     requiresAuthCode: false,
     executionType: 'MANUAL',
-    sortOrder: 10,
-  },
-  {
-    key: 'CREDIT_CARD',
-    label: 'Credit Card',
-    labelAr: 'بطاقة ائتمان',
-    iconSlug: 'credit-card',
-    color: '#1a1f36',
-    requiresAuthCode: false,
-    executionType: 'MANUAL',
-    sortOrder: 20,
+    sortOrder: 40,
   },
   {
     key: 'KNET',
@@ -43,6 +67,6 @@ export const paymentMethods: readonly PaymentMethodSeed[] = [
     color: '#00a651',
     requiresAuthCode: true,
     executionType: 'BATCH',
-    sortOrder: 30,
+    sortOrder: 50,
   },
 ];

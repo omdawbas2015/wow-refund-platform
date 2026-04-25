@@ -319,7 +319,7 @@ model PasswordResetToken {
 /// Dynamic payment methods. Admin can add new ones (Mada, Tabby, Tamara, etc.)
 model PaymentMethod {
   id                String   @id @default(cuid())
-  key               String   @unique // APPLE_PAY, CREDIT_CARD, KNET, MADA, ...
+  key               String   @unique // VISA, MASTERCARD, MADA, APPLE_PAY, KNET, ...
   label             String
   labelAr           String?
   iconSlug          String? // e.g. 'apple-pay' → /icons/payment/apple-pay.svg

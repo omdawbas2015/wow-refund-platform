@@ -144,7 +144,6 @@ export default async function CaseDetailsPage({
           amount: c.amount,
           currency: c.currency,
           authCode: c.authCode,
-          last4: c.last4,
           arn: c.arn,
           status: c.status,
         }))}

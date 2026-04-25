@@ -57,6 +57,7 @@ export default async function NewCasePage({
             brands={brands.map((b) => ({ id: b.id, name: b.name }))}
             paymentMethods={paymentMethods.map((pm) => ({
               id: pm.id,
+              key: pm.key,
               label: pm.label,
               requiresAuthCode: pm.requiresAuthCode,
             }))}

@@ -234,10 +234,23 @@ async function seedDemoCases() {
   const starbucks = await prisma.brand.findUnique({ where: { slug: 'starbucks' } });
   const applePay = await prisma.paymentMethod.findUnique({ where: { key: 'APPLE_PAY' } });
   const knet = await prisma.paymentMethod.findUnique({ where: { key: 'KNET' } });
-  const card = await prisma.paymentMethod.findUnique({ where: { key: 'CREDIT_CARD' } });
+  const visa = await prisma.paymentMethod.findUnique({ where: { key: 'VISA' } });
+  const mastercard = await prisma.paymentMethod.findUnique({ where: { key: 'MASTERCARD' } });
+  const mada = await prisma.paymentMethod.findUnique({ where: { key: 'MADA' } });
   const rootCause = await prisma.rootCause.findFirst();
 
-  if (!admin || !kuwait || !saudi || !chipotle || !starbucks || !applePay || !knet || !card) {
+  if (
+    !admin ||
+    !kuwait ||
+    !saudi ||
+    !chipotle ||
+    !starbucks ||
+    !applePay ||
+    !knet ||
+    !visa ||
+    !mastercard ||
+    !mada
+  ) {
     console.log('  ! Missing prerequisites, skipping demo cases');
     return;
   }
@@ -252,7 +265,13 @@ async function seedDemoCases() {
     orderAmount: number;
     orderCurrency: string;
     status: string;
-    components: Array<{ paymentMethodId: string; amount: number; authCode?: string; last4?: string }>;
+    // Single payment method per case — an agent only records the network
+    // the customer paid with, not a split across multiple rails. Aura
+    // points are tracked separately on the case (sidecar).
+    component: { paymentMethodId: string; authCode?: string };
+    /** Falls back to orderAmount when omitted (full refund). */
+    refundAmount?: number;
+    auraPoints?: number;
     notes?: string[];
   };
 
@@ -267,7 +286,7 @@ async function seedDemoCases() {
       orderAmount: 12.5,
       orderCurrency: 'KWD',
       status: 'DRAFT',
-      components: [{ paymentMethodId: applePay.id, amount: 12.5, last4: '4242' }],
+      component: { paymentMethodId: applePay.id },
       notes: ['Customer reported missing items in delivery.'],
     },
     {
@@ -280,7 +299,7 @@ async function seedDemoCases() {
       orderAmount: 8.75,
       orderCurrency: 'KWD',
       status: 'PENDING_APPROVAL',
-      components: [{ paymentMethodId: knet.id, amount: 8.75, authCode: 'A12B34' }],
+      component: { paymentMethodId: knet.id, authCode: 'A12B34' },
       notes: ['Drink prepared incorrectly twice.', 'Manager confirmed full refund.'],
     },
     {
@@ -293,7 +312,8 @@ async function seedDemoCases() {
       orderAmount: 95.0,
       orderCurrency: 'SAR',
       status: 'APPROVED',
-      components: [{ paymentMethodId: card.id, amount: 95.0, last4: '8821' }],
+      component: { paymentMethodId: mastercard.id },
+      auraPoints: 500,
     },
     {
       countryId: kuwait.id,
@@ -305,10 +325,8 @@ async function seedDemoCases() {
       orderAmount: 22.0,
       orderCurrency: 'KWD',
       status: 'PARTIALLY_REFUNDED',
-      components: [
-        { paymentMethodId: applePay.id, amount: 12.0, last4: '5454' },
-        { paymentMethodId: knet.id, amount: 8.0, authCode: 'C44D77' },
-      ],
+      component: { paymentMethodId: visa.id },
+      refundAmount: 14.0,
     },
     {
       countryId: saudi.id,
@@ -320,8 +338,8 @@ async function seedDemoCases() {
       orderAmount: 60.0,
       orderCurrency: 'SAR',
       status: 'REFUNDED',
-      components: [{ paymentMethodId: card.id, amount: 60.0, last4: '1234' }],
-      notes: ['Refund completed via Stripe.'],
+      component: { paymentMethodId: mada.id },
+      notes: ['Refund completed in batch.'],
     },
   ];
 
@@ -335,7 +353,7 @@ async function seedDemoCases() {
 
     const year = new Date().getFullYear();
     const caseNumber = `REF-${country.registry.code}-${year}-${(i + 1).toString().padStart(6, '0')}`;
-    const totalRefund = d.components.reduce((s, c) => s + c.amount, 0);
+    const totalRefund = d.refundAmount ?? d.orderAmount;
     const isPartial = Math.abs(totalRefund - d.orderAmount) > 0.001;
 
     const created = await prisma.refundCase.create({
@@ -353,19 +371,25 @@ async function seedDemoCases() {
         totalRefundAmount: totalRefund,
         isPartial,
         status: d.status as never,
+        auraPoints: d.auraPoints ?? null,
+        auraStatus: d.auraPoints ? 'PENDING' : 'NONE',
         rootCauseId: rootCause?.id ?? null,
         createdById: admin.id,
         approvedById: ['APPROVED', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(d.status) ? admin.id : null,
         approvedAt: ['APPROVED', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(d.status) ? new Date() : null,
         components: {
-          create: d.components.map((c) => ({
-            paymentMethodId: c.paymentMethodId,
-            amount: c.amount,
+          create: {
+            paymentMethodId: d.component.paymentMethodId,
+            amount: totalRefund,
             currency: d.orderCurrency,
-            authCode: c.authCode ?? null,
-            last4: c.last4 ?? null,
-            status: d.status === 'REFUNDED' ? 'REFUNDED' : d.status === 'PARTIALLY_REFUNDED' ? 'AWAITING_BATCH' : 'PENDING',
-          })),
+            authCode: d.component.authCode ?? null,
+            status:
+              d.status === 'REFUNDED'
+                ? 'REFUNDED'
+                : d.status === 'PARTIALLY_REFUNDED'
+                  ? 'AWAITING_BATCH'
+                  : 'PENDING',
+          },
         },
       },
     });
