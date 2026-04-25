@@ -77,7 +77,25 @@ export const caseListFiltersSchema = z.object({
   status: caseStatusSchema.optional(),
   assignedToId: z.string().trim().optional(),
   fromDate: z.coerce.date().optional(),
-  toDate: z.coerce.date().optional(),
+  // Date-only inputs (YYYY-MM-DD) coerce to midnight UTC; for `toDate` we
+  // want the filter to be inclusive of the entire end day, so push it to
+  // 23:59:59.999 of that day. Datetime strings that already carry a time
+  // component are left untouched.
+  toDate: z.coerce
+    .date()
+    .optional()
+    .transform((d) => {
+      if (!d) return d;
+      const sameMidnight =
+        d.getUTCHours() === 0 &&
+        d.getUTCMinutes() === 0 &&
+        d.getUTCSeconds() === 0 &&
+        d.getUTCMilliseconds() === 0;
+      if (!sameMidnight) return d;
+      const end = new Date(d);
+      end.setUTCHours(23, 59, 59, 999);
+      return end;
+    }),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });

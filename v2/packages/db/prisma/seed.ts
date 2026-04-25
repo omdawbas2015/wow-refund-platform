@@ -251,9 +251,35 @@ async function seedDemoCases() {
     return;
   }
 
+  // Seed a handful of branches so case rows/details can show a real
+  // physical location. Branches are per-country, so we tag each by the
+  // country id they belong to.
+  const branchSpecs = [
+    { country: kuwait, name: 'The Avenues Mall', code: 'KW-AVN' },
+    { country: kuwait, name: 'Al-Kout Mall', code: 'KW-KOT' },
+    { country: saudi, name: 'Kingdom Centre Riyadh', code: 'SA-KCR' },
+    { country: saudi, name: 'Red Sea Mall Jeddah', code: 'SA-RSM' },
+  ];
+  const branchByCode = new Map<string, { id: string; countryId: string }>();
+  for (const spec of branchSpecs) {
+    const b = await prisma.branch.upsert({
+      where: {
+        countryId_name: { countryId: spec.country.id, name: spec.name },
+      },
+      create: {
+        countryId: spec.country.id,
+        name: spec.name,
+        code: spec.code,
+      },
+      update: {},
+    });
+    branchByCode.set(spec.code, { id: b.id, countryId: b.countryId });
+  }
+
   type Demo = {
     countryId: string;
     brandId: string;
+    branchCode?: string;
     customerName: string;
     customerEmail: string;
     customerPhone: string;
@@ -275,6 +301,7 @@ async function seedDemoCases() {
     {
       countryId: kuwait.id,
       brandId: chipotle.id,
+      branchCode: 'KW-AVN',
       customerName: 'Sara Al-Fahad',
       customerEmail: 'sara.fahad@example.com',
       customerPhone: '+96599887766',
@@ -288,6 +315,7 @@ async function seedDemoCases() {
     {
       countryId: kuwait.id,
       brandId: starbucks.id,
+      branchCode: 'KW-KOT',
       customerName: 'Omar Khan',
       customerEmail: 'omar.k@example.com',
       customerPhone: '+96566554433',
@@ -301,6 +329,7 @@ async function seedDemoCases() {
     {
       countryId: saudi.id,
       brandId: chipotle.id,
+      branchCode: 'SA-KCR',
       customerName: 'Layla Hussain',
       customerEmail: 'layla.h@example.com',
       customerPhone: '+966500112233',
@@ -314,6 +343,7 @@ async function seedDemoCases() {
     {
       countryId: kuwait.id,
       brandId: chipotle.id,
+      branchCode: 'KW-AVN',
       customerName: 'Yousef Al-Mutairi',
       customerEmail: 'yousef.m@example.com',
       customerPhone: '+96598765432',
@@ -327,6 +357,7 @@ async function seedDemoCases() {
     {
       countryId: saudi.id,
       brandId: starbucks.id,
+      branchCode: 'SA-RSM',
       customerName: 'Reem Al-Saud',
       customerEmail: 'reem.s@example.com',
       customerPhone: '+966512345678',
@@ -335,6 +366,7 @@ async function seedDemoCases() {
       orderCurrency: 'SAR',
       status: 'REFUNDED',
       component: { paymentMethodId: mastercard.id },
+      auraPoints: 200,
       notes: ['Refund completed in batch.'],
     },
   ];
@@ -356,6 +388,7 @@ async function seedDemoCases() {
       data: {
         caseNumber,
         countryId: d.countryId,
+        branchId: d.branchCode ? branchByCode.get(d.branchCode)?.id ?? null : null,
         brandId: d.brandId,
         customerName: d.customerName,
         customerEmail: d.customerEmail,
@@ -368,7 +401,11 @@ async function seedDemoCases() {
         isPartial,
         status: d.status as never,
         auraPoints: d.auraPoints ?? null,
-        auraStatus: d.auraPoints ? 'PENDING' : 'NONE',
+        auraStatus: d.auraPoints
+          ? d.status === 'REFUNDED'
+            ? 'COMPLETED'
+            : 'PENDING'
+          : 'NONE',
         rootCauseId: rootCause?.id ?? null,
         createdById: admin.id,
         approvedById: ['APPROVED', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(d.status) ? admin.id : null,
