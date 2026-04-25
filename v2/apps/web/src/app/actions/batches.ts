@@ -49,7 +49,7 @@ function canRunOpsBatch(role: string | null | undefined): boolean {
   return !!role && OPS_ROLES.has(role);
 }
 
-const KNET_KEY = 'knet';
+const KNET_KEY = 'KNET';
 const APP_BASE_URL = process.env['AUTH_URL'] ?? 'http://localhost:3000';
 
 // ─────────────────────────────────────────────────────────────────────────

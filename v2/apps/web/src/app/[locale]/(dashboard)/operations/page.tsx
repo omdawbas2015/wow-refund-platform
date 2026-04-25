@@ -30,7 +30,7 @@ export default async function OperationsPage({
   // Resolve KNET payment method id once so the "pending KNET components"
   // query can use the same criteria as createKnetBatchAction.
   const knetMethod = await prisma.paymentMethod.findFirst({
-    where: { key: 'knet', isActive: true },
+    where: { key: 'KNET', isActive: true },
     select: { id: true },
   });
 
@@ -132,12 +132,14 @@ export default async function OperationsPage({
       orderBy: { sentAt: 'desc' },
       take: 25,
     }),
+    // Mirrors createAuraBatchAction's filter so the count + click stay in sync.
     prisma.refundCase.findMany({
       where: {
         auraStatus: 'PENDING',
         auraBatchId: null,
         auraPoints: { gt: 0 },
         deletedAt: null,
+        status: { in: ['APPROVED', 'IN_EXECUTION', 'PARTIALLY_REFUNDED', 'REFUNDED'] },
       },
       select: {
         id: true,

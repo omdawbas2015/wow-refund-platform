@@ -125,8 +125,12 @@ async function applyApprovalReply(
     });
     const allDecided = remaining === 0;
 
-    await tx.approvalBatch.update({
-      where: { id: batch.id },
+    // Guard the batch close on a non-terminal status so a parallel
+    // magic-link decision or cancel can't be silently overwritten. If the
+    // guard trips (count===0) the case-level updates above already landed,
+    // so we just leave the batch alone — no completedAt clobbering either.
+    await tx.approvalBatch.updateMany({
+      where: { id: batch.id, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
       data: {
         approvedCases: { increment: approved },
         rejectedCases: { increment: rejected },
@@ -134,7 +138,7 @@ async function applyApprovalReply(
         responseReceivedAt: new Date(),
         responseRawBody: rawBody.slice(0, 8000),
         responseParsed: JSON.stringify(Array.from(decisions.entries())),
-        completedAt: allDecided ? new Date() : null,
+        ...(allDecided ? { completedAt: new Date() } : {}),
       },
     });
 
