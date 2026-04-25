@@ -223,12 +223,22 @@ DRAFT / PENDING_APPROVAL / APPROVED / IN_EXECUTION ──▶ CANCELLED
 
 Ordered by phase; do not skip ahead.
 
-### Phase 3 — Approval batches, execution, operations desk
+### Phase 3 — Approval batches, execution, operations desk (PR pending)
 - Daily per-country approval batch → emails the country manager with a signed summary + magic-link fallback (Power Automate flow required).
-- Keyword-flexible reply parsing (`approved` / `rejected` in multiple languages) via the inbound webhook.
+- Keyword-flexible reply parsing (`approved` / `rejected` in English + Arabic) via the inbound webhook.
 - KNET daily global batch → Finance team spreadsheet → ARN suggestions back in via webhook → agent verifies per component.
 - Aura daily global batch → Aura team → confirmation via webhook.
-- `/refund-operations` page — isolated view for refund-ops agents: pending ARN entry, KNET batch status, Aura batch status.
+- `/operations` page — isolated view for refund-ops agents: pending ARN entry, KNET batch status, Aura batch status.
+
+**Implementation status (this branch)**
+- `@wow/validators/batch` — Zod schemas + `classifyDecision()` keyword classifier (EN + AR) + batch-number regexes.
+- `apps/web/src/lib/batches/` — number generation (transaction-safe), reply/ARN parsers, magic-link tokens, formatters, end-to-end inbound processor.
+- `apps/web/src/app/actions/batches.ts` — server actions for create/cancel approval batch, create KNET batch, verify component ARN, create Aura batch, confirm Aura case.
+- `apps/web/src/app/actions/magic-link.ts` — public magic-link decision endpoint backing `/[locale]/approve/[token]`.
+- `apps/web/src/app/api/webhooks/power-automate/route.ts` — wired to `processInboundReply`, persists parse results + linked entities on the inbound row.
+- `apps/web/src/app/[locale]/(dashboard)/operations/` — Refund Operations desk (3 tabs: Approvals, KNET, Aura) with live batch panels and per-component ARN entry.
+- `apps/web/src/app/[locale]/approve/[token]/` — public magic-link landing page that displays batch contents and lets the manager submit a blanket decision.
+- Sidebar: `/operations` link is shown to ADMIN / OPERATIONS / MANAGER roles only.
 
 ### Phase 4 — Promo domain
 - Customer compensation promos (per `brand × country × value` pool, emailed).
