@@ -78,8 +78,7 @@ function defaultLabel(key: string): string {
       return 'Visa';
     case 'MASTERCARD':
       return 'Mastercard';
-    case 'MADA':
-      return 'Mada';
+
     case 'APPLE_PAY':
       return 'Apple Pay';
     case 'KNET':
@@ -99,7 +98,6 @@ type Renderer = (p: RendererProps) => React.ReactElement;
 const RENDERERS: Record<string, Renderer> = {
   VISA: VisaBadge,
   MASTERCARD: MastercardBadge,
-  MADA: MadaBadge,
   APPLE_PAY: ApplePayBadge,
   KNET: KnetBadge,
   AURA: AuraBadge,
@@ -170,24 +168,7 @@ function MastercardBadge({ label, size }: RendererProps) {
   );
 }
 
-function MadaBadge({ label, size }: RendererProps) {
-  // mada brand uses lowercase wordmark with a teal "m" and "d".
-  return (
-    <Chip label={label} size={size} className="bg-white">
-      <span
-        className={cn(
-          'font-black lowercase leading-none tracking-[-0.02em]',
-          size === 'md' ? 'text-[13px]' : 'text-[8px]',
-        )}
-      >
-        <span className="text-[#84cdde]">m</span>
-        <span className="text-[#231f20]">a</span>
-        <span className="text-[#84cdde]">d</span>
-        <span className="text-[#231f20]">a</span>
-      </span>
-    </Chip>
-  );
-}
+
 
 function ApplePayBadge({ label, size }: RendererProps) {
   // White "Pay" badge with the apple glyph — matches Apple's marketing mark

@@ -236,7 +236,6 @@ async function seedDemoCases() {
   const knet = await prisma.paymentMethod.findUnique({ where: { key: 'KNET' } });
   const visa = await prisma.paymentMethod.findUnique({ where: { key: 'VISA' } });
   const mastercard = await prisma.paymentMethod.findUnique({ where: { key: 'MASTERCARD' } });
-  const mada = await prisma.paymentMethod.findUnique({ where: { key: 'MADA' } });
   const rootCause = await prisma.rootCause.findFirst();
 
   if (
@@ -248,8 +247,7 @@ async function seedDemoCases() {
     !applePay ||
     !knet ||
     !visa ||
-    !mastercard ||
-    !mada
+    !mastercard
   ) {
     console.log('  ! Missing prerequisites, skipping demo cases');
     return;
@@ -338,7 +336,7 @@ async function seedDemoCases() {
       orderAmount: 60.0,
       orderCurrency: 'SAR',
       status: 'REFUNDED',
-      component: { paymentMethodId: mada.id },
+      component: { paymentMethodId: visa.id },
       notes: ['Refund completed in batch.'],
     },
   ];

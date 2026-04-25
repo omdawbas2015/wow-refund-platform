@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertTriangle, Check } from 'lucide-react';
+import { AlertTriangle, Check, Star } from 'lucide-react';
 import Link from 'next/link';
 import { PaymentBrand } from '@/components/ui/payment-method-icons';
 import { cn } from '@/lib/utils';
@@ -42,9 +42,11 @@ export function NewCaseForm({
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [orderAmount, setOrderAmount] = useState('');
   const [refundAmount, setRefundAmount] = useState('');
+  const [refundType, setRefundType] = useState<'full' | 'partial'>('full');
   const [rootCauseId, setRootCauseId] = useState('');
   const [rootCauseNotes, setRootCauseNotes] = useState('');
   const [auraPoints, setAuraPoints] = useState('');
+  const [includeAura, setIncludeAura] = useState(false);
 
   // Single payment method per case. No card numbers — the agent only
   // records the network the customer used (Visa / Mastercard / KNET / …).
@@ -58,9 +60,9 @@ export function NewCaseForm({
   const currency = country?.currency ?? 'USD';
 
   const selectedMethod = paymentMethods.find((m) => m.id === paymentMethodId);
-  const refundNum = Number(refundAmount) || 0;
   const orderNum = Number(orderAmount) || 0;
-  const exceedsOrder = refundNum > orderNum + 0.001;
+  const refundNum = refundType === 'full' ? orderNum : (Number(refundAmount) || 0);
+  const exceedsOrder = refundType === 'partial' && refundNum > orderNum + 0.001;
 
   async function submit(acknowledgeDuplicate = false) {
     setError(null);
@@ -77,7 +79,9 @@ export function NewCaseForm({
       return;
     }
     if (refundNum <= 0) {
-      setError('Refund amount must be greater than zero.');
+      setError(refundType === 'full'
+        ? 'Enter the order amount first (it will be used as the refund amount).'
+        : 'Refund amount must be greater than zero.');
       return;
     }
 
@@ -294,7 +298,7 @@ export function NewCaseForm({
         <div
           role="radiogroup"
           aria-label="Payment method"
-          className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-4"
         >
           {paymentMethods.map((m) => {
             const selected = m.id === paymentMethodId;
@@ -306,17 +310,17 @@ export function NewCaseForm({
                 aria-checked={selected}
                 onClick={() => setPaymentMethodId(m.id)}
                 className={cn(
-                  'relative flex h-16 flex-col items-center justify-center gap-1.5 rounded-md border bg-surface px-3 text-xs transition-colors',
+                  'relative flex items-center gap-2 rounded-lg border bg-surface px-3 py-2.5 text-sm transition-colors',
                   selected
                     ? 'border-primary ring-2 ring-primary/20'
                     : 'border-border hover:border-heading/30',
                 )}
               >
-                <PaymentBrand brandKey={m.key} size="md" />
+                <PaymentBrand brandKey={m.key} size="sm" />
                 <span className="font-medium text-heading">{m.label}</span>
                 {selected && (
-                  <span className="absolute end-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <Check className="h-3 w-3" />
+                  <span className="absolute end-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check className="h-2.5 w-2.5" />
                   </span>
                 )}
               </button>
@@ -324,7 +328,60 @@ export function NewCaseForm({
           })}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        {selectedMethod?.requiresAuthCode && (
+          <div className="space-y-1.5">
+            <Label htmlFor="authCode">Auth code</Label>
+            <Input
+              id="authCode"
+              value={authCode}
+              onChange={(e) => setAuthCode(e.target.value)}
+              required
+              className="font-mono"
+              placeholder="A12B34"
+            />
+            <p className="text-xs text-muted-foreground">
+              Printed on the KNET receipt. Required for the batch.
+            </p>
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-heading-sm text-heading">Refund</h3>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => { setRefundType('full'); setRefundAmount(''); }}
+            className={cn(
+              'rounded-lg border px-4 py-2 text-sm font-medium transition-colors',
+              refundType === 'full'
+                ? 'border-primary bg-primary/5 text-primary ring-2 ring-primary/20'
+                : 'border-border bg-surface text-heading hover:border-heading/30',
+            )}
+          >
+            Full refund
+          </button>
+          <button
+            type="button"
+            onClick={() => setRefundType('partial')}
+            className={cn(
+              'rounded-lg border px-4 py-2 text-sm font-medium transition-colors',
+              refundType === 'partial'
+                ? 'border-primary bg-primary/5 text-primary ring-2 ring-primary/20'
+                : 'border-border bg-surface text-heading hover:border-heading/30',
+            )}
+          >
+            Partial refund
+          </button>
+        </div>
+
+        {refundType === 'full' && orderNum > 0 && (
+          <p className="text-sm text-muted-foreground">
+            Full refund of <span className="font-mono font-medium text-heading">{orderNum.toFixed(3)} {currency}</span>
+          </p>
+        )}
+
+        {refundType === 'partial' && (
           <div className="space-y-1.5">
             <Label htmlFor="refundAmount">Refund amount ({currency})</Label>
             <Input
@@ -332,53 +389,68 @@ export function NewCaseForm({
               type="number"
               step="0.001"
               min="0"
+              max={orderNum || undefined}
               value={refundAmount}
               onChange={(e) => setRefundAmount(e.target.value)}
               required
+              placeholder={`Max ${orderNum.toFixed(3)}`}
             />
             {exceedsOrder && (
               <p className="text-xs text-destructive">Refund exceeds the order amount.</p>
             )}
           </div>
-
-          {selectedMethod?.requiresAuthCode && (
-            <div className="space-y-1.5">
-              <Label htmlFor="authCode">Auth code</Label>
-              <Input
-                id="authCode"
-                value={authCode}
-                onChange={(e) => setAuthCode(e.target.value)}
-                required
-                className="font-mono"
-                placeholder="A12B34"
-              />
-              <p className="text-xs text-muted-foreground">
-                Printed on the KNET receipt. Required for the batch.
-              </p>
-            </div>
-          )}
-        </div>
+        )}
       </section>
 
       <section className="space-y-3">
         <h3 className="text-heading-sm text-heading">
           Aura points{' '}
           <span className="text-sm font-normal text-muted-foreground">
-            (optional sidecar, not a payment method)
+            (optional sidecar)
           </span>
         </h3>
-        <div className="space-y-1.5">
-          <Label htmlFor="auraPoints">Points</Label>
-          <Input
-            id="auraPoints"
-            type="number"
-            min="0"
-            step="1"
-            value={auraPoints}
-            onChange={(e) => setAuraPoints(e.target.value)}
-            placeholder="0"
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setIncludeAura(!includeAura);
+            if (includeAura) setAuraPoints('');
+          }}
+          className={cn(
+            'flex items-center gap-2.5 rounded-lg border px-4 py-3 text-sm transition-colors',
+            includeAura
+              ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+              : 'border-border bg-surface hover:border-heading/30',
+          )}
+        >
+          <span className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
+            includeAura ? 'bg-primary/10 text-primary' : 'bg-surface-subtle text-muted-foreground',
+          )}>
+            <Star className="h-4 w-4" />
+          </span>
+          <span className="font-medium text-heading">Aura Points</span>
+          {includeAura && (
+            <span className="ms-auto flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Check className="h-3 w-3" />
+            </span>
+          )}
+        </button>
+
+        {includeAura && (
+          <div className="space-y-1.5">
+            <Label htmlFor="auraPoints">Points to refund</Label>
+            <Input
+              id="auraPoints"
+              type="number"
+              min="0"
+              step="1"
+              value={auraPoints}
+              onChange={(e) => setAuraPoints(e.target.value)}
+              placeholder="Enter points"
+              required
+            />
+          </div>
+        )}
       </section>
 
       <section className="space-y-3">

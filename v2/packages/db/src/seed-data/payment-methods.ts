@@ -39,16 +39,7 @@ export const paymentMethods: readonly PaymentMethodSeed[] = [
     executionType: 'MANUAL',
     sortOrder: 20,
   },
-  {
-    key: 'MADA',
-    label: 'Mada',
-    labelAr: 'مدى',
-    iconSlug: 'mada',
-    color: '#84cdde',
-    requiresAuthCode: false,
-    executionType: 'MANUAL',
-    sortOrder: 30,
-  },
+
   {
     key: 'APPLE_PAY',
     label: 'Apple Pay',
