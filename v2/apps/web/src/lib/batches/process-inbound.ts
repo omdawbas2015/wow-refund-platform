@@ -116,10 +116,14 @@ async function applyApprovalReply(
       });
     }
 
-    const totalDecided =
-      batch.approvedCases + approved + (batch.rejectedCases + rejected);
-    const totalCases = batch.totalCases;
-    const allDecided = totalDecided >= totalCases;
+    // Use the authoritative DB count of still-pending cases on this batch
+    // instead of the (possibly stale) `batch.approvedCases` / `rejectedCases`
+    // values read outside the transaction. This is concurrency-safe even if
+    // the magic-link path or another reply landed in parallel.
+    const remaining = await tx.refundCase.count({
+      where: { approvalBatchId: batch.id, status: 'PENDING_APPROVAL' },
+    });
+    const allDecided = remaining === 0;
 
     await tx.approvalBatch.update({
       where: { id: batch.id },
@@ -211,9 +215,12 @@ async function applyKnetArnReply(
       // the new ARN suggestion in the meantime.)
     }
 
-    // Use the cumulative ARN count, not just this reply's count, because
-    // Finance often replies with ARNs across multiple emails.
-    const cumulativeArns = batch.arnsReceived + applied.length;
+    // Use a real-time count of components still missing an ARN on this
+    // batch instead of the (possibly stale) `batch.arnsReceived` value. This
+    // handles multi-email replies AND parallel processing correctly.
+    const remainingWithoutArn = await tx.refundComponent.count({
+      where: { batchId: batch.id, arn: null },
+    });
     await tx.knetBatch.update({
       where: { id: batch.id },
       data: {
@@ -221,7 +228,7 @@ async function applyKnetArnReply(
         responseReceivedAt: new Date(),
         responseRawBody: rawBody.slice(0, 8000),
         responseParsedArns: JSON.stringify(applied),
-        status: cumulativeArns >= batch.totalComponents ? 'ARNS_RECEIVED' : 'AWAITING_ARNS',
+        status: remainingWithoutArn === 0 ? 'ARNS_RECEIVED' : 'AWAITING_ARNS',
       },
     });
     await tx.auditLog.create({
