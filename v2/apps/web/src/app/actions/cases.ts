@@ -396,18 +396,35 @@ export async function deleteCaseAction(input: {
       return { ok: false, error: 'Please provide a deletion reason (min 3 chars).' };
     }
 
-    const existing = await prisma.refundCase.findUnique({ where: { id: caseId } });
-    if (!existing) return { ok: false, error: 'Case not found' };
-    if (existing.deletedAt) return { ok: false, error: 'Case is already deleted.' };
-    if (existing.status === 'REFUNDED' || existing.status === 'PARTIALLY_REFUNDED') {
-      return { ok: false, error: 'Refunded cases cannot be deleted.' };
-    }
+    // Read + status guard + soft-delete inside a single transaction, with
+    // an optimistic-concurrency guard on `updateMany` so a concurrent
+    // transition to REFUNDED can't slip past the check.
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.refundCase.findUnique({ where: { id: caseId } });
+      if (!existing) return { ok: false as const, error: 'Case not found' };
+      if (existing.deletedAt) {
+        return { ok: false as const, error: 'Case is already deleted.' };
+      }
+      if (existing.status === 'REFUNDED' || existing.status === 'PARTIALLY_REFUNDED') {
+        return { ok: false as const, error: 'Refunded cases cannot be deleted.' };
+      }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.refundCase.update({
-        where: { id: caseId },
-        data: { deletedAt: new Date() },
+      const deletedAt = new Date();
+      const guarded = await tx.refundCase.updateMany({
+        where: {
+          id: caseId,
+          deletedAt: null,
+          status: { notIn: ['REFUNDED', 'PARTIALLY_REFUNDED'] },
+        },
+        data: { deletedAt },
       });
+      if (guarded.count === 0) {
+        return {
+          ok: false as const,
+          error: 'Case was modified by another user. Please refresh and retry.',
+        };
+      }
+
       await tx.activityLog.create({
         data: {
           caseId,
@@ -425,10 +442,14 @@ export async function deleteCaseAction(input: {
           entityType: 'CASE',
           entityId: caseId,
           beforeData: JSON.stringify({ deletedAt: null, status: existing.status }),
-          afterData: JSON.stringify({ deletedAt: new Date().toISOString(), reason }),
+          afterData: JSON.stringify({ deletedAt: deletedAt.toISOString(), reason }),
         },
       });
+
+      return { ok: true as const };
     });
+
+    if (!result.ok) return result;
 
     revalidatePath(`/cases/${caseId}`);
     revalidatePath('/cases');

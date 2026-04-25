@@ -484,7 +484,7 @@ function NotesTab({
           onChange={(e) => setBody(e.target.value)}
           className="min-h-[96px] w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           placeholder="Write a note… use @ to mention teammates"
-          maxLength={5000}
+          maxLength={4000}
         />
 
         {mentionedUsers.length > 0 && (
