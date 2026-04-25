@@ -21,8 +21,8 @@ const ALL_VALUE = '__all__';
 
 type Counts = {
   all: number;
-  open: number;
-  resolved: number;
+  active: number;
+  refunded: number;
   closed: number;
 };
 
@@ -58,7 +58,11 @@ export function CaseFiltersBar({
 
   const statusesInBucket =
     currentBucket === 'all'
-      ? ([...STATUS_BUCKETS.open, ...STATUS_BUCKETS.resolved, ...STATUS_BUCKETS.closed] as readonly string[])
+      ? ([
+          ...STATUS_BUCKETS.active,
+          ...STATUS_BUCKETS.refunded,
+          ...STATUS_BUCKETS.closed,
+        ] as readonly string[])
       : (STATUS_BUCKETS[currentBucket] as readonly string[]);
 
   const hasAnyFilter = [...searchParams.keys()].some(
@@ -78,11 +82,11 @@ export function CaseFiltersBar({
           <TabsTrigger value="all">
             All <CountBadge value={counts.all} />
           </TabsTrigger>
-          <TabsTrigger value="open">
-            Open <CountBadge value={counts.open} />
+          <TabsTrigger value="active">
+            Active <CountBadge value={counts.active} />
           </TabsTrigger>
-          <TabsTrigger value="resolved">
-            Resolved <CountBadge value={counts.resolved} />
+          <TabsTrigger value="refunded">
+            Refunded <CountBadge value={counts.refunded} />
           </TabsTrigger>
           <TabsTrigger value="closed">
             Closed <CountBadge value={counts.closed} />

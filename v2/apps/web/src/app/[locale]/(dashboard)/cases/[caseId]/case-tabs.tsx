@@ -19,6 +19,8 @@ import {
 import { CustomerHistory } from './customer-history';
 import { CaseStatusStepper, type CaseStatus } from '@/components/ui/case-status-stepper';
 import { PaymentMethodIcons } from '@/components/ui/payment-method-icons';
+import { CopyButton } from '@/components/ui/copy-button';
+import { Sparkles } from 'lucide-react';
 
 type CaseData = {
   id: string;
@@ -367,8 +369,26 @@ function OverviewTab({
           <Section title="Customer">
             <div className="grid gap-x-6 gap-y-3 p-4 sm:grid-cols-2">
               <FieldInline label="Name" value={caseData.customerName} />
-              <FieldInline label="Email" value={caseData.customerEmail} />
-              <FieldInline label="Phone" value={caseData.customerPhone ?? '---'} />
+              <FieldInline
+                label="Email"
+                value={
+                  <CopyableValue value={caseData.customerEmail} label="Copy email" />
+                }
+              />
+              <FieldInline
+                label="Phone"
+                value={
+                  caseData.customerPhone ? (
+                    <CopyableValue
+                      value={caseData.customerPhone}
+                      label="Copy phone"
+                      mono
+                    />
+                  ) : (
+                    '---'
+                  )
+                }
+              />
               {caseData.customerNotes && (
                 <div className="sm:col-span-2">
                   <FieldInline label="Notes" value={caseData.customerNotes} />
@@ -380,13 +400,23 @@ function OverviewTab({
           {/* Order */}
           <Section title="Order">
             <div className="grid gap-x-6 gap-y-3 p-4 sm:grid-cols-2">
-              <FieldInline label="Order #" value={<span className="font-mono">{caseData.orderNumber}</span>} />
+              <FieldInline
+                label="Order #"
+                value={
+                  <CopyableValue
+                    value={caseData.orderNumber}
+                    label="Copy order #"
+                    mono
+                  />
+                }
+              />
               <FieldInline label="Order date" value={formatDate(caseData.orderDate)} />
               <FieldInline label="Brand" value={`${caseData.countryFlag} ${caseData.brandName}`} />
               <FieldInline label="Country" value={caseData.countryName} />
-              {caseData.branchName && (
-                <FieldInline label="Branch" value={caseData.branchName} />
-              )}
+              <FieldInline
+                label="Branch"
+                value={caseData.branchName ?? <span className="text-muted-foreground">—</span>}
+              />
             </div>
           </Section>
 
@@ -408,13 +438,25 @@ function OverviewTab({
                       {formatMoney(c.amount, c.currency)}
                     </div>
                     {c.authCode && (
-                      <div className="text-xs text-muted-foreground">
-                        Auth: <span className="font-mono font-medium text-foreground">{c.authCode}</span>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        Auth:{' '}
+                        <span className="font-mono font-medium text-foreground">
+                          {c.authCode}
+                        </span>
+                        <CopyButton
+                          value={c.authCode}
+                          size="xs"
+                          label="Copy auth code"
+                        />
                       </div>
                     )}
                     {c.arn && (
-                      <div className="text-xs text-muted-foreground">
-                        ARN: <span className="font-mono font-medium text-foreground">{c.arn}</span>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        ARN:{' '}
+                        <span className="font-mono font-medium text-foreground">
+                          {c.arn}
+                        </span>
+                        <CopyButton value={c.arn} size="xs" label="Copy ARN" />
                       </div>
                     )}
                     <div className="ms-auto">
@@ -426,12 +468,26 @@ function OverviewTab({
             )}
           </Section>
 
-          {/* Aura */}
+          {/* Aura — presented like Payment so the sidecar compensation is
+              legible at a glance (icon + amount + status badge). */}
           {caseData.auraPoints ? (
             <Section title="Aura Points">
-              <div className="grid gap-x-6 gap-y-3 p-4 sm:grid-cols-2">
-                <FieldInline label="Points" value={caseData.auraPoints.toLocaleString()} />
-                <FieldInline label="Status" value={caseData.auraStatus} />
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400">
+                    <Sparkles className="h-4 w-4" />
+                  </span>
+                  <span className="text-sm font-medium text-heading">Aura</span>
+                </div>
+                <div className="font-mono text-sm font-medium">
+                  {caseData.auraPoints.toLocaleString()}{' '}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    points
+                  </span>
+                </div>
+                <div className="ms-auto">
+                  <AuraStatusBadge status={caseData.auraStatus} />
+                </div>
               </div>
             </Section>
           ) : null}
@@ -732,5 +788,60 @@ function FieldInline({ label, value }: { label: string; value: React.ReactNode }
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
       <div className="mt-0.5 text-sm text-foreground">{value}</div>
     </div>
+  );
+}
+
+/**
+ * Plain text + hover-revealed copy button. Used everywhere a value is
+ * a useful identifier ops might paste into another system (email, phone,
+ * order #, auth code).
+ */
+function CopyableValue({
+  value,
+  label,
+  mono,
+}: {
+  value: string;
+  label: string;
+  mono?: boolean;
+}) {
+  return (
+    <span className="group inline-flex items-center gap-1">
+      <span className={cn('break-all', mono && 'font-mono')}>{value}</span>
+      <span className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <CopyButton value={value} size="xs" label={label} />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Mirrors the shape of <ComponentStatusBadge> so the Aura row reads the
+ * same as a payment component.
+ */
+function AuraStatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    NONE: 'bg-muted text-muted-foreground',
+    PENDING:
+      'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+    COMPLETED:
+      'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    FAILED: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400',
+  };
+  const labels: Record<string, string> = {
+    NONE: 'No points',
+    PENDING: 'Awaiting batch',
+    COMPLETED: 'Redeemed',
+    FAILED: 'Failed',
+  };
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
+        styles[status] ?? styles.NONE,
+      )}
+    >
+      {labels[status] ?? status}
+    </span>
   );
 }

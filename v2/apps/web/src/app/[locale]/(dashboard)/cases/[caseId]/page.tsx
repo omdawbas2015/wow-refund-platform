@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChevronLeft } from 'lucide-react';
 import { CaseStatusBadge, ComponentStatusBadge } from '@/components/ui/case-status-badge';
+import { CopyButton } from '@/components/ui/copy-button';
 import { formatDate, formatDateTime, formatMoney, relativeTime } from '@/lib/format';
 import { CaseTabs } from './case-tabs';
 
@@ -78,8 +79,14 @@ export default async function CaseDetailsPage({
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-display-sm font-normal tracking-tight text-heading font-mono">
+            <h1 className="flex items-center gap-1 text-display-sm font-normal tracking-tight text-heading font-mono">
               {refundCase.caseNumber}
+              <CopyButton
+                value={refundCase.caseNumber}
+                size="sm"
+                label="Copy case number"
+                className="ms-1"
+              />
             </h1>
             <CaseStatusBadge status={refundCase.status} />
             {refundCase.isPartial && (

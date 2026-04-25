@@ -136,12 +136,17 @@ export function DateRangePicker({
         <button
           type="button"
           className={cn(
-            'inline-flex h-10 items-center gap-2 rounded-md border border-border bg-surface ps-3 pe-2 text-sm transition-colors',
+            'group inline-flex h-10 items-center gap-2 rounded-md border border-border bg-surface ps-3 pe-2 text-sm transition-colors',
             hasValue ? 'text-heading' : 'text-muted-foreground',
-            'hover:border-heading/30',
+            'hover:border-heading/30 data-[state=open]:border-primary data-[state=open]:ring-2 data-[state=open]:ring-primary/20',
           )}
         >
-          <Calendar className="h-3.5 w-3.5 shrink-0" />
+          <Calendar
+            className={cn(
+              'h-3.5 w-3.5 shrink-0',
+              hasValue ? 'text-primary' : 'text-muted-foreground',
+            )}
+          />
           <span className="truncate">{label}</span>
           {hasValue && (
             <span
@@ -151,7 +156,7 @@ export function DateRangePicker({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') clear(e as unknown as React.MouseEvent);
               }}
-              className="ms-1 flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-heading"
+              className="ms-1 flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-heading"
               aria-label="Clear date range"
             >
               <X className="h-3 w-3" />
@@ -159,9 +164,16 @@ export function DateRangePicker({
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="end">
+      <PopoverContent
+        className="w-auto overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-xl ring-1 ring-black/[0.04]"
+        align="end"
+        sideOffset={6}
+      >
         <div className="flex">
-          <div className="flex flex-col gap-0.5 border-e border-border bg-surface-subtle/50 p-2">
+          <div className="flex w-[160px] flex-col gap-0.5 border-e border-border bg-surface-subtle/40 p-3">
+            <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Quick ranges
+            </div>
             {presets().map((p) => {
               const active = activePresetLabel === p.label;
               return (
@@ -170,9 +182,9 @@ export function DateRangePicker({
                   type="button"
                   onClick={() => applyPreset(p)}
                   className={cn(
-                    'rounded-md px-3 py-1.5 text-start text-xs transition-colors',
+                    'rounded-md px-2.5 py-1.5 text-start text-xs font-medium transition-colors',
                     active
-                      ? 'bg-primary text-primary-foreground'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'text-heading hover:bg-muted',
                   )}
                 >
@@ -180,17 +192,18 @@ export function DateRangePicker({
                 </button>
               );
             })}
-            <div className="mt-1 border-t border-border pt-1">
+            <div className="mt-1 border-t border-border/60 pt-1">
               <button
                 type="button"
                 onClick={() => onChange({ from: null, to: null })}
-                className="w-full rounded-md px-3 py-1.5 text-start text-xs text-muted-foreground hover:bg-muted hover:text-heading"
+                className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-start text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-heading"
               >
+                <X className="h-3 w-3" />
                 Clear
               </button>
             </div>
           </div>
-          <div className="p-2">
+          <div className="p-3">
             <DayPicker
               mode="range"
               selected={selected}
@@ -230,6 +243,24 @@ export function DateRangePicker({
                 hidden: 'invisible',
               }}
             />
+            <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/60 px-1 pt-2 text-xs">
+              <span className="text-muted-foreground">
+                {hasValue ? (
+                  <>
+                    <span className="text-heading">{label}</span>
+                  </>
+                ) : (
+                  'Pick a start date, then an end date.'
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       </PopoverContent>

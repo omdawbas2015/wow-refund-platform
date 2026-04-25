@@ -43,8 +43,8 @@ export default async function CasesPage({
   const bucketParam =
     typeof sp['bucket'] === 'string' ? (sp['bucket'] as string) : null;
   const bucket: 'all' | keyof typeof STATUS_BUCKETS =
-    bucketParam === 'open' ||
-    bucketParam === 'resolved' ||
+    bucketParam === 'active' ||
+    bucketParam === 'refunded' ||
     bucketParam === 'closed'
       ? bucketParam
       : 'all';
@@ -95,6 +95,7 @@ export default async function CasesPage({
       include: {
         country: { include: { registry: true } },
         brand: true,
+        branch: { select: { name: true } },
         rootCause: true,
         createdBy: { select: { name: true } },
         assignedTo: { select: { name: true } },
@@ -122,8 +123,8 @@ export default async function CasesPage({
     list.reduce((acc, s) => acc + (byStatus.get(s) ?? 0), 0);
   const counts = {
     all: Array.from(byStatus.values()).reduce((a, b) => a + b, 0),
-    open: sumIn(STATUS_BUCKETS.open),
-    resolved: sumIn(STATUS_BUCKETS.resolved),
+    active: sumIn(STATUS_BUCKETS.active),
+    refunded: sumIn(STATUS_BUCKETS.refunded),
     closed: sumIn(STATUS_BUCKETS.closed),
   };
 
@@ -135,6 +136,7 @@ export default async function CasesPage({
     customerEmail: c.customerEmail,
     customerPhone: c.customerPhone,
     brandName: c.brand.name,
+    branchName: c.branch?.name ?? null,
     countryName: c.country.registry.nameEn,
     countryFlag: c.country.registry.flag ?? '',
     orderNumber: c.orderNumber,

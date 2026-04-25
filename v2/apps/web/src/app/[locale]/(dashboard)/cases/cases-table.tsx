@@ -4,11 +4,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { BrandAvatar } from '@/components/ui/brand-avatar';
 import { CaseStatusBadge } from '@/components/ui/case-status-badge';
+import { CopyButton } from '@/components/ui/copy-button';
 import type { CaseStatus } from '@/components/ui/case-status-stepper';
 import { PaymentMethodIcons } from '@/components/ui/payment-method-icons';
 import { formatDate, formatMoney } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { ArrowUpRight, CheckCircle2, PieChart, Trash2 } from 'lucide-react';
+import { ArrowUpRight, Trash2 } from 'lucide-react';
 
 export type CaseRow = {
   id: string;
@@ -18,6 +19,7 @@ export type CaseRow = {
   customerEmail: string;
   customerPhone: string | null;
   brandName: string;
+  branchName: string | null;
   countryName: string;
   countryFlag: string;
   orderNumber: string;
@@ -36,7 +38,8 @@ export type CaseRow = {
 /**
  * Row click navigates straight to the case detail page. We dropped the
  * side-drawer preview — it duplicated work and slowed down the common
- * "open, act, go back" flow.
+ * "open, act, go back" flow. Case # and email expose copy buttons on
+ * hover so ops can grab identifiers without opening the case.
  */
 export function CasesTable({
   locale,
@@ -58,7 +61,7 @@ export function CasesTable({
             <tr className="border-b border-border bg-surface-subtle/70">
               <Th>Case</Th>
               <Th>Customer</Th>
-              <Th>Country</Th>
+              <Th>Country · Brand</Th>
               <Th align="end">Amount</Th>
               <Th>Payment</Th>
               <Th>Status</Th>
@@ -77,38 +80,48 @@ export function CasesTable({
                 )}
               >
                 <td className="whitespace-nowrap px-4 py-3">
-                  <Link
-                    href={`/${locale}/cases/${c.id}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className={cn(
-                      'font-mono text-xs font-semibold',
-                      c.isDeleted
-                        ? 'text-muted-foreground line-through'
-                        : 'text-primary hover:underline',
-                    )}
-                  >
-                    {c.caseNumber}
-                  </Link>
+                  <div className="inline-flex items-center gap-1">
+                    <Link
+                      href={`/${locale}/cases/${c.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className={cn(
+                        'font-mono text-xs font-semibold',
+                        c.isDeleted
+                          ? 'text-muted-foreground line-through'
+                          : 'text-primary hover:underline',
+                      )}
+                    >
+                      {c.caseNumber}
+                    </Link>
+                    <span className="opacity-0 transition-opacity group-hover:opacity-100">
+                      <CopyButton
+                        value={c.caseNumber}
+                        size="xs"
+                        label="Copy case number"
+                      />
+                    </span>
+                  </div>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-2.5">
-                    <BrandAvatar name={c.brandName} />
-                    <div className="min-w-0">
-                      <div className="max-w-[200px] truncate font-medium text-heading">
-                        {c.customerName}
-                      </div>
-                      <div className="max-w-[200px] truncate text-xs text-muted-foreground">
-                        {c.brandName}
-                      </div>
-                    </div>
+                  <div className="max-w-[220px] truncate font-medium text-heading">
+                    {c.customerName}
                   </div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-base leading-none">
-                      {c.countryFlag || '\uD83C\uDF10'}
-                    </span>
-                    <span className="text-sm text-heading">{c.countryName}</span>
+                  <div className="flex items-center gap-2.5">
+                    <BrandAvatar name={c.brandName} />
+                    <div className="min-w-0 leading-tight">
+                      <div className="flex items-center gap-1.5 text-sm text-heading">
+                        <span className="text-base leading-none">
+                          {c.countryFlag || '\uD83C\uDF10'}
+                        </span>
+                        <span>{c.countryName}</span>
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {c.brandName}
+                        {c.branchName ? ` · ${c.branchName}` : ''}
+                      </div>
+                    </div>
                   </div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-end">
@@ -176,6 +189,7 @@ export function CasesTable({
                   <div className="text-sm font-medium text-heading">{c.customerName}</div>
                   <div className="truncate text-xs text-muted-foreground">
                     <span>{c.countryFlag}</span> {c.countryName} · {c.brandName}
+                    {c.branchName ? ` · ${c.branchName}` : ''}
                   </div>
                 </div>
               </div>
@@ -216,9 +230,10 @@ function Th({
 }
 
 /**
- * Refund number is the primary figure. A small colored icon calls out
- * full vs partial without using a second column — green check for full,
- * amber pie for partial, plus an "of X" secondary line for partials.
+ * Refund number is the primary figure. A subtle typographic weight shift
+ * (amber text for partial refunds, heading color for full) carries the
+ * distinction — no extra colored icon, which felt noisy. The order total
+ * still appears underneath as an "of X" qualifier when it's a partial.
  */
 function AmountCell({
   refund,
@@ -232,33 +247,20 @@ function AmountCell({
   isPartial: boolean;
 }) {
   return (
-    <div className="inline-flex items-center gap-2 leading-tight">
-      <span
-        aria-hidden
-        title={isPartial ? 'Partial refund' : 'Full refund'}
+    <div className="leading-tight">
+      <div
         className={cn(
-          'flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
-          isPartial
-            ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
-            : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400',
+          'font-mono text-sm font-semibold',
+          isPartial ? 'text-amber-700 dark:text-amber-400' : 'text-heading',
         )}
       >
-        {isPartial ? (
-          <PieChart className="h-3 w-3" />
-        ) : (
-          <CheckCircle2 className="h-3 w-3" />
-        )}
-      </span>
-      <div className="text-end">
-        <div className="font-mono text-sm font-semibold text-heading">
-          {formatMoney(refund, currency)}
-        </div>
-        {isPartial && (
-          <div className="mt-0.5 text-[10px] text-muted-foreground">
-            of {formatMoney(order, currency)}
-          </div>
-        )}
+        {formatMoney(refund, currency)}
       </div>
+      {isPartial && (
+        <div className="mt-0.5 text-[10px] text-muted-foreground">
+          of {formatMoney(order, currency)}
+        </div>
+      )}
     </div>
   );
 }
