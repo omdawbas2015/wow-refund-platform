@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+@theme {
+  --color-stripe-blurple: #635bff;
+  --color-stripe-dark: #1a1f36;
+  --color-stripe-slate: #3c4257;
+  --color-stripe-light-slate: #697386;
+  --color-stripe-bg: #ffffff;
+  --color-stripe-card-bg: #f6f9fc;
+  --color-stripe-border: #e3e8ee;
+  
+  --radius-stripe-sm: 4px;
+  --radius-stripe: 8px;
+  --radius-stripe-lg: 12px;
+  
+  /* Authentic Stripe Shadows */
+  --shadow-stripe-card: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --shadow-stripe-btn: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06);
+}
+
+@layer base {
+  body {
+    @apply bg-stripe-bg text-stripe-slate antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, sans-serif;
+  }
+}
+
+@layer components {
+  /* Stripe Surface (Cards) */
+  .stripe-surface {
+    @apply bg-white rounded-stripe-lg shadow-stripe-card border border-stripe-border;
+  }
+  
+  .stripe-surface-gray {
+    @apply bg-stripe-card-bg rounded-stripe-lg border border-transparent;
+  }
+
+  /* Typography */
+  .stripe-h1 { @apply text-[28px] font-bold text-stripe-dark m-0 leading-tight; }
+  .stripe-h2 { @apply text-[16px] font-bold text-stripe-dark m-0 leading-tight; }
+  .stripe-label { @apply text-[13px] font-medium text-stripe-slate mb-1.5 block; }
+  
+  /* Input Fields */
+  .stripe-input-field {
+    @apply w-full h-8 px-3 bg-white border border-stripe-border rounded-[5px] shadow-[0_1px_2px_rgba(0,0,0,0.04)] outline-none transition-all duration-150 text-[13px] text-stripe-dark focus:border-stripe-blurple focus:shadow-[0_0_0_1px_#635bff];
+  }
+
+  /* Action Buttons */
+  .stripe-button {
+    @apply h-8 px-3 rounded-[5px] font-medium text-[13px] transition-all flex items-center justify-center gap-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] cursor-pointer whitespace-nowrap;
+  }
+  .stripe-button-primary {
+    @apply bg-stripe-blurple text-white border border-transparent hover:bg-[#5851df] shadow-[0_1px_2px_rgba(0,0,0,0.08)];
+  }
+  .stripe-button-secondary {
+    @apply bg-white text-stripe-slate border border-[#d0d5dd] hover:text-stripe-dark hover:bg-gray-50 shadow-[0_1px_2px_rgba(0,0,0,0.05)];
+  }
+
+  /* Table */
+  .stripe-table {
+    @apply w-full text-left border-collapse;
+  }
+  .stripe-table th {
+    @apply text-[12px] font-medium text-stripe-light-slate py-2.5 px-4 border-b border-stripe-border bg-white;
+  }
+  .stripe-table td {
+    @apply py-3 px-4 text-[13px] text-stripe-slate border-b border-stripe-border bg-white;
+  }
+  .stripe-table tr:hover td {
+    @apply bg-[#f8fafc];
+  }
+}

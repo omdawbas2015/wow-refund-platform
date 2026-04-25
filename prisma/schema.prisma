@@ -1,0 +1,383 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   // "ADMIN" | "AGENT"
+  countryId String?
+  isActive  Boolean  @default(true)
+  lastLoginAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cases        RefundCase[] @relation("AgentCases")
+  createdCases RefundCase[] @relation("CreatedCases")
+  closedCases  RefundCase[] @relation("ClosedCases")
+  auditLogs    AuditLog[]
+  comments  Comment[]
+}
+
+model Brand {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  code      String   @unique  // e.g. CHIPOTLE, RAISING_CANES
+  logoUrl   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cases              RefundCase[]
+  promoCodes         PromoCode[]
+  internalPromoCodes InternalPromoCode[]
+}
+
+model RefundCase {
+  id              String   @id @default(cuid())
+  caseNumber      String   @unique // REF-{COUNTRY}-{YEAR}-{SEQUENCE}
+  
+  agentId         String
+  agent           User     @relation("AgentCases", fields: [agentId], references: [id])
+  
+  createdById     String?
+  createdBy       User?    @relation("CreatedCases", fields: [createdById], references: [id])
+  closedById      String?
+  closedBy        User?    @relation("ClosedCases", fields: [closedById], references: [id])
+
+  orderDate       DateTime
+  orderNumber     String
+  orderAmount     Float
+  partialAmount   Float?
+  paymentMethod   String?  // Legacy field
+  authCode        String?
+  auraPoints      String?
+  
+  rootCauseId     String
+  rootCause       RootCause @relation(fields: [rootCauseId], references: [id])
+  refundReason    String
+  
+  countryId       String
+  country         Country  @relation(fields: [countryId], references: [id])
+  branchId        String
+  branch          Branch   @relation(fields: [branchId], references: [id])
+  
+  brandId         String?
+  brand           Brand?   @relation(fields: [brandId], references: [id])
+  
+  customerName    String
+  customerEmail   String
+  customerPhone   String
+  
+  refundId        String?  // Legacy field
+  batchId         String?
+  batch           ApprovalBatch? @relation(fields: [batchId], references: [id])
+  
+  status          String   @default("DRAFT") // DRAFT | PENDING_APPROVAL | APPROVED | PARTIALLY_REFUNDED | REFUNDED | PENDING_EXTERNAL
+  contactStatus   String   @default("NOT_CONTACTED") // NOT_CONTACTED | CONTACTED | NO_RESPONSE
+  auraStatus      String   @default("NONE") // NONE | PENDING | COMPLETED
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  approvedAt      DateTime?
+  approverName    String?
+  refundedAt      DateTime?
+  auraProcessedAt DateTime?
+
+  components      RefundComponent[]
+  emailLogs       EmailLog[]
+  approvalTokens  ApprovalToken[]
+  contactAttempts ContactAttempt[]
+  auditLogs       AuditLog[]
+  comments        Comment[]
+  promoUsages     PromoUsage[]
+  
+  refundBatchId   String?
+  refundBatch     RefundBatch? @relation(fields: [refundBatchId], references: [id])
+}
+
+model RefundBatch {
+  id           String       @id @default(cuid())
+  batchNumber  String       @unique // KNET-{DATE}-{SEQ}
+  status       String       @default("SENT") // SENT | COMPLETED
+  exportedBy   String
+  caseCount    Int
+  createdAt    DateTime     @default(now())
+  cases        RefundCase[]
+}
+
+model PromoCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  type        String   // CUSTOMER_COMPENSATION (e.g. 5 KWD/SAR)
+  value       Float
+  currency    String
+  countryId   String
+  country     Country  @relation(fields: [countryId], references: [id])
+  brandId     String?
+  brand       Brand?   @relation(fields: [brandId], references: [id])
+  status      String   @default("AVAILABLE") // AVAILABLE | USED | EXPIRED | RESERVED
+  threshold   Int      @default(5) // For inventory alerts
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  usage       PromoUsage?
+  requestedBy String?   // Who requested the batch/code
+}
+
+model InternalPromoCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  type        String   @default("INTERNAL_100") // Always 100% or internal restricted
+  value       Float    @default(100)
+  currency    String
+  countryId   String
+  country     Country  @relation(fields: [countryId], references: [id])
+  brandId     String?
+  brand       Brand?   @relation(fields: [brandId], references: [id])
+  status      String   @default("AVAILABLE") // AVAILABLE | USED | EXPIRED
+  createdAt   DateTime @default(now())
+  usage       InternalPromoUsage?
+  requestedBy String?
+}
+
+model PromoUsage {
+  id          String   @id @default(cuid())
+  promoCodeId String   @unique
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id])
+  caseId      String?
+  case        RefundCase? @relation(fields: [caseId], references: [id])
+  caseNumber  String
+  orderNumber String?
+  usedBy      String    // Agent name
+  agentId     String?   // Agent specific ID
+  requestedBy String?   // Name of person who requested it for the customer
+  usedAt      DateTime @default(now())
+  reason      String
+}
+
+model InternalPromoUsage {
+  id          String   @id @default(cuid())
+  promoCodeId String   @unique
+  promoCode   InternalPromoCode @relation(fields: [promoCodeId], references: [id])
+  caseNumber  String?
+  orderNumber String
+  customerName String?
+  customerEmail String?
+  usedBy      String    // Agent name
+  agentId     String?   // Agent specific ID
+  requestedBy String?   // Name of supervisor/manager
+  usedAt      DateTime @default(now())
+  reason      String
+}
+
+model EmailLog {
+  id          String   @id @default(cuid())
+  caseId      String?
+  case        RefundCase? @relation(fields: [caseId], references: [id])
+  caseNumber  String?
+  promoCode   String?
+  type        String   @default("BATCH") // BATCH | MANUAL | AUTOMATION
+  subject     String?
+  recipients  String?  // Comma separated
+  status      String   // SENT | FAILED
+  response    String?
+  metadata    String?  // JSON context
+  createdAt   DateTime @default(now())
+}
+
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  category    String   // APPROVAL | KNET_REFUND | AURA_REFUND | CUSTOM
+  subject     String
+  body        String
+  variables   String?  // JSON array of available variables
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
+
+model ExternalTeam {
+  id          String   @id @default(cuid())
+  name        String   @unique  // KNET, AURA, FINANCE
+  emailGroup  String
+  slaHours    Int      @default(48)
+  escalationEmail String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
+
+model AutomationRule {
+  id          String   @id @default(cuid())
+  name        String
+  triggerEvent String  // STATUS_CHANGE | DELAY | SLA_BREACH
+  actionType  String   // EMAIL | WEBHOOK | STATUS_UPDATE
+  templateId  String?
+  config      String?  // JSON configuration
+  isActive    Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
+
+model RecipientGroup {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  emails      String   // Comma separated
+  description String?
+}
+
+
+model ApprovalBatch {
+  id           String       @id @default(cuid())
+  batchId      String       @unique // BATCH-{DATE}-{RANDOM}
+  country      String
+  managerEmail String
+  status       String       @default("PENDING") // PENDING | APPROVED | REJECTED
+  createdAt    DateTime     @default(now())
+  decidedAt    DateTime?
+  decidedBy    String?      // The user identifier or email
+  token        ApprovalToken?
+  cases        RefundCase[]
+}
+
+model ApprovalToken {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  caseId     String?
+  case       RefundCase? @relation(fields: [caseId], references: [id])
+  batchId    String?  @unique
+  batch      ApprovalBatch? @relation(fields: [batchId], references: [id])
+  expiresAt  DateTime
+  isUsed     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model ContactAttempt {
+  id         String   @id @default(cuid())
+  caseId     String
+  case       RefundCase @relation(fields: [caseId], references: [id])
+  timestamp  DateTime @default(now())
+  result     String   // ANSWERED | NO_ANSWER
+  agentId    String
+}
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  caseId        String?
+  case          RefundCase? @relation(fields: [caseId], references: [id])
+  caseNumber    String?  // For fast global searching/logging
+  orderNumber   String?
+  
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  actorName     String?  // To track "SYSTEM" or names of deleted users
+  entityType    String?
+  entityId      String?
+  
+  actionType    String
+  description   String?
+  previousState String?
+  newState      String?
+  
+  metadata      String?  // JSON string for additional context
+  timestamp     DateTime @default(now())
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  caseId    String
+  case      RefundCase @relation(fields: [caseId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model Country {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  code         String   @unique // e.g. KW, SA, AE
+  currency     String   @default("KWD")
+  managerEmail String?  // Optional, can be updated by admin
+  isActive     Boolean  @default(true)
+  branches     Branch[]
+  cases        RefundCase[]
+  promoCodes   PromoCode[]
+  internalPromoCodes InternalPromoCode[]
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  name      String
+  countryId String
+  country   Country  @relation(fields: [countryId], references: [id])
+  isActive  Boolean  @default(true)
+  cases     RefundCase[]
+
+  @@unique([name, countryId])
+}
+
+model RootCause {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  description  String?
+  isActive     Boolean  @default(true)
+  displayOrder Int      @default(0)
+  cases        RefundCase[]
+}
+
+model SystemConfig {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("INFO") // INFO | SUCCESS | WARNING
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     String   // INFO | ERROR
+  message   String
+  context   String?  // JSON string
+  createdAt DateTime @default(now())
+}
+
+model HelpDeskTicket {
+  id          String   @id @default(cuid())
+  caseNumber  String
+  storeEmail  String
+  reason      String   // NO ASSET ID | NOT UNDER OUR SCOPE | NO DESCRIPTION | REASON OF LEAKAGE
+  submittedBy String
+  status      String   @default("SENT") // SENT | FAILED
+  createdAt   DateTime @default(now())
+}
+
+model RefundComponent {
+  id              String   @id @default(cuid())
+  caseId          String
+  case            RefundCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  paymentMethod   String   // APPLE_PAY, CREDIT_CARD, KNET, AURA
+  amount          Float
+  status          String   @default("PENDING_EXECUTION") // PENDING_EXECUTION | IN_PROGRESS | COMPLETED | FAILED
+  externalRef     String?
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+}

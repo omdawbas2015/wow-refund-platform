@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-change-me}@db:5432/refund_management?schema=public
+      - JWT_SECRET=${JWT_SECRET:-change-me-generate-a-long-random-secret}
+      - INTERNAL_WEBHOOK_SECRET=${INTERNAL_WEBHOOK_SECRET:-change-me-power-automate-shared-secret}
+      - NODE_ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "npx prisma generate && npx prisma db push && npm run start"
+    restart: always
+    networks:
+      - refund_network
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change-me}
+      - POSTGRES_DB=refund_management
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - refund_network
+
+volumes:
+  pgdata:
+
+networks:
+  refund_network:
+    driver: bridge
