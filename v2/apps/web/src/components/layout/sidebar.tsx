@@ -34,13 +34,16 @@ export function Sidebar({ role }: { role: string | null }) {
   const pathname = usePathname();
   const t = useTranslations('nav');
 
+  const opsRole = role === 'ADMIN' || role === 'OPERATIONS' || role === 'MANAGER';
   const sections: NavSection[] = [
     {
       label: '',
       items: [
         { label: t('dashboard'), href: '/', icon: LayoutDashboard },
         { label: t('cases'), href: '/cases', icon: FileText },
-        { label: t('operations'), href: '/operations', icon: ShieldCheck },
+        ...(opsRole
+          ? [{ label: t('operations'), href: '/operations', icon: ShieldCheck }]
+          : []),
         { label: t('promo'), href: '/promo', icon: Gift },
       ],
     },
