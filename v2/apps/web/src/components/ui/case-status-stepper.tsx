@@ -39,14 +39,21 @@ function computeStates(status: CaseStatus): {
     IN_EXECUTION: 3,
     PARTIALLY_REFUNDED: 3,
     REFUNDED: 4,
+    // REJECTED can only fire from PENDING_APPROVAL per the state machine,
+    // so 1 is an accurate "rejected at pending approval" position.
     REJECTED: 1,
-    CANCELLED: 0,
+    // CANCELLED can happen from any non-terminal step; we don't carry the
+    // originating status on the case, so we dim the entire trail and rely
+    // on the "Cancelled" pill above the stepper. Sentinel -1 means "no
+    // current step" — no trail position is marked as current or done.
+    CANCELLED: -1,
   };
 
   const states = {} as Record<CaseStatus, StepState>;
   const currentIdx = stepIndex[status];
   STEPS.forEach((s, i) => {
-    if (i < currentIdx) states[s.key] = 'done';
+    if (currentIdx < 0) states[s.key] = 'upcoming';
+    else if (i < currentIdx) states[s.key] = 'done';
     else if (i === currentIdx) states[s.key] = 'current';
     else states[s.key] = 'upcoming';
   });

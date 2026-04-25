@@ -69,26 +69,6 @@ export async function createCaseAction(
     }
     const data = parsed.data;
 
-    // Duplicate detection
-    if (!data.duplicateAcknowledged) {
-      const duplicate = await prisma.refundCase.findFirst({
-        where: {
-          orderNumber: data.orderNumber,
-          brandId: data.brandId,
-          deletedAt: null,
-        },
-        select: { id: true, caseNumber: true },
-        orderBy: { createdAt: 'desc' },
-      });
-      if (duplicate) {
-        return {
-          ok: false,
-          error: 'A case already exists for this order.',
-          duplicate: { id: duplicate.id, caseNumber: duplicate.caseNumber },
-        };
-      }
-    }
-
     const country = await prisma.country.findUnique({
       where: { id: data.countryId },
       include: { registry: true },
@@ -133,16 +113,38 @@ export async function createCaseAction(
 
     const isPartial = Math.abs(totalRefundAmount - data.orderAmount) > 0.001;
 
-    // Case-number generation + insert run inside the same transaction so the
-    // sequence read sees committed state only. If two concurrent requests
-    // still race (e.g. on a DB that doesn't serialize reads), the unique
-    // constraint on `caseNumber` makes the loser throw P2002 — we retry with
-    // a fresh sequence. Cap at 5 retries to avoid pathological loops.
+    // Duplicate detection + case-number generation + insert all run inside
+    // the same transaction so the checks see committed state only. If two
+    // concurrent requests still race (e.g. on a DB that doesn't serialize
+    // reads), the unique constraint on `caseNumber` makes the loser throw
+    // P2002 — we retry with a fresh sequence. Cap at 5 retries to avoid
+    // pathological loops.
+    type TxResult =
+      | { kind: 'created'; newCase: Awaited<ReturnType<typeof prisma.refundCase.create>> }
+      | { kind: 'duplicate'; id: string; caseNumber: string };
     const MAX_RETRIES = 5;
-    let created: Awaited<ReturnType<typeof prisma.refundCase.create>> | null = null;
+    let txOutcome: TxResult | null = null;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
-        created = await prisma.$transaction(async (tx) => {
+        txOutcome = await prisma.$transaction(async (tx): Promise<TxResult> => {
+          // Duplicate detection must run inside the transaction so a
+          // concurrent create for the same (orderNumber, brandId) can't slip
+          // between the check and the insert.
+          if (!data.duplicateAcknowledged) {
+            const duplicate = await tx.refundCase.findFirst({
+              where: {
+                orderNumber: data.orderNumber,
+                brandId: data.brandId,
+                deletedAt: null,
+              },
+              select: { id: true, caseNumber: true },
+              orderBy: { createdAt: 'desc' },
+            });
+            if (duplicate) {
+              return { kind: 'duplicate', id: duplicate.id, caseNumber: duplicate.caseNumber };
+            }
+          }
+
           const caseNumber = await generateCaseNumber(tx, country.registry.code);
           const newCase = await tx.refundCase.create({
             data: {
@@ -200,7 +202,7 @@ export async function createCaseAction(
             },
           });
 
-          return newCase;
+          return { kind: 'created', newCase };
         });
         break;
       } catch (err) {
@@ -224,12 +226,22 @@ export async function createCaseAction(
       }
     }
 
-    if (!created) {
+    if (!txOutcome) {
       return { ok: false, error: 'Case creation failed.' };
+    }
+    if (txOutcome.kind === 'duplicate') {
+      return {
+        ok: false,
+        error: 'A case already exists for this order.',
+        duplicate: { id: txOutcome.id, caseNumber: txOutcome.caseNumber },
+      };
     }
 
     revalidatePath('/cases');
-    return { ok: true, data: { id: created.id, caseNumber: created.caseNumber } };
+    return {
+      ok: true,
+      data: { id: txOutcome.newCase.id, caseNumber: txOutcome.newCase.caseNumber },
+    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: msg };
