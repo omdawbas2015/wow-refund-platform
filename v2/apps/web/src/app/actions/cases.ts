@@ -354,20 +354,12 @@ export async function addCaseNoteAction(input: unknown): Promise<ActionResult> {
 
     const { caseId, body, mentionedUserIds } = parsed.data;
 
-    const existing = await prisma.refundCase.findUnique({
-      where: { id: caseId },
-      select: { id: true, caseNumber: true, deletedAt: true },
-    });
-    if (!existing) return { ok: false, error: 'Case not found' };
-    if (existing.deletedAt) {
-      return { ok: false, error: 'Cannot add notes to a deleted case.' };
-    }
-
     const uniqueMentions = Array.from(
       new Set(mentionedUserIds.filter((id) => id && id !== user.id)),
     );
 
-    // Validate mentioned users exist and are active
+    // Mentioned-user validation runs outside the transaction — it reads a
+    // different table and its consistency requirements are lower.
     const validMentions = uniqueMentions.length
       ? await prisma.user.findMany({
           where: { id: { in: uniqueMentions }, status: 'ACTIVE', deletedAt: null },
@@ -375,7 +367,23 @@ export async function addCaseNoteAction(input: unknown): Promise<ActionResult> {
         })
       : [];
 
-    await prisma.$transaction(async (tx) => {
+    // Read + guard + write inside a single transaction so a concurrent
+    // deleteCaseAction can't soft-delete the case between the check and
+    // the note insert. Returns a discriminated result so we can surface
+    // "not found" / "deleted" errors without throwing.
+    type NoteTxResult =
+      | { ok: true }
+      | { ok: false; error: string };
+    const result = await prisma.$transaction(async (tx): Promise<NoteTxResult> => {
+      const existing = await tx.refundCase.findUnique({
+        where: { id: caseId },
+        select: { id: true, caseNumber: true, deletedAt: true },
+      });
+      if (!existing) return { ok: false, error: 'Case not found' };
+      if (existing.deletedAt) {
+        return { ok: false, error: 'Cannot add notes to a deleted case.' };
+      }
+
       const note = await tx.caseNote.create({
         data: {
           caseId,
@@ -410,7 +418,11 @@ export async function addCaseNoteAction(input: unknown): Promise<ActionResult> {
           },
         });
       }
+
+      return { ok: true };
     });
+
+    if (!result.ok) return result;
 
     revalidatePath(`/cases/${caseId}`);
     return { ok: true };
@@ -538,7 +550,9 @@ export async function markAllNotificationsReadAction(): Promise<ActionResult> {
 
 /**
  * Wrapper used by server-rendered forms that expect a redirect on success.
- * Reads FormData-serialized input.
+ * Reads FormData-serialized input. The form must include a hidden `locale`
+ * field so the redirect target stays on the caller's locale (next-intl
+ * locale-prefixed routing).
  */
 export async function createCaseFormAction(formData: FormData) {
   const raw: Record<string, unknown> = Object.fromEntries(formData.entries());
@@ -551,9 +565,10 @@ export async function createCaseFormAction(formData: FormData) {
       // leave untouched — validator will reject
     }
   }
+  const locale = String(formData.get('locale') ?? 'en').replace(/[^a-z-]/gi, '') || 'en';
   const result = await createCaseAction(raw);
   if (!result.ok) {
     return result;
   }
-  redirect(`/cases/${result.data!.id}`);
+  redirect(`/${locale}/cases/${result.data!.id}`);
 }
