@@ -20,16 +20,6 @@ export interface PaymentMethodSeed {
 
 export const paymentMethods: readonly PaymentMethodSeed[] = [
   {
-    key: 'VISA',
-    label: 'Visa',
-    labelAr: 'فيزا',
-    iconSlug: 'visa',
-    color: '#1a1f71',
-    requiresAuthCode: false,
-    executionType: 'MANUAL',
-    sortOrder: 10,
-  },
-  {
     key: 'MASTERCARD',
     label: 'Mastercard',
     labelAr: 'ماستركارد',
@@ -37,9 +27,8 @@ export const paymentMethods: readonly PaymentMethodSeed[] = [
     color: '#000000',
     requiresAuthCode: false,
     executionType: 'MANUAL',
-    sortOrder: 20,
+    sortOrder: 10,
   },
-
   {
     key: 'APPLE_PAY',
     label: 'Apple Pay',
@@ -48,7 +37,7 @@ export const paymentMethods: readonly PaymentMethodSeed[] = [
     color: '#000000',
     requiresAuthCode: false,
     executionType: 'MANUAL',
-    sortOrder: 40,
+    sortOrder: 20,
   },
   {
     key: 'KNET',
@@ -58,6 +47,6 @@ export const paymentMethods: readonly PaymentMethodSeed[] = [
     color: '#00a651',
     requiresAuthCode: true,
     executionType: 'BATCH',
-    sortOrder: 50,
+    sortOrder: 30,
   },
 ];

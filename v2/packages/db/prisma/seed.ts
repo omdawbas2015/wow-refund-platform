@@ -234,7 +234,6 @@ async function seedDemoCases() {
   const starbucks = await prisma.brand.findUnique({ where: { slug: 'starbucks' } });
   const applePay = await prisma.paymentMethod.findUnique({ where: { key: 'APPLE_PAY' } });
   const knet = await prisma.paymentMethod.findUnique({ where: { key: 'KNET' } });
-  const visa = await prisma.paymentMethod.findUnique({ where: { key: 'VISA' } });
   const mastercard = await prisma.paymentMethod.findUnique({ where: { key: 'MASTERCARD' } });
   const rootCause = await prisma.rootCause.findFirst();
 
@@ -246,7 +245,6 @@ async function seedDemoCases() {
     !starbucks ||
     !applePay ||
     !knet ||
-    !visa ||
     !mastercard
   ) {
     console.log('  ! Missing prerequisites, skipping demo cases');
@@ -323,7 +321,7 @@ async function seedDemoCases() {
       orderAmount: 22.0,
       orderCurrency: 'KWD',
       status: 'PARTIALLY_REFUNDED',
-      component: { paymentMethodId: visa.id },
+      component: { paymentMethodId: mastercard.id },
       refundAmount: 14.0,
     },
     {
@@ -336,7 +334,7 @@ async function seedDemoCases() {
       orderAmount: 60.0,
       orderCurrency: 'SAR',
       status: 'REFUNDED',
-      component: { paymentMethodId: visa.id },
+      component: { paymentMethodId: mastercard.id },
       notes: ['Refund completed in batch.'],
     },
   ];

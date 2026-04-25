@@ -9,7 +9,6 @@ import { cn } from '@/lib/utils';
 import { formatDate, formatDateTime, formatMoney, relativeTime } from '@/lib/format';
 import {
   User as UserIcon,
-  Package,
   MessageSquare,
   Activity as ActivityIcon,
   Send,
@@ -81,7 +80,6 @@ type Mentionable = { id: string; name: string; email: string };
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: UserIcon },
-  { key: 'components', label: 'Components', icon: Package },
   { key: 'notes', label: 'Notes', icon: MessageSquare },
   { key: 'activity', label: 'Activity', icon: ActivityIcon },
 ] as const;
@@ -113,12 +111,6 @@ export function CaseTabs({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  // Notification deep-links point at `/cases/{id}#note-{noteId}`. The anchor
-  // target only exists once the Notes tab is active, so we handle this in
-  // two stages: (1) if the hash is a note anchor, flip to the Notes tab;
-  // (2) once the Notes tab has actually mounted its DOM, scroll to the
-  // element. Doing the scroll here instead of in the same effect as
-  // setActive avoids a race where rAF fires before React commits.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     function syncTabFromHash() {
@@ -136,7 +128,6 @@ export function CaseTabs({
     if (active !== 'notes') return;
     const hash = window.location.hash;
     if (!hash.startsWith('#note-')) return;
-    // Notes tab just committed — the anchor element is now in the DOM.
     const id = hash.slice(1);
     const raf = requestAnimationFrame(() => {
       const el = document.getElementById(id);
@@ -190,8 +181,8 @@ export function CaseTabs({
     canSubmit || isPendingApproval || canStartExecution || canMarkRefunded || canDelete;
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_220px]">
-      <div className="space-y-4 lg:order-1 lg:col-start-1">
+    <div className="grid gap-6 lg:grid-cols-[1fr_220px]">
+      <div className="space-y-5 lg:order-1 lg:col-start-1">
         {/* Action bar */}
         {showActionBar && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2.5 shadow-sm">
@@ -265,37 +256,36 @@ export function CaseTabs({
 
         {/* Tab bar */}
         <div className="flex border-b border-border">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = active === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setActive(tab.key)}
-              className={cn(
-                'flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
-                isActive
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-              {tab.key === 'notes' && notes.length > 0 && (
-                <span className="rounded-full bg-surface-subtle px-1.5 py-0.5 text-xs">
-                  {notes.length}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = active === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActive(tab.key)}
+                className={cn(
+                  'flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+                {tab.key === 'notes' && notes.length > 0 && (
+                  <span className="rounded-full bg-surface-subtle px-1.5 py-0.5 text-xs">
+                    {notes.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
         {active === 'overview' && (
           <OverviewTab caseData={caseData} components={components} locale={locale} />
         )}
-        {active === 'components' && <ComponentsTab components={components} />}
         {active === 'notes' && (
           <NotesTab
             caseId={caseData.id}
@@ -338,119 +328,149 @@ function OverviewTab({
     key: c.paymentMethodKey,
     label: c.paymentMethodLabel,
   }));
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-      <div className="space-y-4">
-        <Section title="Customer">
-          <Field label="Name" value={caseData.customerName} />
-          <Field label="Email" value={caseData.customerEmail} />
-          <Field label="Phone" value={caseData.customerPhone ?? '—'} />
-          {caseData.customerNotes && <Field label="Notes" value={caseData.customerNotes} />}
-        </Section>
-
-        <Section title="Order">
-          <Field label="Order #" value={<span className="font-mono">{caseData.orderNumber}</span>} />
-          <Field label="Order date" value={formatDate(caseData.orderDate)} />
-          <Field
-            label="Order amount"
-            value={<span className="font-mono">{formatMoney(caseData.orderAmount, caseData.orderCurrency)}</span>}
-          />
-          <Field
-            label="Refund amount"
-            value={
-              <span className="font-mono">
-                {formatMoney(caseData.totalRefundAmount, caseData.orderCurrency)}
-                {caseData.isPartial && (
-                  <span className="ms-2 text-xs font-normal text-muted-foreground">(partial)</span>
-                )}
-              </span>
-            }
-          />
-          {paymentMethods.length > 0 && (
-            <Field
-              label="Payment"
-              value={<PaymentMethodIcons methods={paymentMethods} size="sm" />}
-            />
-          )}
-          <Field label="Brand · Country" value={`${caseData.brandName} · ${caseData.countryFlag} ${caseData.countryName}`} />
-          {caseData.branchName && <Field label="Branch" value={caseData.branchName} />}
-        </Section>
-
+    <div className="space-y-5">
+      {/* Summary cards row */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <SummaryCard
+          label="Order amount"
+          value={formatMoney(caseData.orderAmount, caseData.orderCurrency)}
+          mono
+        />
+        <SummaryCard
+          label="Refund amount"
+          value={formatMoney(caseData.totalRefundAmount, caseData.orderCurrency)}
+          mono
+          highlight
+          badge={caseData.isPartial ? 'Partial' : undefined}
+        />
         {caseData.auraPoints ? (
-          <Section title="Aura points (sidecar)">
-            <Field label="Points" value={caseData.auraPoints.toLocaleString()} />
-            <Field label="Aura status" value={caseData.auraStatus} />
-          </Section>
-        ) : null}
-
-        {(caseData.rootCause || caseData.rootCauseNotes) && (
-          <Section title="Root cause">
-            {caseData.rootCause && <Field label="Category" value={caseData.rootCause} />}
-            {caseData.rootCauseNotes && <Field label="Notes" value={caseData.rootCauseNotes} />}
-          </Section>
+          <SummaryCard
+            label="Aura points"
+            value={caseData.auraPoints.toLocaleString()}
+            badge={caseData.auraStatus}
+          />
+        ) : (
+          <SummaryCard
+            label="Order #"
+            value={caseData.orderNumber}
+            mono
+          />
         )}
       </div>
 
-      <div className="space-y-4">
-        <Section title="People">
-          <Field label="Created by" value={caseData.createdBy?.name ?? '—'} />
-          <Field label="Assigned to" value={caseData.assignedTo?.name ?? 'Unassigned'} />
-          <Field label="Approved by" value={caseData.approvedBy?.name ?? '—'} />
-          {caseData.approvedAt && <Field label="Approved at" value={formatDateTime(caseData.approvedAt)} />}
-        </Section>
+      {/* Main content grid */}
+      <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
+        <div className="space-y-5">
+          {/* Customer */}
+          <Section title="Customer">
+            <div className="grid gap-x-6 gap-y-3 p-4 sm:grid-cols-2">
+              <FieldInline label="Name" value={caseData.customerName} />
+              <FieldInline label="Email" value={caseData.customerEmail} />
+              <FieldInline label="Phone" value={caseData.customerPhone ?? '---'} />
+              {caseData.customerNotes && (
+                <div className="sm:col-span-2">
+                  <FieldInline label="Notes" value={caseData.customerNotes} />
+                </div>
+              )}
+            </div>
+          </Section>
 
-        <CustomerHistory
-          locale={locale}
-          customerEmail={caseData.customerEmail}
-          excludeCaseId={caseData.id}
-        />
+          {/* Order */}
+          <Section title="Order">
+            <div className="grid gap-x-6 gap-y-3 p-4 sm:grid-cols-2">
+              <FieldInline label="Order #" value={<span className="font-mono">{caseData.orderNumber}</span>} />
+              <FieldInline label="Order date" value={formatDate(caseData.orderDate)} />
+              <FieldInline label="Brand" value={`${caseData.countryFlag} ${caseData.brandName}`} />
+              <FieldInline label="Country" value={caseData.countryName} />
+              {caseData.branchName && (
+                <FieldInline label="Branch" value={caseData.branchName} />
+              )}
+            </div>
+          </Section>
+
+          {/* Payment */}
+          <Section title="Payment">
+            {components.length === 0 ? (
+              <div className="p-4 text-sm text-muted-foreground">No payment components.</div>
+            ) : (
+              <div className="divide-y divide-border">
+                {components.map((c) => (
+                  <div key={c.id} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
+                    <div className="flex items-center gap-2">
+                      <PaymentMethodIcons
+                        methods={[{ key: c.paymentMethodKey, label: c.paymentMethodLabel }]}
+                        size="sm"
+                      />
+                    </div>
+                    <div className="font-mono text-sm font-medium">
+                      {formatMoney(c.amount, c.currency)}
+                    </div>
+                    {c.authCode && (
+                      <div className="text-xs text-muted-foreground">
+                        Auth: <span className="font-mono font-medium text-foreground">{c.authCode}</span>
+                      </div>
+                    )}
+                    {c.arn && (
+                      <div className="text-xs text-muted-foreground">
+                        ARN: <span className="font-mono font-medium text-foreground">{c.arn}</span>
+                      </div>
+                    )}
+                    <div className="ms-auto">
+                      <ComponentStatusBadge status={c.status} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* Aura */}
+          {caseData.auraPoints ? (
+            <Section title="Aura Points">
+              <div className="grid gap-x-6 gap-y-3 p-4 sm:grid-cols-2">
+                <FieldInline label="Points" value={caseData.auraPoints.toLocaleString()} />
+                <FieldInline label="Status" value={caseData.auraStatus} />
+              </div>
+            </Section>
+          ) : null}
+
+          {/* Root cause */}
+          {(caseData.rootCause || caseData.rootCauseNotes) && (
+            <Section title="Root cause">
+              <div className="grid gap-x-6 gap-y-3 p-4 sm:grid-cols-2">
+                {caseData.rootCause && <FieldInline label="Category" value={caseData.rootCause} />}
+                {caseData.rootCauseNotes && (
+                  <div className="sm:col-span-2">
+                    <FieldInline label="Notes" value={caseData.rootCauseNotes} />
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
+        </div>
+
+        {/* Right column */}
+        <div className="space-y-5">
+          <Section title="People">
+            <div className="space-y-3 p-4">
+              <FieldInline label="Created by" value={caseData.createdBy?.name ?? '---'} />
+              <FieldInline label="Assigned to" value={caseData.assignedTo?.name ?? 'Unassigned'} />
+              <FieldInline label="Approved by" value={caseData.approvedBy?.name ?? '---'} />
+              {caseData.approvedAt && (
+                <FieldInline label="Approved at" value={formatDateTime(caseData.approvedAt)} />
+              )}
+            </div>
+          </Section>
+
+          <CustomerHistory
+            locale={locale}
+            customerEmail={caseData.customerEmail}
+            excludeCaseId={caseData.id}
+          />
+        </div>
       </div>
-    </div>
-  );
-}
-
-function ComponentsTab({ components }: { components: Component[] }) {
-  if (components.length === 0) {
-    return (
-      <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-        No payment components on this case.
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full text-sm">
-        <thead className="bg-surface-subtle text-xs uppercase tracking-wider text-muted-foreground">
-          <tr>
-            <th className="px-4 py-2 text-start font-medium">Payment method</th>
-            <th className="px-4 py-2 text-end font-medium">Amount</th>
-            <th className="px-4 py-2 text-start font-medium">Auth code</th>
-            <th className="px-4 py-2 text-start font-medium">ARN</th>
-            <th className="px-4 py-2 text-start font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {components.map((c) => (
-            <tr key={c.id}>
-              <td className="px-4 py-3">
-                <PaymentMethodIcons
-                  methods={[{ key: c.paymentMethodKey, label: c.paymentMethodLabel }]}
-                  size="sm"
-                />
-              </td>
-              <td className="px-4 py-3 text-end font-mono">
-                {formatMoney(c.amount, c.currency)}
-              </td>
-              <td className="px-4 py-3 font-mono text-xs">{c.authCode ?? '—'}</td>
-              <td className="px-4 py-3 font-mono text-xs">{c.arn ?? '—'}</td>
-              <td className="px-4 py-3">
-                <ComponentStatusBadge status={c.status} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -512,7 +532,7 @@ function NotesTab({
           value={body}
           onChange={(e) => setBody(e.target.value)}
           className="min-h-[96px] w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          placeholder="Write a note… use @ to mention teammates"
+          placeholder="Write a note... use @ to mention teammates"
           maxLength={4000}
         />
 
@@ -530,7 +550,7 @@ function NotesTab({
                   className="ms-1 text-primary/60 hover:text-primary"
                   aria-label="Remove mention"
                 >
-                  ×
+                  x
                 </button>
               </span>
             ))}
@@ -580,7 +600,7 @@ function NotesTab({
 
           <Button type="submit" size="sm" disabled={isPending || !body.trim()}>
             <Send className="h-4 w-4" />
-            {isPending ? 'Posting…' : 'Post note'}
+            {isPending ? 'Posting...' : 'Post note'}
           </Button>
         </div>
       </form>
@@ -660,22 +680,57 @@ function ActivityTab({ activity }: { activity: Activity[] }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/* ── Shared UI helpers ── */
+
+function SummaryCard({
+  label,
+  value,
+  mono,
+  highlight,
+  badge,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  highlight?: boolean;
+  badge?: string;
+}) {
   return (
-    <div className="rounded-md border border-border bg-surface">
-      <div className="border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        {title}
+    <div className={cn(
+      'rounded-lg border p-4',
+      highlight ? 'border-primary/30 bg-primary/5' : 'border-border bg-surface',
+    )}>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className={cn('text-lg font-semibold text-heading', mono && 'font-mono')}>
+          {value}
+        </span>
+        {badge && (
+          <span className="rounded-full bg-surface-subtle px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {badge}
+          </span>
+        )}
       </div>
-      <dl className="divide-y divide-border">{children}</dl>
     </div>
   );
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[120px_1fr] gap-2 px-4 py-2.5 text-sm">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-foreground">{value}</dd>
+    <div className="rounded-lg border border-border bg-surface overflow-hidden">
+      <div className="border-b border-border bg-surface-subtle/50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function FieldInline({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-sm text-foreground">{value}</div>
     </div>
   );
 }

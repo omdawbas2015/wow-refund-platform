@@ -74,8 +74,6 @@ export function PaymentBrand({
 
 function defaultLabel(key: string): string {
   switch (key) {
-    case 'VISA':
-      return 'Visa';
     case 'MASTERCARD':
       return 'Mastercard';
 
@@ -96,7 +94,6 @@ type RendererProps = { label: string; size: PaymentSize };
 type Renderer = (p: RendererProps) => React.ReactElement;
 
 const RENDERERS: Record<string, Renderer> = {
-  VISA: VisaBadge,
   MASTERCARD: MastercardBadge,
   APPLE_PAY: ApplePayBadge,
   KNET: KnetBadge,
@@ -130,21 +127,6 @@ function Chip({
     >
       {children}
     </span>
-  );
-}
-
-function VisaBadge({ label, size }: RendererProps) {
-  return (
-    <Chip label={label} size={size} className="bg-white">
-      <span
-        className={cn(
-          'font-black italic leading-none tracking-[-0.02em] text-[#1a1f71]',
-          size === 'md' ? 'text-[14px]' : 'text-[9px]',
-        )}
-      >
-        VISA
-      </span>
-    </Chip>
   );
 }
 
@@ -215,9 +197,12 @@ function AuraBadge({ label, size }: RendererProps) {
 
 function CreditCardBadge({ label, size }: RendererProps) {
   return (
-    <Chip label={label} size={size} className="bg-[#1a1f36] text-white">
+    <Chip label={label} size={size} className="bg-white">
       <CreditCard
-        className={size === 'md' ? 'h-4 w-4' : 'h-3 w-3'}
+        className={cn(
+          'text-[#64748b]',
+          size === 'md' ? 'h-3.5 w-3.5' : 'h-2.5 w-2.5',
+        )}
         strokeWidth={2}
       />
     </Chip>

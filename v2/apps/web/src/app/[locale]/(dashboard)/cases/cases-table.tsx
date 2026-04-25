@@ -57,7 +57,6 @@ export function CasesTable({
   const [openId, setOpenId] = useState<string | null>(null);
   const openCase = cases.find((c) => c.id === openId) ?? null;
 
-  // Close on escape
   useEffect(() => {
     if (!openId) return;
     const onKey = (e: KeyboardEvent) => {
@@ -69,37 +68,36 @@ export function CasesTable({
 
   return (
     <>
-      {/* Desktop / tablet — horizontally scrollable table */}
+      {/* Desktop — clean data table */}
       <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[900px] text-sm">
-          <thead className="bg-surface-subtle text-[11px] uppercase tracking-wider text-muted-foreground">
-            <tr>
-              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Case #</th>
-              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Customer</th>
-              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Brand · Country</th>
-              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Order</th>
-              <th className="whitespace-nowrap px-4 py-3 text-end font-medium">Refund</th>
-              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Payment</th>
-              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Status</th>
-              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Created</th>
-              <th className="w-10 px-2 py-3"></th>
+        <table className="w-full min-w-[860px] text-sm">
+          <thead>
+            <tr className="border-b border-border bg-surface-subtle/70">
+              <th className="whitespace-nowrap px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-wider text-muted-foreground">Case</th>
+              <th className="whitespace-nowrap px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-wider text-muted-foreground">Customer</th>
+              <th className="whitespace-nowrap px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-wider text-muted-foreground">Brand</th>
+              <th className="whitespace-nowrap px-4 py-2.5 text-end text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amount</th>
+              <th className="whitespace-nowrap px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-wider text-muted-foreground">Payment</th>
+              <th className="whitespace-nowrap px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+              <th className="whitespace-nowrap px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
+              <th className="w-8 px-2 py-2.5" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
+          <tbody className="divide-y divide-border/60">
             {cases.map((c) => (
               <tr
                 key={c.id}
                 onClick={() => setOpenId(c.id)}
                 className={cn(
-                  'cursor-pointer transition-colors hover:bg-surface-subtle/50',
+                  'group cursor-pointer transition-colors hover:bg-primary/[0.03]',
                   openId === c.id && 'bg-primary/5',
-                  c.isDeleted && 'opacity-60',
+                  c.isDeleted && 'opacity-50',
                 )}
               >
                 <td className="whitespace-nowrap px-4 py-3">
                   <span
                     className={cn(
-                      'font-mono text-sm font-medium',
+                      'font-mono text-xs font-semibold',
                       c.isDeleted ? 'text-muted-foreground line-through' : 'text-primary',
                     )}
                   >
@@ -107,34 +105,30 @@ export function CasesTable({
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="font-medium">{c.customerName}</div>
-                  <div className="text-xs text-muted-foreground">{c.customerEmail}</div>
+                  <div className="max-w-[180px] truncate font-medium text-heading">{c.customerName}</div>
+                  <div className="max-w-[180px] truncate text-xs text-muted-foreground">{c.customerEmail}</div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-lg leading-none">{c.countryFlag || '🌐'}</span>
+                    <span className="text-base leading-none">{c.countryFlag || '\uD83C\uDF10'}</span>
                     <div>
-                      <div className="text-sm font-medium">{c.brandName}</div>
+                      <div className="text-sm font-medium text-heading">{c.brandName}</div>
                       <div className="text-xs text-muted-foreground">{c.countryName}</div>
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-3">
-                  <div className="font-mono text-xs">{c.orderNumber}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatDate(new Date(c.orderDate))}
+                <td className="whitespace-nowrap px-4 py-3 text-end">
+                  <div className="font-mono text-sm font-semibold text-heading">
+                    {formatMoney(c.totalRefundAmount, c.orderCurrency)}
                   </div>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-end font-mono">
-                  {formatMoney(c.totalRefundAmount, c.orderCurrency)}
                   {c.isPartial && (
-                    <div className="text-xs font-normal text-muted-foreground">
+                    <div className="text-[10px] text-muted-foreground">
                       of {formatMoney(c.orderAmount, c.orderCurrency)}
                     </div>
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <PaymentMethodIcons methods={c.paymentMethods} />
+                  <PaymentMethodIcons methods={c.paymentMethods} size="sm" />
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   {c.isDeleted ? (
@@ -149,8 +143,8 @@ export function CasesTable({
                 <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
                   {formatDate(new Date(c.createdAt))}
                 </td>
-                <td className="px-2 py-3 text-muted-foreground">
-                  <ArrowUpRight className="h-4 w-4" />
+                <td className="px-2 py-3">
+                  <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                 </td>
               </tr>
             ))}
@@ -158,18 +152,18 @@ export function CasesTable({
         </table>
       </div>
 
-      {/* Mobile — stacked card list */}
+      {/* Mobile — card list */}
       <ul className="divide-y divide-border md:hidden">
         {cases.map((c) => (
           <li
             key={c.id}
             onClick={() => setOpenId(c.id)}
             className={cn(
-              'cursor-pointer px-4 py-3 transition-colors hover:bg-surface-subtle/50',
-              c.isDeleted && 'opacity-60',
+              'cursor-pointer px-4 py-3.5 transition-colors hover:bg-surface-subtle/50',
+              c.isDeleted && 'opacity-50',
             )}
           >
-            <div className="mb-1 flex items-center justify-between gap-2">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
               <span
                 className={cn(
                   'font-mono text-xs font-semibold',
@@ -187,19 +181,17 @@ export function CasesTable({
                 <CaseStatusBadge status={c.status} />
               )}
             </div>
-            <div className="text-sm font-medium">{c.customerName}</div>
-            <div className="mb-2 text-xs text-muted-foreground">{c.customerEmail}</div>
+            <div className="text-sm font-medium text-heading">{c.customerName}</div>
             <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1">
-                <span className="text-base leading-none">{c.countryFlag || '🌐'}</span>
+                <span className="text-base leading-none">{c.countryFlag || '\uD83C\uDF10'}</span>
                 <span className="text-foreground">{c.brandName}</span>
                 <span>· {c.countryName}</span>
               </span>
-              <span className="font-mono">{c.orderNumber}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <PaymentMethodIcons methods={c.paymentMethods} />
-              <span className="font-mono text-sm font-semibold">
+              <PaymentMethodIcons methods={c.paymentMethods} size="sm" />
+              <span className="font-mono text-sm font-semibold text-heading">
                 {formatMoney(c.totalRefundAmount, c.orderCurrency)}
               </span>
             </div>
@@ -281,12 +273,10 @@ function CaseQuickDrawer({
 
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
-      {/* Scrim */}
       <div
         className="absolute inset-0 bg-foreground/30 backdrop-blur-sm"
         onClick={onClose}
       />
-      {/* Panel — slides from inline-end (right in LTR, left in RTL) */}
       <div
         className={cn(
           'absolute inset-y-0 end-0 flex w-full max-w-[480px] flex-col',
@@ -331,7 +321,6 @@ function CaseQuickDrawer({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {/* Stepper */}
           <div className="mb-5">
             <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Progress
@@ -343,11 +332,9 @@ function CaseQuickDrawer({
             />
           </div>
 
-          {/* Overview grid — payment sits inline here with order info so it
-              reads like an invoice line, not a separate header block. */}
           <div className="mb-5 grid grid-cols-2 gap-4 text-sm">
             <InfoRow label="Brand">
-              <span className="me-1.5 text-base leading-none">{caseRow.countryFlag || '🌐'}</span>
+              <span className="me-1.5 text-base leading-none">{caseRow.countryFlag || '\uD83C\uDF10'}</span>
               {caseRow.brandName}
             </InfoRow>
             <InfoRow label="Country">{caseRow.countryName}</InfoRow>
@@ -405,7 +392,7 @@ function CaseQuickDrawer({
           )}
         </div>
 
-        {/* Footer / Actions */}
+        {/* Footer */}
         <div className="border-t border-border px-6 py-4">
           <div className="flex flex-wrap items-center gap-2">
             {canSubmit && (

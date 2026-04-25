@@ -48,8 +48,6 @@ export function NewCaseForm({
   const [auraPoints, setAuraPoints] = useState('');
   const [includeAura, setIncludeAura] = useState(false);
 
-  // Single payment method per case. No card numbers — the agent only
-  // records the network the customer used (Visa / Mastercard / KNET / …).
   const [paymentMethodId, setPaymentMethodId] = useState('');
   const [authCode, setAuthCode] = useState('');
 
@@ -66,8 +64,6 @@ export function NewCaseForm({
 
   async function submit(acknowledgeDuplicate = false) {
     setError(null);
-    // Always clear any prior duplicate alert; the server response is the
-    // source of truth and will re-populate it if the conflict still stands.
     setDuplicate(null);
 
     if (!paymentMethodId) {
@@ -193,7 +189,6 @@ export function NewCaseForm({
             ))}
           </select>
         </div>
-
         <div className="space-y-1.5">
           <Label htmlFor="brand">Brand</Label>
           <select
@@ -290,19 +285,14 @@ export function NewCaseForm({
         </div>
       </section>
 
-      {/* ── Payment method + Aura ── */}
+      {/* ── Payment method ── */}
       <section className="space-y-4">
-        <div className="flex items-end justify-between gap-4">
-          <h3 className="text-heading-sm text-heading">Payment method</h3>
-          <p className="text-xs text-muted-foreground">
-            Pick the network the customer tapped — one per case.
-          </p>
-        </div>
+        <h3 className="text-heading-sm text-heading">Payment method</h3>
 
         <div
           role="radiogroup"
           aria-label="Payment method"
-          className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-3"
         >
           {paymentMethods.map((m) => {
             const selected = m.id === paymentMethodId;
@@ -330,33 +320,8 @@ export function NewCaseForm({
               </button>
             );
           })}
-
-          {/* Aura Points — add-on toggle alongside payment methods */}
-          <button
-            type="button"
-            aria-pressed={includeAura}
-            onClick={() => {
-              setIncludeAura(!includeAura);
-              if (includeAura) setAuraPoints('');
-            }}
-            className={cn(
-              'relative flex items-center gap-2 rounded-lg border bg-surface px-3 py-2.5 text-sm transition-all',
-              includeAura
-                ? 'border-[#E6007E] shadow-sm ring-2 ring-[#E6007E]/20'
-                : 'border-border hover:border-heading/30 hover:shadow-sm',
-            )}
-          >
-            <PaymentBrand brandKey="AURA" size="sm" />
-            <span className="font-medium text-heading">Aura</span>
-            {includeAura && (
-              <span className="absolute end-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#E6007E] text-white">
-                <Check className="h-2.5 w-2.5" />
-              </span>
-            )}
-          </button>
         </div>
 
-        {/* Auth code — shown when KNET (or any requiresAuthCode method) is selected */}
         {selectedMethod?.requiresAuthCode && (
           <div className="space-y-1.5">
             <Label htmlFor="authCode">Auth code</Label>
@@ -373,26 +338,53 @@ export function NewCaseForm({
             </p>
           </div>
         )}
+      </section>
 
-        {/* Aura points input — shown when Aura is toggled on */}
-        {includeAura && (
-          <div className="rounded-lg border border-[#E6007E]/20 bg-[#E6007E]/5 p-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="auraPoints" className="text-sm font-medium">
-                Aura points to refund
-              </Label>
-              <Input
-                id="auraPoints"
-                type="number"
-                min="0"
-                step="1"
-                value={auraPoints}
-                onChange={(e) => setAuraPoints(e.target.value)}
-                placeholder="Enter points"
-                required
-                className="bg-surface"
-              />
+      {/* ── Aura Points (sidecar) ── */}
+      <section className="space-y-3">
+        <button
+          type="button"
+          onClick={() => {
+            setIncludeAura(!includeAura);
+            if (includeAura) setAuraPoints('');
+          }}
+          className={cn(
+            'flex w-full items-center gap-3 rounded-lg border p-3 text-start transition-all',
+            includeAura
+              ? 'border-[#E6007E] bg-[#E6007E]/5 ring-2 ring-[#E6007E]/15'
+              : 'border-border bg-surface hover:border-heading/30 hover:shadow-sm',
+          )}
+        >
+          <PaymentBrand brandKey="AURA" size="md" />
+          <div className="flex-1">
+            <div className="text-sm font-medium text-heading">Aura Points</div>
+            <div className="text-xs text-muted-foreground">
+              Include loyalty points refund alongside the payment
             </div>
+          </div>
+          <div className={cn(
+            'flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors',
+            includeAura
+              ? 'border-[#E6007E] bg-[#E6007E] text-white'
+              : 'border-border',
+          )}>
+            {includeAura && <Check className="h-3 w-3" />}
+          </div>
+        </button>
+
+        {includeAura && (
+          <div className="ms-4 space-y-1.5 border-s-2 border-[#E6007E]/30 ps-4">
+            <Label htmlFor="auraPoints">Points to refund</Label>
+            <Input
+              id="auraPoints"
+              type="number"
+              min="0"
+              step="1"
+              value={auraPoints}
+              onChange={(e) => setAuraPoints(e.target.value)}
+              placeholder="Enter points"
+              required
+            />
           </div>
         )}
       </section>
@@ -400,7 +392,6 @@ export function NewCaseForm({
       {/* ── Refund ── */}
       <section className="space-y-4">
         <h3 className="text-heading-sm text-heading">Refund</h3>
-
         <div className="rounded-lg border border-border bg-surface-subtle/50 p-4">
           <div className="flex items-center gap-1 rounded-md bg-surface p-0.5 border border-border w-fit">
             <button
