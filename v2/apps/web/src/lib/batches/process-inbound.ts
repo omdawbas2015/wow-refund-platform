@@ -299,10 +299,16 @@ async function applyAuraConfirmation(
       }
     }
 
-    // Cumulative count guards against multi-email confirmations leaving the
-    // batch stuck in AWAITING forever.
-    const cumulativeCompleted = batch.completedCases + completed;
-    const allDone = cumulativeCompleted >= batch.totalCases;
+    // Use the authoritative DB count (post-update) so multi-email replies AND
+    // FAILED cases both contribute to closing the batch — the batch is "done"
+    // once every case has a terminal Aura status, regardless of which side.
+    const remaining = await tx.refundCase.count({
+      where: {
+        auraBatchId: batch.id,
+        auraStatus: { in: ['PENDING', 'IN_BATCH'] },
+      },
+    });
+    const allDone = remaining === 0;
     await tx.auraBatch.update({
       where: { id: batch.id },
       data: {

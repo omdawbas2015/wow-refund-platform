@@ -27,6 +27,13 @@ export default async function OperationsPage({
   const activeTab =
     tabParam === 'knet' || tabParam === 'aura' ? tabParam : 'approvals';
 
+  // Resolve KNET payment method id once so the "pending KNET components"
+  // query can use the same criteria as createKnetBatchAction.
+  const knetMethod = await prisma.paymentMethod.findFirst({
+    where: { key: 'knet', isActive: true },
+    select: { id: true },
+  });
+
   const [
     countries,
     pendingByCountry,
@@ -78,12 +85,21 @@ export default async function OperationsPage({
       orderBy: { sentAt: 'desc' },
       take: 25,
     }),
+    // Components ready to be sent in a NEW KNET batch. Mirrors the criteria
+    // in createKnetBatchAction (batches.ts) so the count + click are coherent.
     prisma.refundComponent.findMany({
-      where: {
-        status: 'AWAITING_ARN',
-        arn: null,
-        case: { deletedAt: null },
-      },
+      where: knetMethod
+        ? {
+            paymentMethodId: knetMethod.id,
+            status: { in: ['PENDING', 'AWAITING_BATCH'] },
+            arn: null,
+            batchId: null,
+            case: {
+              deletedAt: null,
+              status: { in: ['APPROVED', 'IN_EXECUTION', 'PARTIALLY_REFUNDED'] },
+            },
+          }
+        : { id: '__none__' },
       include: {
         case: {
           select: {
@@ -162,7 +178,7 @@ export default async function OperationsPage({
   });
 
   const totalPendingApprovals = countryRows.reduce((s, r) => s + r.pendingCount, 0);
-  const totalPendingArns = pendingKnetComponents.length;
+  const totalKnetReady = pendingKnetComponents.length;
   const totalPendingAura = pendingAuraCases.length;
 
   return (
@@ -192,8 +208,8 @@ export default async function OperationsPage({
           } with cases`}
         />
         <SummaryCard
-          label="ARNs awaiting verification"
-          value={totalPendingArns}
+          label="KNET components ready"
+          value={totalKnetReady}
           hint={`${liveKnetBatches.length} live KNET batch${liveKnetBatches.length === 1 ? '' : 'es'}`}
         />
         <SummaryCard
