@@ -434,13 +434,10 @@ function ComponentsTab({ components }: { components: Component[] }) {
           {components.map((c) => (
             <tr key={c.id}>
               <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <PaymentMethodIcons
-                    methods={[{ key: c.paymentMethodKey, label: c.paymentMethodLabel }]}
-                    size="md"
-                  />
-                  <span className="text-sm font-medium">{c.paymentMethodLabel}</span>
-                </div>
+                <PaymentMethodIcons
+                  methods={[{ key: c.paymentMethodKey, label: c.paymentMethodLabel }]}
+                  size="sm"
+                />
               </td>
               <td className="px-4 py-3 text-end font-mono">
                 {formatMoney(c.amount, c.currency)}

@@ -11,18 +11,22 @@ export type PaymentSize = 'sm' | 'md';
 /**
  * Payment-method badges styled after real-world brand marks on a Stripe
  * checkout: fixed card-chip aspect ratio, authentic colors, glyphs / short
- * wordmarks only. The label never appears on the chip itself — it lives
- * in the native tooltip — so rows stay tight and scannable across brands.
+ * wordmarks only. The brand label is rendered as text next to the chip
+ * (not on it), matching how accepted-methods strips look on real
+ * checkouts.
  *
- * Sizes: sm = 36×22 (list rows), md = 56×36 (form picker / hero).
+ * Sizes: sm = 28×18 (compact list cells), md = 56×36 (form picker tiles).
  */
 export function PaymentMethodIcons({
   methods,
   size = 'sm',
+  showLabel = true,
   className,
 }: {
   methods: PaymentMethodInfo[];
   size?: PaymentSize;
+  /** Show the brand name inline next to the chip. Defaults to true. */
+  showLabel?: boolean;
   className?: string;
 }) {
   if (methods.length === 0) {
@@ -37,9 +41,14 @@ export function PaymentMethodIcons({
   });
 
   return (
-    <div className={cn('inline-flex flex-wrap items-center gap-1.5', className)}>
+    <div className={cn('inline-flex flex-wrap items-center gap-2', className)}>
       {unique.map((m) => (
-        <PaymentBrand key={m.key} brandKey={m.key} label={m.label} size={size} />
+        <span key={m.key} className="inline-flex items-center gap-1.5">
+          <PaymentBrand brandKey={m.key} label={m.label} size={size} />
+          {showLabel && (
+            <span className="text-xs font-medium text-heading">{m.label}</span>
+          )}
+        </span>
       ))}
     </div>
   );
@@ -117,7 +126,7 @@ function Chip({
       role="img"
       className={cn(
         'inline-flex shrink-0 items-center justify-center overflow-hidden ring-1 ring-inset ring-black/10',
-        size === 'md' ? 'h-9 w-14 rounded-md' : 'h-[22px] w-9 rounded-[5px]',
+        size === 'md' ? 'h-9 w-14 rounded-md' : 'h-[18px] w-7 rounded',
         className,
       )}
     >
