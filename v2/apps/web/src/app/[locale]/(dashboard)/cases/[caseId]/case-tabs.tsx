@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { addCaseNoteAction, updateCaseStatusAction } from '@/app/actions/cases';
+import { addCaseNoteAction, updateCaseStatusAction, deleteCaseAction } from '@/app/actions/cases';
 import { Button } from '@/components/ui/button';
 import { ComponentStatusBadge } from '@/components/ui/case-status-badge';
 import { cn } from '@/lib/utils';
@@ -15,10 +15,11 @@ import {
   Send,
   AtSign,
   CheckCircle2,
-  XCircle,
+  Trash2,
 } from 'lucide-react';
 import { CustomerHistory } from './customer-history';
 import { CaseStatusStepper, type CaseStatus } from '@/components/ui/case-status-stepper';
+import { PaymentMethodIcons } from '@/components/ui/payment-method-icons';
 
 type CaseData = {
   id: string;
@@ -50,6 +51,7 @@ type CaseData = {
 
 type Component = {
   id: string;
+  paymentMethodKey: string;
   paymentMethodLabel: string;
   amount: number;
   currency: string;
@@ -95,6 +97,8 @@ export function CaseTabs({
   activity,
   mentionableUsers,
   currentUserId,
+  canApprove: canUserApprove,
+  isDeleted = false,
 }: {
   locale: string;
   caseData: CaseData;
@@ -103,6 +107,8 @@ export function CaseTabs({
   activity: Activity[];
   mentionableUsers: Mentionable[];
   currentUserId: string;
+  canApprove: boolean;
+  isDeleted?: boolean;
 }) {
   const [active, setActive] = useState<TabKey>('overview');
   const router = useRouter();
@@ -123,30 +129,52 @@ export function CaseTabs({
     });
   }
 
-  const canSubmit = caseData.status === 'DRAFT';
-  const canApprove = caseData.status === 'PENDING_APPROVAL';
-  const canStartExecution = caseData.status === 'APPROVED';
-  const canMarkRefunded = caseData.status === 'IN_EXECUTION' || caseData.status === 'PARTIALLY_REFUNDED';
+  function deleteCase() {
+    const reason = window.prompt('Reason for deleting this case?');
+    if (!reason || reason.trim().length < 3) return;
+    startTransition(async () => {
+      const result = await deleteCaseAction({ caseId: caseData.id, reason: reason.trim() });
+      if (result.ok) {
+        router.refresh();
+      } else {
+        alert(result.error);
+      }
+    });
+  }
+
+  const canSubmit = !isDeleted && caseData.status === 'DRAFT';
+  const isPendingApproval = !isDeleted && caseData.status === 'PENDING_APPROVAL';
+  const canStartExecution = !isDeleted && caseData.status === 'APPROVED';
+  const canMarkRefunded =
+    !isDeleted &&
+    (caseData.status === 'IN_EXECUTION' || caseData.status === 'PARTIALLY_REFUNDED');
+  const canDelete =
+    !isDeleted &&
+    caseData.status !== 'REFUNDED' &&
+    caseData.status !== 'PARTIALLY_REFUNDED' &&
+    caseData.status !== 'REJECTED' &&
+    caseData.status !== 'CANCELLED';
+
+  const showActionBar =
+    canSubmit || isPendingApproval || canStartExecution || canMarkRefunded || canDelete;
 
   return (
-    <div className="space-y-4">
-      {/* Status stepper */}
-      <CaseStatusStepper status={caseData.status as CaseStatus} locale={locale} />
-
-      {/* Action bar */}
-      {(canSubmit || canApprove || canStartExecution || canMarkRefunded) && (
-        <div className="flex flex-wrap gap-2 rounded-md border border-border bg-surface-subtle/40 p-2">
-          {canSubmit && (
-            <Button
-              size="sm"
-              disabled={isPending}
-              onClick={() => transitionStatus('PENDING_APPROVAL')}
-            >
-              Submit for approval
-            </Button>
-          )}
-          {canApprove && (
-            <>
+    <div className="grid gap-5 lg:grid-cols-[1fr_220px]">
+      <div className="space-y-4 lg:order-1 lg:col-start-1">
+        {/* Action bar */}
+        {showActionBar && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2.5 shadow-sm">
+            {canSubmit && (
+              <Button
+                size="sm"
+                disabled={isPending}
+                onClick={() => transitionStatus('PENDING_APPROVAL')}
+              >
+                <Send className="h-4 w-4" />
+                Submit for approval
+              </Button>
+            )}
+            {isPendingApproval && canUserApprove && (
               <Button
                 size="sm"
                 variant="success"
@@ -156,60 +184,56 @@ export function CaseTabs({
                 <CheckCircle2 className="h-4 w-4" />
                 Approve
               </Button>
+            )}
+            {isPendingApproval && !canUserApprove && (
+              <span className="rounded-md bg-surface-subtle/60 px-2.5 py-1.5 text-xs text-muted-foreground">
+                Waiting for country manager approval
+              </span>
+            )}
+            {canStartExecution && (
               <Button
                 size="sm"
-                variant="destructive"
                 disabled={isPending}
-                onClick={() => {
-                  const reason = window.prompt('Reason for rejection?');
-                  if (reason) transitionStatus('REJECTED', reason);
-                }}
+                onClick={() => transitionStatus('IN_EXECUTION')}
               >
-                <XCircle className="h-4 w-4" />
-                Reject
+                Start execution
               </Button>
-            </>
-          )}
-          {canStartExecution && (
-            <Button
-              size="sm"
-              disabled={isPending}
-              onClick={() => transitionStatus('IN_EXECUTION')}
-            >
-              Start execution
-            </Button>
-          )}
-          {canMarkRefunded && (
-            <Button
-              size="sm"
-              variant="success"
-              disabled={isPending}
-              onClick={() => transitionStatus('REFUNDED')}
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              Mark refunded
-            </Button>
-          )}
-          {caseData.status !== 'REFUNDED' &&
-            caseData.status !== 'REJECTED' &&
-            caseData.status !== 'CANCELLED' && (
+            )}
+            {canMarkRefunded && (
+              <Button
+                size="sm"
+                variant="success"
+                disabled={isPending}
+                onClick={() => transitionStatus('REFUNDED')}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Mark refunded
+              </Button>
+            )}
+            <div className="ms-auto" />
+            {canDelete && (
               <Button
                 size="sm"
                 variant="ghost"
                 disabled={isPending}
-                onClick={() => {
-                  const reason = window.prompt('Reason for cancellation?');
-                  if (reason) transitionStatus('CANCELLED', reason);
-                }}
+                onClick={deleteCase}
+                className="text-destructive hover:bg-destructive/5 hover:text-destructive"
               >
-                Cancel case
+                <Trash2 className="h-4 w-4" />
+                Delete case
               </Button>
             )}
-        </div>
-      )}
+          </div>
+        )}
+        {isDeleted && (
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <Trash2 className="h-4 w-4" />
+            This case has been deleted. It is read-only and preserved for audit.
+          </div>
+        )}
 
-      {/* Tab bar */}
-      <div className="flex border-b border-border">
+        {/* Tab bar */}
+        <div className="flex border-b border-border">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = active === tab.key;
@@ -237,25 +261,61 @@ export function CaseTabs({
         })}
       </div>
 
-      {active === 'overview' && <OverviewTab caseData={caseData} locale={locale} />}
-      {active === 'components' && <ComponentsTab components={components} />}
-      {active === 'notes' && (
-        <NotesTab
-          caseId={caseData.id}
-          notes={notes}
-          mentionableUsers={mentionableUsers}
-          currentUserId={currentUserId}
-        />
-      )}
-      {active === 'activity' && <ActivityTab activity={activity} />}
+        {active === 'overview' && (
+          <OverviewTab caseData={caseData} components={components} locale={locale} />
+        )}
+        {active === 'components' && <ComponentsTab components={components} />}
+        {active === 'notes' && (
+          <NotesTab
+            caseId={caseData.id}
+            notes={notes}
+            mentionableUsers={mentionableUsers}
+            currentUserId={currentUserId}
+          />
+        )}
+        {active === 'activity' && <ActivityTab activity={activity} />}
+      </div>
+
+      {/* Right rail: vertical status stepper */}
+      <aside className="lg:order-2 lg:col-start-2">
+        <div className="lg:sticky lg:top-24">
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Progress
+          </div>
+          <CaseStatusStepper
+            status={caseData.status as CaseStatus}
+            locale={locale}
+            deleted={isDeleted}
+          />
+        </div>
+      </aside>
     </div>
   );
 }
 
-function OverviewTab({ caseData, locale }: { caseData: CaseData; locale: string }) {
+function OverviewTab({
+  caseData,
+  components,
+  locale,
+}: {
+  caseData: CaseData;
+  components: Component[];
+  locale: string;
+}) {
+  const paymentMethods = components.map((c) => ({
+    key: c.paymentMethodKey,
+    label: c.paymentMethodLabel,
+  }));
   return (
     <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
       <div className="space-y-4">
+        {paymentMethods.length > 0 && (
+          <Section title="Payment">
+            <div className="py-1">
+              <PaymentMethodIcons methods={paymentMethods} size="md" />
+            </div>
+          </Section>
+        )}
         <Section title="Customer">
           <Field label="Name" value={caseData.customerName} />
           <Field label="Email" value={caseData.customerEmail} />
@@ -343,7 +403,15 @@ function ComponentsTab({ components }: { components: Component[] }) {
         <tbody className="divide-y divide-border">
           {components.map((c) => (
             <tr key={c.id}>
-              <td className="px-4 py-3 font-medium">{c.paymentMethodLabel}</td>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <PaymentMethodIcons
+                    methods={[{ key: c.paymentMethodKey, label: c.paymentMethodLabel }]}
+                    size="md"
+                  />
+                  <span className="text-sm font-medium">{c.paymentMethodLabel}</span>
+                </div>
+              </td>
               <td className="px-4 py-3 text-end font-mono">
                 {formatMoney(c.amount, c.currency)}
               </td>

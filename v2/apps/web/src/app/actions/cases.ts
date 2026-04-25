@@ -22,6 +22,12 @@ async function requireSession() {
   return session.user;
 }
 
+const APPROVE_ROLES = new Set(['ADMIN', 'MANAGER']);
+
+function canApprove(role: string | null | undefined): boolean {
+  return !!role && APPROVE_ROLES.has(role);
+}
+
 async function generateCaseNumber(countryCode: string): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `REF-${countryCode}-${year}-`;
@@ -200,6 +206,21 @@ export async function updateCaseStatusAction(input: unknown): Promise<ActionResu
     if (!existing) return { ok: false, error: 'Case not found' };
     if (existing.deletedAt) return { ok: false, error: 'Case is archived' };
 
+    if (target === 'REJECTED') {
+      // Rejection is driven by the manager email flow, not by UI actions.
+      return {
+        ok: false,
+        error: 'Rejections are performed by the approver via email, not in the UI.',
+      };
+    }
+
+    if (target === 'APPROVED' && !canApprove(user.role)) {
+      return {
+        ok: false,
+        error: 'You do not have permission to approve cases.',
+      };
+    }
+
     if (!canTransition(existing.status as CaseStatusValue, target)) {
       return {
         ok: false,
@@ -208,7 +229,6 @@ export async function updateCaseStatusAction(input: unknown): Promise<ActionResu
     }
 
     const patch: Record<string, unknown> = { status: target };
-    if (target === 'REJECTED') patch['rejectedReason'] = reason ?? null;
     if (target === 'CANCELLED') patch['cancelledReason'] = reason ?? null;
     if (target === 'APPROVED') {
       patch['approvedById'] = user.id;
@@ -336,6 +356,66 @@ export async function markNotificationReadAction(
       data: { readAt: new Date() },
     });
     revalidatePath('/', 'layout');
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+}
+
+/**
+ * Soft-delete a case with a reason. The case remains visible in the list
+ * with a "Deleted" badge but can no longer be transitioned.
+ */
+export async function deleteCaseAction(input: {
+  caseId: string;
+  reason: string;
+}): Promise<ActionResult> {
+  try {
+    const user = await requireSession();
+    const caseId = String(input.caseId ?? '');
+    const reason = String(input.reason ?? '').trim();
+    if (!caseId) return { ok: false, error: 'Missing case id.' };
+    if (reason.length < 3) {
+      return { ok: false, error: 'Please provide a deletion reason (min 3 chars).' };
+    }
+
+    const existing = await prisma.refundCase.findUnique({ where: { id: caseId } });
+    if (!existing) return { ok: false, error: 'Case not found' };
+    if (existing.deletedAt) return { ok: false, error: 'Case is already deleted.' };
+    if (existing.status === 'REFUNDED' || existing.status === 'PARTIALLY_REFUNDED') {
+      return { ok: false, error: 'Refunded cases cannot be deleted.' };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.refundCase.update({
+        where: { id: caseId },
+        data: { deletedAt: new Date() },
+      });
+      await tx.activityLog.create({
+        data: {
+          caseId,
+          actorId: user.id,
+          actorLabel: user.name,
+          kind: 'case.deleted',
+          message: `deleted the case — ${reason}`,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: user.id,
+          actorEmail: user.email,
+          action: 'case.deleted',
+          entityType: 'CASE',
+          entityId: caseId,
+          beforeData: JSON.stringify({ deletedAt: null, status: existing.status }),
+          afterData: JSON.stringify({ deletedAt: new Date().toISOString(), reason }),
+        },
+      });
+    });
+
+    revalidatePath(`/cases/${caseId}`);
+    revalidatePath('/cases');
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

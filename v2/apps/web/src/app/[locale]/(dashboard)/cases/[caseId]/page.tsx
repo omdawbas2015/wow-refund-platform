@@ -48,9 +48,13 @@ export default async function CaseDetailsPage({
     },
   });
 
-  if (!refundCase || refundCase.deletedAt) {
+  if (!refundCase) {
     notFound();
   }
+
+  const role = session?.user?.role ?? null;
+  const canApprove = role === 'ADMIN' || role === 'MANAGER';
+  const isDeleted = !!refundCase.deletedAt;
 
   // For @mention picker: list active users
   const mentionableUsers = await prisma.user.findMany({
@@ -135,6 +139,7 @@ export default async function CaseDetailsPage({
         }}
         components={refundCase.components.map((c) => ({
           id: c.id,
+          paymentMethodKey: c.paymentMethod.key,
           paymentMethodLabel: c.paymentMethod.label,
           amount: c.amount,
           currency: c.currency,
@@ -160,6 +165,8 @@ export default async function CaseDetailsPage({
         }))}
         mentionableUsers={mentionableUsers}
         currentUserId={session?.user?.id ?? ''}
+        canApprove={canApprove}
+        isDeleted={isDeleted}
       />
     </div>
   );

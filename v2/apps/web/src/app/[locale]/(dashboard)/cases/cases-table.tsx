@@ -3,14 +3,14 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
-import { updateCaseStatusAction } from '@/app/actions/cases';
+import { deleteCaseAction, updateCaseStatusAction } from '@/app/actions/cases';
 import { Button } from '@/components/ui/button';
 import { CaseStatusBadge } from '@/components/ui/case-status-badge';
 import {
-  CaseStatusMiniStepper,
   CaseStatusStepper,
   type CaseStatus,
 } from '@/components/ui/case-status-stepper';
+import { PaymentMethodIcons } from '@/components/ui/payment-method-icons';
 import { formatDate, formatMoney } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
@@ -18,8 +18,8 @@ import {
   CheckCircle2,
   ExternalLink,
   Send,
+  Trash2,
   X,
-  XCircle,
 } from 'lucide-react';
 
 export type CaseRow = {
@@ -41,14 +41,18 @@ export type CaseRow = {
   createdAt: string;
   createdByName: string | null;
   rootCause: string | null;
+  isDeleted: boolean;
+  paymentMethods: { key: string; label: string }[];
 };
 
 export function CasesTable({
   locale,
   cases,
+  canApprove,
 }: {
   locale: string;
   cases: CaseRow[];
+  canApprove: boolean;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const openCase = cases.find((c) => c.id === openId) ?? null;
@@ -65,18 +69,20 @@ export function CasesTable({
 
   return (
     <>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-subtle text-xs uppercase tracking-wider text-muted-foreground">
+      {/* Desktop / tablet — horizontally scrollable table */}
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[900px] text-sm">
+          <thead className="bg-surface-subtle text-[11px] uppercase tracking-wider text-muted-foreground">
             <tr>
-              <th className="px-4 py-3 text-start font-medium">Case #</th>
-              <th className="px-4 py-3 text-start font-medium">Customer</th>
-              <th className="px-4 py-3 text-start font-medium">Brand · Country</th>
-              <th className="px-4 py-3 text-start font-medium">Order</th>
-              <th className="px-4 py-3 text-end font-medium">Refund</th>
-              <th className="px-4 py-3 text-start font-medium">Progress</th>
-              <th className="px-4 py-3 text-start font-medium">Created</th>
-              <th className="px-2 py-3"></th>
+              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Case #</th>
+              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Customer</th>
+              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Brand · Country</th>
+              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Order</th>
+              <th className="whitespace-nowrap px-4 py-3 text-end font-medium">Refund</th>
+              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Payment</th>
+              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Status</th>
+              <th className="whitespace-nowrap px-4 py-3 text-start font-medium">Created</th>
+              <th className="w-10 px-2 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -87,10 +93,16 @@ export function CasesTable({
                 className={cn(
                   'cursor-pointer transition-colors hover:bg-surface-subtle/50',
                   openId === c.id && 'bg-primary/5',
+                  c.isDeleted && 'opacity-60',
                 )}
               >
-                <td className="px-4 py-3">
-                  <span className="font-mono text-sm font-medium text-primary">
+                <td className="whitespace-nowrap px-4 py-3">
+                  <span
+                    className={cn(
+                      'font-mono text-sm font-medium',
+                      c.isDeleted ? 'text-muted-foreground line-through' : 'text-primary',
+                    )}
+                  >
                     {c.caseNumber}
                   </span>
                 </td>
@@ -113,7 +125,7 @@ export function CasesTable({
                     {formatDate(new Date(c.orderDate))}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-end font-mono">
+                <td className="whitespace-nowrap px-4 py-3 text-end font-mono">
                   {formatMoney(c.totalRefundAmount, c.orderCurrency)}
                   {c.isPartial && (
                     <div className="text-xs font-normal text-muted-foreground">
@@ -122,12 +134,19 @@ export function CasesTable({
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex flex-col gap-1.5">
-                    <CaseStatusMiniStepper status={c.status} />
-                    <CaseStatusBadge status={c.status} />
-                  </div>
+                  <PaymentMethodIcons methods={c.paymentMethods} />
                 </td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">
+                <td className="whitespace-nowrap px-4 py-3">
+                  {c.isDeleted ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                      <Trash2 className="h-3 w-3" />
+                      Deleted
+                    </span>
+                  ) : (
+                    <CaseStatusBadge status={c.status} />
+                  )}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
                   {formatDate(new Date(c.createdAt))}
                 </td>
                 <td className="px-2 py-3 text-muted-foreground">
@@ -139,10 +158,60 @@ export function CasesTable({
         </table>
       </div>
 
+      {/* Mobile — stacked card list */}
+      <ul className="divide-y divide-border md:hidden">
+        {cases.map((c) => (
+          <li
+            key={c.id}
+            onClick={() => setOpenId(c.id)}
+            className={cn(
+              'cursor-pointer px-4 py-3 transition-colors hover:bg-surface-subtle/50',
+              c.isDeleted && 'opacity-60',
+            )}
+          >
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span
+                className={cn(
+                  'font-mono text-xs font-semibold',
+                  c.isDeleted ? 'text-muted-foreground line-through' : 'text-primary',
+                )}
+              >
+                {c.caseNumber}
+              </span>
+              {c.isDeleted ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  <Trash2 className="h-3 w-3" />
+                  Deleted
+                </span>
+              ) : (
+                <CaseStatusBadge status={c.status} />
+              )}
+            </div>
+            <div className="text-sm font-medium">{c.customerName}</div>
+            <div className="mb-2 text-xs text-muted-foreground">{c.customerEmail}</div>
+            <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <span className="text-base leading-none">{c.countryFlag || '🌐'}</span>
+                <span className="text-foreground">{c.brandName}</span>
+                <span>· {c.countryName}</span>
+              </span>
+              <span className="font-mono">{c.orderNumber}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <PaymentMethodIcons methods={c.paymentMethods} />
+              <span className="font-mono text-sm font-semibold">
+                {formatMoney(c.totalRefundAmount, c.orderCurrency)}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+
       {openCase && (
         <CaseQuickDrawer
           caseRow={openCase}
           locale={locale}
+          canApprove={canApprove}
           onClose={() => setOpenId(null)}
         />
       )}
@@ -153,10 +222,12 @@ export function CasesTable({
 function CaseQuickDrawer({
   caseRow,
   locale,
+  canApprove: canUserApprove,
   onClose,
 }: {
   caseRow: CaseRow;
   locale: string;
+  canApprove: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -179,11 +250,34 @@ function CaseQuickDrawer({
     });
   }
 
-  const canSubmit = caseRow.status === 'DRAFT';
-  const canApprove = caseRow.status === 'PENDING_APPROVAL';
-  const canStartExecution = caseRow.status === 'APPROVED';
+  function deleteCase() {
+    const reason = window.prompt('Reason for deleting this case?');
+    if (!reason || reason.trim().length < 3) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteCaseAction({ caseId: caseRow.id, reason: reason.trim() });
+      if (result.ok) {
+        router.refresh();
+        onClose();
+      } else {
+        setError(result.error);
+      }
+    });
+  }
+
+  const isDeleted = caseRow.isDeleted;
+  const canSubmit = !isDeleted && caseRow.status === 'DRAFT';
+  const isPendingApproval = !isDeleted && caseRow.status === 'PENDING_APPROVAL';
+  const canStartExecution = !isDeleted && caseRow.status === 'APPROVED';
   const canMarkRefunded =
-    caseRow.status === 'IN_EXECUTION' || caseRow.status === 'PARTIALLY_REFUNDED';
+    !isDeleted &&
+    (caseRow.status === 'IN_EXECUTION' || caseRow.status === 'PARTIALLY_REFUNDED');
+  const canDelete =
+    !isDeleted &&
+    caseRow.status !== 'REFUNDED' &&
+    caseRow.status !== 'PARTIALLY_REFUNDED' &&
+    caseRow.status !== 'REJECTED' &&
+    caseRow.status !== 'CANCELLED';
 
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
@@ -204,10 +298,22 @@ function CaseQuickDrawer({
         <div className="flex items-start justify-between gap-3 border-b border-border px-6 py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-semibold text-primary">
+              <span
+                className={cn(
+                  'font-mono text-sm font-semibold',
+                  isDeleted ? 'text-muted-foreground line-through' : 'text-primary',
+                )}
+              >
                 {caseRow.caseNumber}
               </span>
-              <CaseStatusBadge status={caseRow.status} />
+              {isDeleted ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  <Trash2 className="h-3 w-3" />
+                  Deleted
+                </span>
+              ) : (
+                <CaseStatusBadge status={caseRow.status} />
+              )}
             </div>
             <div className="mt-1 truncate text-sm text-muted-foreground">
               {caseRow.customerName}
@@ -230,8 +336,22 @@ function CaseQuickDrawer({
             <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Progress
             </div>
-            <CaseStatusStepper status={caseRow.status} locale={locale} />
+            <CaseStatusStepper
+              status={caseRow.status}
+              locale={locale}
+              deleted={isDeleted}
+            />
           </div>
+
+          {/* Payment methods */}
+          {caseRow.paymentMethods.length > 0 && (
+            <div className="mb-5">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Payment methods
+              </div>
+              <PaymentMethodIcons methods={caseRow.paymentMethods} />
+            </div>
+          )}
 
           {/* Overview grid */}
           <div className="mb-5 grid grid-cols-2 gap-4 text-sm">
@@ -302,30 +422,21 @@ function CaseQuickDrawer({
                 Submit for approval
               </Button>
             )}
-            {canApprove && (
-              <>
-                <Button
-                  size="sm"
-                  variant="success"
-                  disabled={isPending}
-                  onClick={() => transitionStatus('APPROVED')}
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  Approve
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={isPending}
-                  onClick={() => {
-                    const reason = window.prompt('Reason for rejection?');
-                    if (reason) transitionStatus('REJECTED', reason);
-                  }}
-                >
-                  <XCircle className="h-4 w-4" />
-                  Reject
-                </Button>
-              </>
+            {isPendingApproval && canUserApprove && (
+              <Button
+                size="sm"
+                variant="success"
+                disabled={isPending}
+                onClick={() => transitionStatus('APPROVED')}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Approve
+              </Button>
+            )}
+            {isPendingApproval && !canUserApprove && (
+              <span className="rounded-md bg-surface-subtle/60 px-2.5 py-1.5 text-xs text-muted-foreground">
+                Waiting for country manager approval
+              </span>
             )}
             {canStartExecution && (
               <Button
@@ -345,6 +456,18 @@ function CaseQuickDrawer({
               >
                 <CheckCircle2 className="h-4 w-4" />
                 Mark refunded
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={isPending}
+                onClick={deleteCase}
+                className="text-destructive hover:bg-destructive/5 hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
               </Button>
             )}
             <div className="ms-auto">

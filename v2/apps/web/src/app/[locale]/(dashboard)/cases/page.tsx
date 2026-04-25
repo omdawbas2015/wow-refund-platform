@@ -7,6 +7,7 @@ import { Plus, FileText } from 'lucide-react';
 import { CaseFiltersBar } from './case-filters-bar';
 import { CasesTable, type CaseRow } from './cases-table';
 import type { CaseStatus } from '@/components/ui/case-status-stepper';
+import { auth } from '@/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,9 @@ export default async function CasesPage({
 }) {
   const { locale } = await params;
   const sp = await searchParams;
+  const session = await auth();
+  const role = session?.user?.role ?? null;
+  const canApprove = role === 'ADMIN' || role === 'MANAGER';
 
   const parsedFilters = caseListFiltersSchema.safeParse({
     q: sp['q'],
@@ -35,7 +39,10 @@ export default async function CasesPage({
     ? parsedFilters.data
     : { page: 1, pageSize: 25 };
 
-  const where: Record<string, unknown> = { deletedAt: null };
+  // Include deleted cases by default — they render with a "Deleted" badge so
+  // users keep a full audit view. A future `?includeDeleted=false` flag could
+  // hide them when needed.
+  const where: Record<string, unknown> = {};
   if (filters.q) {
     where['OR'] = [
       { caseNumber: { contains: filters.q } },
@@ -71,6 +78,11 @@ export default async function CasesPage({
         rootCause: true,
         createdBy: { select: { name: true } },
         assignedTo: { select: { name: true } },
+        components: {
+          select: {
+            paymentMethod: { select: { key: true, label: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       skip: (filters.page - 1) * filters.pageSize,
@@ -97,6 +109,11 @@ export default async function CasesPage({
     createdAt: c.createdAt.toISOString(),
     createdByName: c.createdBy?.name ?? null,
     rootCause: c.rootCause?.label ?? null,
+    isDeleted: !!c.deletedAt,
+    paymentMethods: c.components.map((cc) => ({
+      key: cc.paymentMethod.key,
+      label: cc.paymentMethod.label,
+    })),
   }));
 
   const totalPages = Math.max(1, Math.ceil(total / filters.pageSize));
@@ -149,7 +166,7 @@ export default async function CasesPage({
       ) : (
         <Card>
           <CardContent className="p-0">
-            <CasesTable locale={locale} cases={rows} />
+            <CasesTable locale={locale} cases={rows} canApprove={canApprove} />
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between border-t border-border px-4 py-3">
