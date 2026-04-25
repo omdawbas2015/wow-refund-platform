@@ -117,7 +117,12 @@ export default async function OperationsPage({
       take: 25,
     }),
     prisma.refundCase.findMany({
-      where: { auraStatus: 'PENDING', auraPoints: { gt: 0 }, deletedAt: null },
+      where: {
+        auraStatus: 'PENDING',
+        auraBatchId: null,
+        auraPoints: { gt: 0 },
+        deletedAt: null,
+      },
       select: {
         id: true,
         caseNumber: true,

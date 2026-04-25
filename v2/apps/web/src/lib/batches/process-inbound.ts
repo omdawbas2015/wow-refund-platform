@@ -211,6 +211,9 @@ async function applyKnetArnReply(
       // the new ARN suggestion in the meantime.)
     }
 
+    // Use the cumulative ARN count, not just this reply's count, because
+    // Finance often replies with ARNs across multiple emails.
+    const cumulativeArns = batch.arnsReceived + applied.length;
     await tx.knetBatch.update({
       where: { id: batch.id },
       data: {
@@ -218,7 +221,7 @@ async function applyKnetArnReply(
         responseReceivedAt: new Date(),
         responseRawBody: rawBody.slice(0, 8000),
         responseParsedArns: JSON.stringify(applied),
-        status: applied.length >= batch.totalComponents ? 'ARNS_RECEIVED' : 'AWAITING_ARNS',
+        status: cumulativeArns >= batch.totalComponents ? 'ARNS_RECEIVED' : 'AWAITING_ARNS',
       },
     });
     await tx.auditLog.create({
@@ -261,8 +264,14 @@ async function applyAuraConfirmation(
   let completed = 0;
   await prisma.$transaction(async (tx) => {
     for (const [caseNumber, status] of decisions) {
+      // Only confirm cases that were claimed by THIS batch — protects against
+      // unrelated `IN_BATCH` cases being collateral-damaged by a stray reply.
       const guard = await tx.refundCase.updateMany({
-        where: { caseNumber, auraStatus: 'PENDING' },
+        where: {
+          caseNumber,
+          auraBatchId: batch.id,
+          auraStatus: { in: ['PENDING', 'IN_BATCH'] },
+        },
         data: {
           auraStatus: status,
           auraProcessedAt: new Date(),
@@ -290,6 +299,10 @@ async function applyAuraConfirmation(
       }
     }
 
+    // Cumulative count guards against multi-email confirmations leaving the
+    // batch stuck in AWAITING forever.
+    const cumulativeCompleted = batch.completedCases + completed;
+    const allDone = cumulativeCompleted >= batch.totalCases;
     await tx.auraBatch.update({
       where: { id: batch.id },
       data: {
@@ -297,8 +310,8 @@ async function applyAuraConfirmation(
         responseReceivedAt: new Date(),
         responseRawBody: rawBody.slice(0, 8000),
         responseParsed: JSON.stringify(Array.from(decisions.entries())),
-        status: completed >= batch.totalCases ? 'COMPLETED' : 'AWAITING',
-        completedAt: completed >= batch.totalCases ? new Date() : null,
+        status: allDone ? 'COMPLETED' : 'AWAITING',
+        completedAt: allDone ? new Date() : null,
       },
     });
     await tx.auditLog.create({

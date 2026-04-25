@@ -384,6 +384,7 @@ enum ComponentStatus {
 enum AuraStatus {
   NONE
   PENDING
+  IN_BATCH // claimed by an Aura batch, awaiting team confirmation
   COMPLETED
   FAILED
 }
@@ -421,6 +422,8 @@ model RefundCase {
   // Aura sidecar (optional; not a payment method)
   auraPoints        Int?
   auraStatus        AuraStatus @default(NONE)
+  auraBatchId       String?
+  auraBatch         AuraBatch?  @relation(fields: [auraBatchId], references: [id], onDelete: SetNull)
   auraProcessedAt   DateTime?
   auraProcessedById String?
 
@@ -675,6 +678,8 @@ model AuraBatch {
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+
+  cases              RefundCase[]
 
   @@index([status])
   @@index([scheduledFor])

@@ -118,6 +118,33 @@ export const REJECT_KEYWORDS = [
   'إلغاء',
 ] as const;
 
+// Latin-letter ASCII word boundary. We can't rely on `\b` because the email
+// body may contain Arabic, which `\b` doesn't understand — instead we require
+// that any Latin keyword be flanked by either a non-letter or a string edge.
+const LATIN_LETTER = /[a-z]/;
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function containsKeyword(haystack: string, keyword: string): boolean {
+  const kw = keyword.toLowerCase();
+  if (!kw) return false;
+
+  // For Arabic / non-Latin keywords, regex word boundaries don't apply.
+  // Substring is fine because the keywords are intentionally distinct words
+  // ("موافق", "مرفوض", …) that don't appear as prefixes inside other Arabic
+  // tokens we care about.
+  const isLatin = LATIN_LETTER.test(kw);
+  if (!isLatin) return haystack.includes(kw);
+
+  // For Latin keywords (especially short ones like "no", "ok", "yes") we
+  // require a non-letter boundary on both sides so that "approved", "noted",
+  // "token", "another", … don't false-match.
+  const re = new RegExp(`(^|[^a-z])${escapeRegex(kw)}(?=[^a-z]|$)`, 'i');
+  return re.test(haystack);
+}
+
 /**
  * Best-effort intent classifier. Returns the first decision keyword found,
  * or `null` when neither side is unambiguously signaled. Safe to call on any
@@ -130,8 +157,8 @@ export function classifyDecision(text: string): 'APPROVED' | 'REJECTED' | null {
     .trim();
   if (!normalised) return null;
 
-  const hasReject = REJECT_KEYWORDS.some((kw) => normalised.includes(kw.toLowerCase()));
-  const hasApprove = APPROVE_KEYWORDS.some((kw) => normalised.includes(kw.toLowerCase()));
+  const hasReject = REJECT_KEYWORDS.some((kw) => containsKeyword(normalised, kw));
+  const hasApprove = APPROVE_KEYWORDS.some((kw) => containsKeyword(normalised, kw));
 
   // Reject wins on conflict — safer to require an explicit re-approve than
   // to silently approve something that contained the word "rejected".

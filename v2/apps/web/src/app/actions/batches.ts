@@ -651,6 +651,30 @@ export async function createAuraBatchAction(
             },
           });
 
+          // Claim every candidate case atomically. The PENDING guard ensures
+          // a concurrent batch creation can't double-claim the same case —
+          // if another batch took some of these cases between findMany and
+          // here, the count check below trips a P2034 retry.
+          const claimed = await tx.refundCase.updateMany({
+            where: {
+              id: { in: candidates.map((c) => c.id) },
+              auraStatus: 'PENDING',
+              auraBatchId: null,
+            },
+            data: {
+              auraStatus: 'IN_BATCH',
+              auraBatchId: batch.id,
+            },
+          });
+          if (claimed.count !== candidates.length) {
+            // Force a transaction abort + retry. We use P2034 so the outer
+            // retry loop sees a serialization-style error.
+            throw new Prisma.PrismaClientKnownRequestError(
+              'Aura batch races: candidate set changed during claim',
+              { code: 'P2034', clientVersion: '6.x' },
+            );
+          }
+
           for (const c of candidates) {
             await tx.activityLog.create({
               data: {
@@ -680,7 +704,7 @@ export async function createAuraBatchAction(
       } catch (err) {
         if (
           err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === 'P2002'
+          (err.code === 'P2002' || err.code === 'P2034')
         ) {
           if (attempt === MAX_RETRIES - 1) {
             return { ok: false, error: 'Aura batch could not be allocated atomically.' };
@@ -740,12 +764,15 @@ export async function confirmAuraCaseAction(input: unknown): Promise<ActionResul
     const result = await prisma.$transaction(async (tx) => {
       const c = await tx.refundCase.findUnique({ where: { id: caseId } });
       if (!c) return { ok: false as const, error: 'Case not found.' };
-      if (c.auraStatus !== 'PENDING') {
-        return { ok: false as const, error: `Aura status is ${c.auraStatus}, not PENDING.` };
+      if (c.auraStatus !== 'PENDING' && c.auraStatus !== 'IN_BATCH') {
+        return {
+          ok: false as const,
+          error: `Aura status is ${c.auraStatus}, can only confirm PENDING or IN_BATCH.`,
+        };
       }
 
       const guarded = await tx.refundCase.updateMany({
-        where: { id: caseId, auraStatus: 'PENDING' },
+        where: { id: caseId, auraStatus: { in: ['PENDING', 'IN_BATCH'] } },
         data: {
           auraStatus: status,
           auraProcessedAt: new Date(),
