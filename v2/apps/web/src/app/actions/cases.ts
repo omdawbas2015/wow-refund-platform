@@ -163,7 +163,7 @@ export async function createCaseAction(
               totalRefundAmount,
               isPartial,
               auraPoints: data.auraPoints ?? null,
-              auraStatus: data.auraPoints ? 'PENDING' : 'NONE',
+              auraStatus: data.auraPoints != null ? 'PENDING' : 'NONE',
               status: 'DRAFT',
               rootCauseId: data.rootCauseId || null,
               rootCauseNotes: data.rootCauseNotes || null,

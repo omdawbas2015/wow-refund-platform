@@ -102,7 +102,7 @@ export function NewCaseForm({
           authCode: selectedMethod?.requiresAuthCode ? authCode.trim() : null,
         },
       ],
-      auraPoints: auraPoints ? Number(auraPoints) : undefined,
+      auraPoints: includeAura ? (Number(auraPoints) || 0) : undefined,
       rootCauseId: rootCauseId || undefined,
       rootCauseNotes: rootCauseNotes.trim() || undefined,
       duplicateAcknowledged: acknowledgeDuplicate,
