@@ -344,9 +344,12 @@ export async function addCaseNoteAction(input: unknown): Promise<ActionResult> {
 
     const existing = await prisma.refundCase.findUnique({
       where: { id: caseId },
-      select: { id: true, caseNumber: true },
+      select: { id: true, caseNumber: true, deletedAt: true },
     });
     if (!existing) return { ok: false, error: 'Case not found' };
+    if (existing.deletedAt) {
+      return { ok: false, error: 'Cannot add notes to a deleted case.' };
+    }
 
     const uniqueMentions = Array.from(
       new Set(mentionedUserIds.filter((id) => id && id !== user.id)),

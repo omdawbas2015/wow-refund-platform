@@ -271,6 +271,7 @@ export function CaseTabs({
             notes={notes}
             mentionableUsers={mentionableUsers}
             currentUserId={currentUserId}
+            isDeleted={isDeleted}
           />
         )}
         {active === 'activity' && <ActivityTab activity={activity} />}
@@ -434,11 +435,13 @@ function NotesTab({
   notes,
   mentionableUsers,
   currentUserId,
+  isDeleted = false,
 }: {
   caseId: string;
   notes: Note[];
   mentionableUsers: Mentionable[];
   currentUserId: string;
+  isDeleted?: boolean;
 }) {
   const [body, setBody] = useState('');
   const [mentionIds, setMentionIds] = useState<string[]>([]);
@@ -475,6 +478,7 @@ function NotesTab({
 
   return (
     <div className="space-y-4">
+      {!isDeleted && (
       <form
         onSubmit={submit}
         className="rounded-md border border-border bg-surface p-3 space-y-2"
@@ -555,6 +559,7 @@ function NotesTab({
           </Button>
         </div>
       </form>
+      )}
 
       {notes.length === 0 ? (
         <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
