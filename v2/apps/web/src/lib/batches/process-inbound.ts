@@ -225,8 +225,10 @@ async function applyKnetArnReply(
     const remainingWithoutArn = await tx.refundComponent.count({
       where: { batchId: batch.id, arn: null },
     });
-    await tx.knetBatch.update({
-      where: { id: batch.id },
+    // Guard the close on a non-terminal status so a parallel cancel / dup
+    // webhook can't be silently overwritten back to AWAITING_ARNS.
+    await tx.knetBatch.updateMany({
+      where: { id: batch.id, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
       data: {
         arnsReceived: { increment: applied.length },
         responseReceivedAt: new Date(),
@@ -338,15 +340,18 @@ async function applyAuraConfirmation(
       },
     });
     const allDone = remaining === 0;
-    await tx.auraBatch.update({
-      where: { id: batch.id },
+    // Guard the close on a non-terminal status so a parallel cancel / dup
+    // webhook can't be silently overwritten and `completedAt` can't be
+    // nulled out on an already-completed batch.
+    await tx.auraBatch.updateMany({
+      where: { id: batch.id, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
       data: {
         completedCases: { increment: completed },
         responseReceivedAt: new Date(),
         responseRawBody: rawBody.slice(0, 8000),
         responseParsed: JSON.stringify(Array.from(decisions.entries())),
         status: allDone ? 'COMPLETED' : 'AWAITING',
-        completedAt: allDone ? new Date() : null,
+        ...(allDone ? { completedAt: new Date() } : {}),
       },
     });
     await tx.auditLog.create({

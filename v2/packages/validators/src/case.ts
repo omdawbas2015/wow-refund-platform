@@ -14,7 +14,7 @@ export const caseStatuses = [
 export const caseStatusSchema = z.enum(caseStatuses);
 export type CaseStatusValue = (typeof caseStatuses)[number];
 
-export const auraStatuses = ['NONE', 'PENDING', 'COMPLETED', 'FAILED'] as const;
+export const auraStatuses = ['NONE', 'PENDING', 'IN_BATCH', 'COMPLETED', 'FAILED'] as const;
 export const auraStatusSchema = z.enum(auraStatuses);
 
 /**
