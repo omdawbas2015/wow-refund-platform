@@ -44,11 +44,17 @@ export default async function CasesPage({
   // hide them when needed.
   const where: Record<string, unknown> = {};
   if (filters.q) {
+    // Case-insensitive search: Postgres needs `mode: 'insensitive'`; SQLite's
+    // LIKE is already case-insensitive for ASCII so the mode is dropped there
+    // (Prisma's SQLite provider rejects the field entirely).
+    const isPg = (process.env.DATABASE_URL ?? '').startsWith('postgres');
+    const ciContains = (value: string) =>
+      isPg ? { contains: value, mode: 'insensitive' as const } : { contains: value };
     where['OR'] = [
-      { caseNumber: { contains: filters.q } },
-      { customerName: { contains: filters.q } },
-      { customerEmail: { contains: filters.q } },
-      { orderNumber: { contains: filters.q } },
+      { caseNumber: ciContains(filters.q) },
+      { customerName: ciContains(filters.q) },
+      { customerEmail: ciContains(filters.q) },
+      { orderNumber: ciContains(filters.q) },
     ];
   }
   if (filters.countryId) where['countryId'] = filters.countryId;

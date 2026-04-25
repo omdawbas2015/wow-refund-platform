@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { addCaseNoteAction, updateCaseStatusAction, deleteCaseAction } from '@/app/actions/cases';
 import { Button } from '@/components/ui/button';
@@ -113,6 +113,28 @@ export function CaseTabs({
   const [active, setActive] = useState<TabKey>('overview');
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+
+  // Notification deep-links point at `/cases/{id}#note-{noteId}`. The anchor
+  // target only exists once the Notes tab is active, so on mount (and on
+  // hash changes) switch to Notes if the hash is a note anchor, then let
+  // the browser scroll once the element is painted.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    function syncTabFromHash() {
+      const hash = window.location.hash;
+      if (hash.startsWith('#note-')) {
+        setActive('notes');
+        // Defer the scroll until after the tab content is rendered.
+        requestAnimationFrame(() => {
+          const el = document.getElementById(hash.slice(1));
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+      }
+    }
+    syncTabFromHash();
+    window.addEventListener('hashchange', syncTabFromHash);
+    return () => window.removeEventListener('hashchange', syncTabFromHash);
+  }, []);
 
   function transitionStatus(target: string, reason?: string) {
     startTransition(async () => {
