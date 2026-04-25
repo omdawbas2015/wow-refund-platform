@@ -1,0 +1,106 @@
+{
+  "app": {
+    "name": "WOW للاسترداد",
+    "tagline": "إدارة الاسترداد المؤسسية"
+  },
+  "nav": {
+    "dashboard": "لوحة البيانات",
+    "cases": "الحالات",
+    "operations": "عمليات الاسترداد",
+    "promo": "رموز البرومو",
+    "helpDesk": "مكتب المساعدة",
+    "storesCommunication": "التواصل مع المتاجر",
+    "reports": "التقارير",
+    "admin": "لوحة الإدارة",
+    "users": "المستخدمون",
+    "pendingApprovals": "الموافقات المعلقة",
+    "countries": "الدول",
+    "brands": "العلامات التجارية",
+    "paymentMethods": "طرق الدفع",
+    "emailTemplates": "قوالب الإيميل",
+    "auditLog": "سجل التدقيق",
+    "settings": "الإعدادات",
+    "logout": "تسجيل الخروج"
+  },
+  "auth": {
+    "login": {
+      "title": "تسجيل الدخول إلى حسابك",
+      "subtitle": "أهلاً بعودتك. أدخل بياناتك للمتابعة.",
+      "emailLabel": "البريد الإلكتروني",
+      "passwordLabel": "كلمة المرور",
+      "submit": "تسجيل الدخول",
+      "forgotPassword": "نسيت كلمة المرور؟",
+      "noAccount": "ليس لديك حساب؟",
+      "signupLink": "طلب الوصول",
+      "invalidCredentials": "البريد أو كلمة المرور غير صحيحة.",
+      "accountPending": "حسابك بانتظار موافقة المسؤول.",
+      "accountSuspended": "تم إيقاف حسابك. تواصل مع المسؤول.",
+      "accountLocked": "حسابك مقفل مؤقتاً. حاول لاحقاً."
+    },
+    "signup": {
+      "title": "طلب الوصول",
+      "subtitle": "أدخل بياناتك. سيقوم المسؤول بمراجعة واعتماد حسابك.",
+      "nameLabel": "الاسم الكامل",
+      "emailLabel": "البريد الإلكتروني",
+      "phoneLabel": "الهاتف (اختياري)",
+      "submit": "إرسال الطلب",
+      "hasAccount": "لديك حساب؟",
+      "loginLink": "تسجيل الدخول",
+      "pendingTitle": "تم إرسال الطلب",
+      "pendingMessage": "تم إشعار المسؤول. ستصلك رسالة بريد إلكتروني عند الموافقة."
+    },
+    "forgot": {
+      "title": "إعادة تعيين كلمة المرور",
+      "subtitle": "سنرسل لك رمز من 6 أرقام لإعادة تعيين كلمة المرور.",
+      "emailLabel": "البريد الإلكتروني",
+      "submit": "إرسال الرمز",
+      "codeSent": "إذا كان هناك حساب بهذا البريد، سيتم إرسال رمز إليه.",
+      "codeLabel": "الرمز (6 أرقام)",
+      "newPasswordLabel": "كلمة المرور الجديدة",
+      "confirmPasswordLabel": "تأكيد كلمة المرور",
+      "submitReset": "إعادة تعيين",
+      "backToLogin": "العودة لتسجيل الدخول",
+      "resetSuccess": "تم تعيين كلمة المرور. يمكنك تسجيل الدخول الآن.",
+      "invalidCode": "الرمز غير صحيح أو منتهي."
+    },
+    "setPassword": {
+      "title": "تعيين كلمة المرور",
+      "subtitle": "تمت الموافقة على حسابك. اختر كلمة مرور آمنة للمتابعة.",
+      "passwordLabel": "اختر كلمة المرور",
+      "confirmPasswordLabel": "تأكيد كلمة المرور",
+      "submit": "تعيين كلمة المرور",
+      "success": "تم تعيين كلمة المرور. جارٍ تسجيل الدخول..."
+    }
+  },
+  "admin": {
+    "pendingApprovals": {
+      "title": "الموافقات المعلقة",
+      "subtitle": "راجع واعتمد طلبات التسجيل الجديدة.",
+      "empty": "لا توجد طلبات معلقة.",
+      "approve": "موافقة",
+      "reject": "رفض",
+      "assignRole": "تعيين الدور",
+      "assignCountry": "الدولة الأساسية",
+      "reason": "سبب الرفض",
+      "approveSuccess": "تمت الموافقة.",
+      "rejectSuccess": "تم الرفض."
+    }
+  },
+  "common": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "confirm": "تأكيد",
+    "loading": "جارٍ التحميل…",
+    "error": "حدث خطأ.",
+    "retry": "حاول مرة أخرى",
+    "search": "بحث…",
+    "noResults": "لا نتائج."
+  },
+  "dashboard": {
+    "welcome": "أهلاً {name}",
+    "quickStats": "إحصائيات سريعة",
+    "recentActivity": "النشاط الأخير"
+  }
+}

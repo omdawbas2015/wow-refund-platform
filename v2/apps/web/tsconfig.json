@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "noEmit": true,
+    "allowJs": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@wow/db": ["../../packages/db/src"],
+      "@wow/db/*": ["../../packages/db/src/*"],
+      "@wow/ui": ["../../packages/ui/src"],
+      "@wow/ui/*": ["../../packages/ui/src/*"],
+      "@wow/validators": ["../../packages/validators/src"],
+      "@wow/validators/*": ["../../packages/validators/src/*"]
+    },
+    "plugins": [{ "name": "next" }],
+    "types": ["node"]
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", ".next"]
+}

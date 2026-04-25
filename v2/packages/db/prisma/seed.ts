@@ -1,0 +1,260 @@
+/**
+ * Prisma seed script.
+ * Idempotent: safe to run multiple times.
+ * Seeds: currencies, countries, payment methods, root causes, roles, permissions,
+ *        email templates, store message templates, default admin user.
+ */
+
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
+import {
+  currencies,
+  countries as countryRegistryData,
+  paymentMethods,
+  rootCauses,
+  roles as roleSeeds,
+  permissions as permissionSeeds,
+  emailTemplates,
+  storeMessageTemplates,
+} from '../src/seed-data';
+
+const prisma = new PrismaClient();
+
+async function seedCurrencies() {
+  console.log(`→ Seeding ${currencies.length} currencies...`);
+  for (const c of currencies) {
+    await prisma.currencyRegistry.upsert({
+      where: { code: c.code },
+      create: c,
+      update: c,
+    });
+  }
+}
+
+async function seedCountryRegistry() {
+  console.log(`→ Seeding ${countryRegistryData.length} countries (registry)...`);
+  for (const c of countryRegistryData) {
+    await prisma.countryRegistry.upsert({
+      where: { code: c.code },
+      create: c,
+      update: c,
+    });
+  }
+}
+
+async function seedPaymentMethods() {
+  console.log(`→ Seeding ${paymentMethods.length} payment methods...`);
+  for (const pm of paymentMethods) {
+    await prisma.paymentMethod.upsert({
+      where: { key: pm.key },
+      create: pm,
+      update: pm,
+    });
+  }
+}
+
+async function seedRootCauses() {
+  console.log(`→ Seeding ${rootCauses.length} root causes...`);
+  for (const rc of rootCauses) {
+    await prisma.rootCause.upsert({
+      where: { key: rc.key },
+      create: rc,
+      update: rc,
+    });
+  }
+}
+
+async function seedPermissionsAndRoles() {
+  console.log(`→ Seeding ${permissionSeeds.length} permissions...`);
+  for (const p of permissionSeeds) {
+    await prisma.permission.upsert({
+      where: { key: p.key },
+      create: p,
+      update: { category: p.category, description: p.description },
+    });
+  }
+
+  console.log(`→ Seeding ${roleSeeds.length} roles...`);
+  for (const r of roleSeeds) {
+    const role = await prisma.role.upsert({
+      where: { key: r.key },
+      create: {
+        key: r.key,
+        name: r.name,
+        nameAr: r.nameAr,
+        description: r.description,
+        isSystem: r.isSystem,
+      },
+      update: {
+        name: r.name,
+        nameAr: r.nameAr,
+        description: r.description,
+        isSystem: r.isSystem,
+      },
+    });
+
+    // Wipe and set permissions for the role (idempotent)
+    await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
+    const perms = await prisma.permission.findMany({
+      where: { key: { in: r.permissions } },
+    });
+    for (const p of perms) {
+      await prisma.rolePermission.create({
+        data: { roleId: role.id, permissionId: p.id },
+      });
+    }
+  }
+}
+
+async function seedEmailTemplates() {
+  console.log(`→ Seeding ${emailTemplates.length} email templates...`);
+  for (const t of emailTemplates) {
+    await prisma.emailTemplate.upsert({
+      where: {
+        key_locale: { key: t.key, locale: t.locale },
+      },
+      create: {
+        key: t.key,
+        category: t.category,
+        locale: t.locale,
+        subject: t.subject,
+        body: t.body,
+        placeholders: JSON.stringify(t.placeholders),
+        description: t.description,
+      },
+      update: {
+        category: t.category,
+        subject: t.subject,
+        body: t.body,
+        placeholders: JSON.stringify(t.placeholders),
+        description: t.description,
+      },
+    });
+  }
+}
+
+async function seedStoreMessageTemplates() {
+  console.log(`→ Seeding ${storeMessageTemplates.length} store message templates...`);
+  for (const t of storeMessageTemplates) {
+    await prisma.storeMessageTemplate.upsert({
+      where: { key: t.key },
+      create: t,
+      update: t,
+    });
+  }
+}
+
+async function seedActiveCountries() {
+  // Activate GCC countries by default (admin can activate more from UI).
+  const GCC_ACTIVE = ['KW', 'SA', 'AE', 'BH', 'OM', 'QA'];
+  console.log(`→ Activating ${GCC_ACTIVE.length} GCC countries by default...`);
+  for (let i = 0; i < GCC_ACTIVE.length; i++) {
+    const code = GCC_ACTIVE[i]!;
+    const reg = await prisma.countryRegistry.findUnique({ where: { code } });
+    if (!reg) continue;
+    await prisma.country.upsert({
+      where: { registryCode: code },
+      create: {
+        registryCode: code,
+        isActive: true,
+        cutoffTime: '17:00',
+        sortOrder: i * 10,
+      },
+      update: {},
+    });
+  }
+}
+
+async function seedDefaultBrands() {
+  console.log('→ Seeding default brands...');
+  const brands = [
+    { name: 'Chipotle', nameAr: 'تشيبوتلي', slug: 'chipotle', sortOrder: 10 },
+    { name: 'Starbucks', nameAr: 'ستاربكس', slug: 'starbucks', sortOrder: 20 },
+    { name: 'Victoria\'s Secret', nameAr: 'فيكتوريا سيكريت', slug: 'victorias-secret', sortOrder: 30 },
+    { name: 'Bath & Body Works', nameAr: 'باث أند بودي ووركس', slug: 'bath-body-works', sortOrder: 40 },
+  ];
+  for (const b of brands) {
+    await prisma.brand.upsert({
+      where: { slug: b.slug },
+      create: b,
+      update: b,
+    });
+  }
+}
+
+async function seedDefaultAdmin() {
+  const email = 'admin@wow.local';
+  const password = 'admin123';
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    console.log(`→ Default admin already exists (${email})`);
+    return;
+  }
+
+  const role = await prisma.role.findUnique({ where: { key: 'ADMIN' } });
+  if (!role) throw new Error('ADMIN role not seeded');
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  await prisma.user.create({
+    data: {
+      email,
+      name: 'Default Admin',
+      nameAr: 'مدير افتراضي',
+      status: 'ACTIVE',
+      passwordHash,
+      mustChangePassword: false,
+      roleId: role.id,
+      approvedAt: new Date(),
+      preferredLocale: 'en',
+    },
+  });
+  console.log(`→ Created default admin: ${email} / ${password}`);
+}
+
+async function seedFeatureFlags() {
+  const flags = [
+    { key: 'feature.promo.compensation', enabled: true, description: 'Enable customer compensation promos' },
+    { key: 'feature.promo.service_recovery', enabled: true, description: 'Enable service recovery promos' },
+    { key: 'feature.fraud_signals', enabled: true, description: 'Enable fraud detection signals' },
+    { key: 'feature.scheduled_reports', enabled: true, description: 'Enable scheduled email reports' },
+    { key: 'feature.dark_mode', enabled: true, description: 'Allow users to switch to dark mode' },
+    { key: 'feature.help_desk.stores_communication', enabled: true, description: 'Stores Communication module' },
+  ];
+  console.log(`→ Seeding ${flags.length} feature flags...`);
+  for (const f of flags) {
+    await prisma.featureFlag.upsert({
+      where: { key: f.key },
+      create: f,
+      update: { description: f.description },
+    });
+  }
+}
+
+async function main() {
+  console.log('═══════════════════════════════════════════');
+  console.log('  WOW Refund v2 — Seeding database');
+  console.log('═══════════════════════════════════════════\n');
+
+  await seedCurrencies();
+  await seedCountryRegistry();
+  await seedPaymentMethods();
+  await seedRootCauses();
+  await seedPermissionsAndRoles();
+  await seedEmailTemplates();
+  await seedStoreMessageTemplates();
+  await seedActiveCountries();
+  await seedDefaultBrands();
+  await seedDefaultAdmin();
+  await seedFeatureFlags();
+
+  console.log('\n✓ Seed complete.');
+}
+
+main()
+  .catch((e) => {
+    console.error('Seed failed:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

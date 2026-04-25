@@ -1,0 +1,106 @@
+{
+  "app": {
+    "name": "WOW Refund",
+    "tagline": "Enterprise refund management"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "cases": "Cases",
+    "operations": "Refund Operations",
+    "promo": "Promo Codes",
+    "helpDesk": "Help Desk",
+    "storesCommunication": "Stores Communication",
+    "reports": "Reports",
+    "admin": "Admin",
+    "users": "Users",
+    "pendingApprovals": "Pending Approvals",
+    "countries": "Countries",
+    "brands": "Brands",
+    "paymentMethods": "Payment Methods",
+    "emailTemplates": "Email Templates",
+    "auditLog": "Audit Log",
+    "settings": "Settings",
+    "logout": "Sign out"
+  },
+  "auth": {
+    "login": {
+      "title": "Sign in to your account",
+      "subtitle": "Welcome back. Enter your credentials to continue.",
+      "emailLabel": "Email address",
+      "passwordLabel": "Password",
+      "submit": "Sign in",
+      "forgotPassword": "Forgot password?",
+      "noAccount": "Don't have an account?",
+      "signupLink": "Request access",
+      "invalidCredentials": "Invalid email or password.",
+      "accountPending": "Your account is pending admin approval.",
+      "accountSuspended": "Your account has been suspended. Contact your administrator.",
+      "accountLocked": "Your account is temporarily locked. Please try again later."
+    },
+    "signup": {
+      "title": "Request access",
+      "subtitle": "Submit your details. An administrator will review and approve your account.",
+      "nameLabel": "Full name",
+      "emailLabel": "Work email",
+      "phoneLabel": "Phone (optional)",
+      "submit": "Submit request",
+      "hasAccount": "Already have access?",
+      "loginLink": "Sign in",
+      "pendingTitle": "Request submitted",
+      "pendingMessage": "We've notified an administrator. You'll receive an email once your account is approved."
+    },
+    "forgot": {
+      "title": "Reset your password",
+      "subtitle": "We'll email you a 6-digit code to reset your password.",
+      "emailLabel": "Email address",
+      "submit": "Send code",
+      "codeSent": "If an account exists for that email, a code has been sent.",
+      "codeLabel": "6-digit code",
+      "newPasswordLabel": "New password",
+      "confirmPasswordLabel": "Confirm new password",
+      "submitReset": "Reset password",
+      "backToLogin": "Back to sign in",
+      "resetSuccess": "Password reset. You can now sign in.",
+      "invalidCode": "The code is invalid or expired."
+    },
+    "setPassword": {
+      "title": "Set your password",
+      "subtitle": "Your account has been approved. Set a secure password to continue.",
+      "passwordLabel": "Choose a password",
+      "confirmPasswordLabel": "Confirm password",
+      "submit": "Set password",
+      "success": "Password set. Signing you in..."
+    }
+  },
+  "admin": {
+    "pendingApprovals": {
+      "title": "Pending approvals",
+      "subtitle": "Review and approve new signup requests.",
+      "empty": "No pending requests.",
+      "approve": "Approve",
+      "reject": "Reject",
+      "assignRole": "Assign role",
+      "assignCountry": "Primary country",
+      "reason": "Reason for rejection",
+      "approveSuccess": "User approved.",
+      "rejectSuccess": "User rejected."
+    }
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "confirm": "Confirm",
+    "loading": "Loading…",
+    "error": "Something went wrong.",
+    "retry": "Try again",
+    "search": "Search…",
+    "noResults": "No results."
+  },
+  "dashboard": {
+    "welcome": "Welcome back, {name}",
+    "quickStats": "Quick stats",
+    "recentActivity": "Recent activity"
+  }
+}

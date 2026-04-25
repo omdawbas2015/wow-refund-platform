@@ -1,0 +1,199 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════
+   Design tokens — Stripe-inspired visual language.
+   Light mode is primary; dark mode is available via `[data-theme=dark]`.
+   All tokens are HSL so Tailwind's opacity modifiers work.
+   ═══════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  :root {
+    /* Semantic surfaces */
+    --background:          0 0% 100%;         /* #ffffff */
+    --surface:             0 0% 100%;
+    --surface-subtle:      210 40% 98%;       /* #f6f9fc */
+    --surface-muted:       210 36% 96%;
+
+    --foreground:          216 74% 11%;       /* #061b31 — deep navy */
+    --heading:             216 74% 11%;
+    --label:               215 33% 24%;       /* #273951 */
+    --body:                217 19% 48%;       /* #64748d */
+    --muted:               210 40% 96%;
+    --muted-foreground:    215 16% 47%;
+
+    --border:              214 32% 91%;       /* #e3e8ee */
+    --input:               214 32% 91%;
+    --ring:                246 95% 61%;       /* primary blurple */
+
+    /* Brand (Stripe-inspired blurple) */
+    --primary:             246 95% 61%;       /* #533afd */
+    --primary-foreground:  0 0% 100%;
+    --primary-hover:       246 66% 52%;
+    --primary-deep:        242 52% 36%;       /* #2e2b8c */
+    --primary-subtle:      240 90% 85%;       /* #b9b9f9 */
+
+    /* Surface backgrounds */
+    --card:                0 0% 100%;
+    --card-foreground:     216 74% 11%;
+    --popover:             0 0% 100%;
+    --popover-foreground:  216 74% 11%;
+
+    --secondary:           210 40% 96%;
+    --secondary-foreground:216 74% 11%;
+
+    --accent:              246 95% 61%;
+    --accent-foreground:   0 0% 100%;
+
+    /* Status */
+    --destructive:         340 84% 53%;       /* #ea2261 */
+    --destructive-foreground: 0 0% 100%;
+    --success:             145 79% 41%;       /* #15be53 */
+    --success-foreground:  0 0% 100%;
+    --warning:             38 92% 50%;        /* #f59e0b */
+    --warning-foreground:  0 0% 100%;
+    --info:                246 95% 61%;
+    --info-foreground:     0 0% 100%;
+
+    --radius: 0.375rem;    /* 6px — conservative */
+  }
+
+  [data-theme='dark'],
+  .dark {
+    --background:          216 74% 8%;
+    --surface:             216 40% 12%;
+    --surface-subtle:      216 40% 14%;
+    --surface-muted:       216 40% 16%;
+
+    --foreground:          0 0% 98%;
+    --heading:             0 0% 98%;
+    --label:               215 25% 80%;
+    --body:                215 20% 70%;
+    --muted:               216 30% 18%;
+    --muted-foreground:    215 20% 65%;
+
+    --border:              216 30% 22%;
+    --input:               216 30% 22%;
+    --ring:                246 95% 71%;
+
+    --primary:             246 95% 71%;
+    --primary-foreground:  216 74% 8%;
+    --primary-hover:       246 66% 62%;
+    --primary-deep:        242 52% 46%;
+    --primary-subtle:      240 60% 25%;
+
+    --card:                216 40% 12%;
+    --card-foreground:     0 0% 98%;
+    --popover:             216 40% 12%;
+    --popover-foreground:  0 0% 98%;
+
+    --secondary:           216 30% 18%;
+    --secondary-foreground: 0 0% 98%;
+
+    --accent:              246 95% 71%;
+    --accent-foreground:   216 74% 8%;
+
+    --destructive:         340 84% 63%;
+    --destructive-foreground: 0 0% 98%;
+    --success:             145 60% 51%;
+    --success-foreground:  216 74% 8%;
+    --warning:             38 92% 60%;
+    --warning-foreground:  216 74% 8%;
+    --info:                246 95% 71%;
+    --info-foreground:     216 74% 8%;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Typography
+   ═══════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  html {
+    font-family: var(--font-sans), 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'cv11', 'cv02', 'cv03', 'cv04', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* Stripe-esque headline feel — thin weight */
+  h1, h2, h3 {
+    @apply text-heading;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+  h4, h5, h6 {
+    @apply text-heading;
+    font-weight: 500;
+  }
+
+  /* Tabular nums for money values */
+  .tabular, [data-tabular='true'] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* RTL spacing fixups */
+  [dir='rtl'] {
+    font-family: var(--font-sans), 'Noto Sans Arabic', 'Cairo', 'Inter', sans-serif;
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: hsl(var(--primary) / 0.2);
+    color: hsl(var(--foreground));
+  }
+
+  /* Focus ring default */
+  :focus-visible {
+    outline: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Scrollbar (subtle, Stripe-like)
+   ═══════════════════════════════════════════════════════════════════ */
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 9999px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+
+  /* Gradient underline for primary text links (Stripe motif) */
+  .link-underline {
+    background-image: linear-gradient(to right, hsl(var(--primary)), hsl(var(--primary)));
+    background-size: 0 1px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    transition: background-size 200ms ease-out;
+  }
+  .link-underline:hover {
+    background-size: 100% 1px;
+  }
+}
