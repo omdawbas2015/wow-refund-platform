@@ -17,6 +17,9 @@ import {
   Settings,
   CreditCard,
   Mail,
+  Tag,
+  AlertTriangle,
+  History,
 } from 'lucide-react';
 
 interface NavSection {
@@ -50,7 +53,11 @@ export function Sidebar({ role }: { role: string | null }) {
     },
     {
       label: t('reports'),
-      items: [{ label: t('reports'), href: '/reports', icon: BarChart3 }],
+      items: [
+        { label: t('reports'), href: '/reports', icon: BarChart3 },
+        { label: t('auditLog'), href: '/reports/audit', icon: History, adminOnly: true },
+        { label: t('emailLog'), href: '/reports/emails', icon: Mail, adminOnly: true },
+      ],
     },
     {
       label: t('admin'),
@@ -58,7 +65,9 @@ export function Sidebar({ role }: { role: string | null }) {
         { label: t('users'), href: '/admin/users', icon: Users, adminOnly: true },
         { label: t('pendingApprovals'), href: '/admin/pending-approvals', icon: ClipboardList, adminOnly: true },
         { label: t('countries'), href: '/admin/countries', icon: Globe, adminOnly: true },
+        { label: t('brands'), href: '/admin/brands', icon: Tag, adminOnly: true },
         { label: t('paymentMethods'), href: '/admin/payment-methods', icon: CreditCard, adminOnly: true },
+        { label: t('rootCauses'), href: '/admin/root-causes', icon: AlertTriangle, adminOnly: true },
         { label: t('emailTemplates'), href: '/admin/email-templates', icon: Mail, adminOnly: true },
         { label: t('settings'), href: '/admin/settings', icon: Settings, adminOnly: true },
       ],
@@ -88,27 +97,45 @@ export function Sidebar({ role }: { role: string | null }) {
                 </div>
               ) : null}
               <ul className="space-y-0.5">
-                {items.map((item) => {
-                  const isActive =
-                    item.href === '/' ? pathname === '/' || /^\/(en|ar)$/.test(pathname) : pathname.endsWith(item.href) || pathname.includes(`${item.href}/`);
-                  const Icon = item.icon;
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
-                          isActive
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-body hover:bg-surface-subtle hover:text-foreground',
-                        )}
-                      >
-                        <Icon className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{item.label}</span>
-                      </Link>
-                    </li>
-                  );
-                })}
+                {(() => {
+                  // Pick the *longest* matching href in this section so that
+                  // /reports/audit highlights only the audit row, not also
+                  // its parent /reports. Locale prefixes (/en, /ar) are
+                  // normalised away first.
+                  const localePath = pathname.replace(/^\/(en|ar)(?=\/|$)/, '') || '/';
+                  let bestHref: string | null = null;
+                  for (const it of items) {
+                    if (it.href === '/') {
+                      if (localePath === '/' && bestHref === null) bestHref = '/';
+                      continue;
+                    }
+                    const matches =
+                      localePath === it.href || localePath.startsWith(`${it.href}/`);
+                    if (matches && (bestHref === null || it.href.length > bestHref.length)) {
+                      bestHref = it.href;
+                    }
+                  }
+                  return items.map((item) => {
+                    const isActive = item.href === bestHref;
+                    const Icon = item.icon;
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          className={cn(
+                            'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+                            isActive
+                              ? 'bg-primary/10 text-primary'
+                              : 'text-body hover:bg-surface-subtle hover:text-foreground',
+                          )}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{item.label}</span>
+                        </Link>
+                      </li>
+                    );
+                  });
+                })()}
               </ul>
             </div>
           );
