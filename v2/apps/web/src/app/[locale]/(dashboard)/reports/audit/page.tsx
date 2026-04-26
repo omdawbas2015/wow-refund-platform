@@ -7,7 +7,26 @@ import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
 
 interface PageProps {
-  searchParams: Promise<{ action?: string; entity?: string; q?: string; page?: string }>;
+  searchParams: Promise<{
+    action?: string;
+    entity?: string;
+    q?: string;
+    from?: string;
+    to?: string;
+    page?: string;
+  }>;
+}
+
+function parseDate(raw: string | undefined, opts?: { endOfDay?: boolean }): Date | undefined {
+  if (!raw) return undefined;
+  const s = raw.trim();
+  if (!s) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(`${s}T${opts?.endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
 const PAGE_SIZE = 50;
@@ -21,7 +40,12 @@ export default async function AuditLogPage({ searchParams }: PageProps) {
   const action = sp.action ?? '';
   const entity = sp.entity ?? '';
   const q = sp.q ?? '';
+  const from = sp.from ?? '';
+  const to = sp.to ?? '';
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
+
+  const fromDate = parseDate(from);
+  const toDate = parseDate(to, { endOfDay: true });
 
   const where = {
     ...(action ? { action: { contains: action } } : {}),
@@ -34,7 +58,22 @@ export default async function AuditLogPage({ searchParams }: PageProps) {
           ],
         }
       : {}),
+    ...(fromDate || toDate
+      ? {
+          createdAt: {
+            ...(fromDate ? { gte: fromDate } : {}),
+            ...(toDate ? { lte: toDate } : {}),
+          },
+        }
+      : {}),
   };
+
+  const exportQs = new URLSearchParams();
+  if (action) exportQs.set('action', action);
+  if (entity) exportQs.set('entity', entity);
+  if (q) exportQs.set('q', q);
+  if (from) exportQs.set('from', from);
+  if (to) exportQs.set('to', to);
 
   const [logs, total] = await Promise.all([
     prisma.auditLog.findMany({
@@ -88,6 +127,24 @@ export default async function AuditLogPage({ searchParams }: PageProps) {
           </select>
         </label>
         <label className="flex flex-col gap-1 text-xs uppercase text-muted-foreground">
+          From
+          <input
+            type="date"
+            name="from"
+            defaultValue={from}
+            className="h-9 w-40 rounded-md border border-border bg-background px-2 text-sm"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs uppercase text-muted-foreground">
+          To
+          <input
+            type="date"
+            name="to"
+            defaultValue={to}
+            className="h-9 w-40 rounded-md border border-border bg-background px-2 text-sm"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs uppercase text-muted-foreground">
           Search
           <input
             type="text"
@@ -103,6 +160,12 @@ export default async function AuditLogPage({ searchParams }: PageProps) {
         >
           Filter
         </button>
+        <a
+          href={`/api/export/audit${exportQs.size > 0 ? `?${exportQs.toString()}` : ''}`}
+          className="h-9 rounded-md border border-border bg-background px-3 text-sm font-medium leading-9 hover:bg-surface-subtle"
+        >
+          Export Excel
+        </a>
       </form>
 
       <Card>
@@ -150,7 +213,7 @@ export default async function AuditLogPage({ searchParams }: PageProps) {
         <div className="mt-4 flex items-center justify-end gap-2 text-sm">
           {page > 1 ? (
             <Link
-              href={`/reports/audit?page=${page - 1}&action=${action}&entity=${entity}&q=${q}`}
+              href={`/reports/audit?${new URLSearchParams({ ...Object.fromEntries(exportQs), page: String(page - 1) }).toString()}`}
               className="rounded-md border border-border px-2 py-1 hover:bg-surface-subtle"
             >
               ← Prev
@@ -161,7 +224,7 @@ export default async function AuditLogPage({ searchParams }: PageProps) {
           </span>
           {page < pages ? (
             <Link
-              href={`/reports/audit?page=${page + 1}&action=${action}&entity=${entity}&q=${q}`}
+              href={`/reports/audit?${new URLSearchParams({ ...Object.fromEntries(exportQs), page: String(page + 1) }).toString()}`}
               className="rounded-md border border-border px-2 py-1 hover:bg-surface-subtle"
             >
               Next →
