@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Bell, Check, CheckCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { Link } from '@/i18n/routing';
 import {
   fetchMyNotifications,
   markNotificationReadAction,
@@ -186,6 +187,16 @@ export function NotificationBell() {
                 })
               )}
             </ul>
+
+            <div className="border-t border-border bg-surface-subtle/50 px-3 py-2 text-center">
+              <Link
+                href="/notifications"
+                onClick={() => setOpen(false)}
+                className="text-xs text-primary hover:underline"
+              >
+                View all notifications →
+              </Link>
+            </div>
           </div>
         </>
       ) : null}
