@@ -22,6 +22,7 @@ export default async function RefundsReportPage({ searchParams }: PageProps) {
     where: {
       status: 'REFUNDED',
       refundedAt: { gte: range.from, lte: range.to },
+      case: { deletedAt: null },
     },
     select: {
       amount: true,

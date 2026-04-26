@@ -36,6 +36,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       where: {
         status: 'REFUNDED',
         refundedAt: { gte: range.from, lte: range.to },
+        case: { deletedAt: null },
       },
       _sum: { amount: true },
     }),
