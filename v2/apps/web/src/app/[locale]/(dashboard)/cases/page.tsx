@@ -93,7 +93,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
     ...(andConditions.length > 0 ? { AND: andConditions } : {}),
   };
 
-  const [total, rows] = await Promise.all([
+  const [total, rows, assignees] = await Promise.all([
     prisma.refundCase.count({ where }),
     prisma.refundCase.findMany({
       where,
@@ -114,6 +114,14 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
         brand: { select: { name: true } },
         _count: { select: { components: true } },
       },
+    }),
+    // Assignee picker for the bulk action bar. Pulls only ACTIVE,
+    // non-deleted users — we never want to reassign a case to a
+    // pending or rejected account.
+    prisma.user.findMany({
+      where: { status: 'ACTIVE', deletedAt: null },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, email: true },
     }),
   ]);
 
@@ -201,7 +209,13 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
 
       {/* Filters */}
       <Card className="mb-4 p-3">
-        <form className="flex flex-wrap items-center gap-3" action="/cases" method="get">
+        {/*
+          No `action` attribute on purpose: the form posts back to the
+          current URL, which already carries the [locale] prefix. Hard-
+          coding `action="/cases"` would drop the prefix and bounce an
+          Arabic user back to /en/cases via the i18n middleware.
+         */}
+        <form className="flex flex-wrap items-center gap-3" method="get">
           <div className="relative flex-1 min-w-[220px]">
             <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -296,6 +310,12 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
       {rows.length > 0 ? (
         <BulkActionsBar
           cases={rows.map((r) => ({ id: r.id, caseNumber: r.caseNumber, status: r.status }))}
+          assignees={assignees.map((a) => ({
+            id: a.id,
+            // Fall back to email when the display name is empty so the
+            // operator never sees a blank option.
+            name: a.name?.trim() ? a.name : a.email,
+          }))}
         />
       ) : null}
 

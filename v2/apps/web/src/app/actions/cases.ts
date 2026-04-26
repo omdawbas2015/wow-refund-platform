@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from '@wow/db';
+import { prisma, type CaseStatus } from '@wow/db';
 import {
   createRefundCaseSchema,
   submitCaseSchema,
@@ -784,6 +784,111 @@ export async function bulkCancelCasesAction(
           entityId: c.id,
           before: { status: c.status },
           after: { status: 'CANCELLED', reason, via: 'bulk' },
+        });
+        result.succeeded += 1;
+      } catch (rowErr) {
+        result.failed += 1;
+        result.errors.push({
+          caseId: c.id,
+          caseNumber: c.caseNumber,
+          error: rowErr instanceof Error ? rowErr.message : String(rowErr),
+        });
+      }
+    }
+
+    const found = new Set(cases.map((c) => c.id));
+    for (const id of caseIds) {
+      if (!found.has(id)) {
+        result.failed += 1;
+        result.errors.push({ caseId: id, caseNumber: id, error: 'Case not found' });
+      }
+    }
+
+    revalidatePath('/cases');
+    return { ok: true, data: result };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Bulk reassign cases to a single agent (or unassign by passing an empty
+ * `assigneeId`). Same per-row resilience as bulkSubmit / bulkCancel: a row
+ * that fails (deleted, terminal, or missing) is recorded in the result and
+ * the rest still proceed.
+ *
+ * Permission model: any signed-in user can reassign — the assigned-to
+ * column is operational metadata, not an authorization gate. The audit
+ * trail records who did it and the before/after assignee.
+ *
+ * Terminal cases (REFUNDED / REJECTED / CANCELLED) are deliberately
+ * excluded — reassigning a closed case is almost always a bug, and lets
+ * stale assignees own historic rows for free.
+ */
+export async function bulkAssignCasesAction(
+  formData: FormData,
+): Promise<ActionResult<BulkResult>> {
+  try {
+    const me = await requireUser();
+    const raw = formData.get('caseIds');
+    const assigneeRaw = formData.get('assigneeId');
+    if (typeof raw !== 'string' || !raw) return { ok: false, error: 'No cases selected' };
+    const assigneeId =
+      typeof assigneeRaw === 'string' && assigneeRaw.trim() ? assigneeRaw.trim() : null;
+
+    const caseIds = Array.from(new Set(raw.split(',').map((s) => s.trim()).filter(Boolean))).slice(
+      0,
+      MAX_BULK,
+    );
+    if (caseIds.length === 0) return { ok: false, error: 'No cases selected' };
+
+    if (assigneeId) {
+      const assignee = await prisma.user.findUnique({
+        where: { id: assigneeId },
+        select: { id: true, status: true, deletedAt: true },
+      });
+      if (!assignee || assignee.deletedAt || assignee.status !== 'ACTIVE') {
+        return { ok: false, error: 'Assignee not found or inactive' };
+      }
+    }
+
+    const cases = await prisma.refundCase.findMany({
+      where: { id: { in: caseIds }, deletedAt: null },
+      select: { id: true, caseNumber: true, status: true, assignedToId: true },
+    });
+
+    const result: BulkResult = {
+      total: caseIds.length,
+      succeeded: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    const TERMINAL: CaseStatus[] = ['REFUNDED', 'REJECTED', 'CANCELLED'];
+
+    for (const c of cases) {
+      try {
+        if (TERMINAL.includes(c.status)) {
+          throw new Error(`Cannot reassign a ${c.status} case`);
+        }
+        if (c.assignedToId === assigneeId) {
+          // No-op — count it as success but skip the audit row to keep
+          // the timeline signal-rich.
+          result.succeeded += 1;
+          continue;
+        }
+        await prisma.refundCase.update({
+          where: { id: c.id },
+          data: { assignedToId: assigneeId },
+        });
+        await writeAudit({
+          actorId: me.id,
+          actorEmail: me.email,
+          action: 'case.assigned',
+          entityType: 'CASE',
+          entityId: c.id,
+          before: { assignedToId: c.assignedToId },
+          after: { assignedToId: assigneeId, via: 'bulk' },
         });
         result.succeeded += 1;
       } catch (rowErr) {

@@ -4,7 +4,11 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { CaseStatus } from '@wow/db';
 import { Button } from '@/components/ui/button';
-import { bulkSubmitCasesAction, bulkCancelCasesAction } from '@/app/actions/cases';
+import {
+  bulkSubmitCasesAction,
+  bulkCancelCasesAction,
+  bulkAssignCasesAction,
+} from '@/app/actions/cases';
 
 interface CaseRow {
   id: string;
@@ -12,8 +16,14 @@ interface CaseRow {
   status: CaseStatus;
 }
 
+interface AssigneeOption {
+  id: string;
+  name: string;
+}
+
 interface Props {
   cases: CaseRow[];
+  assignees?: AssigneeOption[];
 }
 
 /**
@@ -29,10 +39,11 @@ interface Props {
  * id of those checkboxes to `bulk-cases-form` so this component can read
  * the checked values via FormData on submit.
  */
-export function BulkActionsBar({ cases }: Props) {
+export function BulkActionsBar({ cases, assignees = [] }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [assigneeId, setAssigneeId] = useState<string>('');
   const submittable = useMemo(() => cases.filter((c) => c.status === 'DRAFT'), [cases]);
 
   function selectedIds(): string[] {
@@ -72,6 +83,43 @@ export function BulkActionsBar({ cases }: Props) {
         r.failed === 0
           ? `Submitted ${r.succeeded} case${r.succeeded === 1 ? '' : 's'}.`
           : `Submitted ${r.succeeded} of ${r.total}. ${r.failed} failed: ${r.errors
+              .slice(0, 3)
+              .map((e) => `${e.caseNumber} (${e.error})`)
+              .join('; ')}${r.errors.length > 3 ? '…' : ''}`,
+      );
+      clearSelection();
+      router.refresh();
+    });
+  }
+
+  function onAssign() {
+    const ids = selectedIds();
+    if (ids.length === 0) {
+      setFeedback('Select at least one case.');
+      return;
+    }
+    // Empty string in the select means "unassign". Confirm so it isn't
+    // mis-clicked away from a real assignee.
+    if (!assigneeId) {
+      const ok = window.confirm(`Unassign ${ids.length} case${ids.length === 1 ? '' : 's'}?`);
+      if (!ok) return;
+    }
+    setFeedback(null);
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set('caseIds', ids.join(','));
+      fd.set('assigneeId', assigneeId);
+      const res = await bulkAssignCasesAction(fd);
+      if (!res.ok) {
+        setFeedback(res.error);
+        return;
+      }
+      const r = res.data;
+      const verb = assigneeId ? 'Reassigned' : 'Unassigned';
+      setFeedback(
+        r.failed === 0
+          ? `${verb} ${r.succeeded} case${r.succeeded === 1 ? '' : 's'}.`
+          : `${verb} ${r.succeeded} of ${r.total}. ${r.failed} failed: ${r.errors
               .slice(0, 3)
               .map((e) => `${e.caseNumber} (${e.error})`)
               .join('; ')}${r.errors.length > 3 ? '…' : ''}`,
@@ -121,6 +169,27 @@ export function BulkActionsBar({ cases }: Props) {
       <Button size="sm" variant="outline" onClick={onCancel} disabled={pending}>
         Cancel selected
       </Button>
+      {assignees.length > 0 ? (
+        <div className="flex items-center gap-2">
+          <select
+            value={assigneeId}
+            onChange={(e) => setAssigneeId(e.target.value)}
+            disabled={pending}
+            aria-label="Reassign to"
+            className="h-8 rounded-md border border-input bg-surface px-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+          >
+            <option value="">— Unassign —</option>
+            {assignees.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          <Button size="sm" variant="outline" onClick={onAssign} disabled={pending}>
+            Reassign selected
+          </Button>
+        </div>
+      ) : null}
       {feedback ? <span className="text-xs text-muted-foreground">{feedback}</span> : null}
     </div>
   );
