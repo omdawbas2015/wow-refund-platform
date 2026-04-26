@@ -95,7 +95,7 @@ export default async function RefundsReportPage({ searchParams }: PageProps) {
               </thead>
               <tbody className="divide-y divide-border">
                 {methodRows.map((r) => (
-                  <tr key={r.method}>
+                  <tr key={`${r.method}::${r.currency}`}>
                     <td className="px-6 py-3 font-medium">{r.method}</td>
                     <td className="px-6 py-3 text-end tabular">{r.count}</td>
                     <td className="px-6 py-3 text-end tabular">{r.amount.toFixed(3)}</td>
