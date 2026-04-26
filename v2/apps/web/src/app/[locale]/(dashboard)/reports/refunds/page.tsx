@@ -22,6 +22,9 @@ export default async function RefundsReportPage({ searchParams }: PageProps) {
     where: {
       status: 'REFUNDED',
       refundedAt: { gte: range.from, lte: range.to },
+      // Mirror the cases-list filter so totals here match cases counts and
+      // the .xlsx export (which also filters soft-deleted cases out).
+      case: { deletedAt: null },
     },
     select: {
       amount: true,
