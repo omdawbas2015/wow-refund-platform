@@ -263,10 +263,16 @@ export async function allocatePromoAction(
     for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop
       const stepOutcome = await prisma.$transaction(async (tx): Promise<AllocOutcome> => {
+        // Filter out codes whose expiresAt has already passed. The schema
+        // allows nullable expiresAt for non-expiring pools, so OR them in.
+        // (We don't have a background sweeper to flip expired codes to
+        // EXPIRED, so this guard at allocation time is the source of truth.)
+        const now = new Date();
         const code = await tx.promoCode.findFirst({
           where: {
             configId,
             status: 'AVAILABLE',
+            OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
             ...(seenLoserIds.size > 0 ? { id: { notIn: [...seenLoserIds] } } : {}),
           },
           orderBy: { uploadedAt: 'asc' },

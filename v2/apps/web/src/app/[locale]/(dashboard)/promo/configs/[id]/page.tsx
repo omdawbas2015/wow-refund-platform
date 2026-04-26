@@ -18,6 +18,7 @@ export default async function PromoConfigDetailPage({ params }: PageProps) {
   if (role !== 'ADMIN' && role !== 'OPS_LEAD') redirect('/promo');
 
   const { id, locale } = await params;
+  const localeFmt = locale === 'ar' ? 'ar-KW' : 'en-US';
   const config = await prisma.promoConfig.findUnique({
     where: { id },
     include: {
@@ -130,10 +131,10 @@ export default async function PromoConfigDetailPage({ params }: PageProps) {
                         </Badge>
                       </td>
                       <td className="px-4 py-2 text-xs tabular">
-                        {formatDateTime(c.uploadedAt, 'en-US')}
+                        {formatDateTime(c.uploadedAt, localeFmt)}
                       </td>
                       <td className="px-4 py-2 text-xs tabular">
-                        {allocation ? formatDateTime(allocation.createdAt, 'en-US') : '—'}
+                        {allocation ? formatDateTime(allocation.createdAt, localeFmt) : '—'}
                       </td>
                       <td className="px-4 py-2 text-xs">{allocation?.customerEmail ?? '—'}</td>
                     </tr>
