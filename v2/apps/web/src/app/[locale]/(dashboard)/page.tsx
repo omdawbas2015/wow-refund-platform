@@ -30,7 +30,7 @@ export default async function DashboardHome() {
         <h1 className="text-display-md font-normal tracking-tight text-heading">
           {t('welcome', { name: session?.user.name ?? '' })}
         </h1>
-        <p className="mt-2 text-body">Here's what's happening across the platform today.</p>
+        <p className="mt-2 text-body">Here&apos;s what&apos;s happening across the platform today.</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
