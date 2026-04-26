@@ -175,6 +175,7 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
     e.preventDefault();
     if (!canSubmit) return;
     setError(null);
+    setSuccess(null);
     startTransition(async () => {
       const result = await allocatePromoAction({
         poolId,

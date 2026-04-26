@@ -18,6 +18,8 @@ async function requireSession() {
 const ALLOCATE_COMP_ROLES = new Set(['ADMIN', 'MANAGER', 'AGENT', 'TEAM_LEAD']);
 const ALLOCATE_RECOVERY_ROLES = new Set(['ADMIN', 'MANAGER', 'AGENT', 'TEAM_LEAD']);
 const UPLOAD_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']);
+/** Who may read customers' prior promo history (fraud signal preview). */
+const HISTORY_ROLES = new Set(['ADMIN', 'MANAGER', 'AGENT', 'TEAM_LEAD']);
 
 /**
  * Window (days) used to detect repeat-customer fraud signals.
@@ -72,43 +74,54 @@ export async function allocatePromoAction(input: unknown): Promise<
       };
     }
 
-    // Pick an AVAILABLE code (ordered by oldest first so we burn inventory FIFO)
-    const candidate = await prisma.promoCode.findFirst({
-      where: {
-        configId: pool.id,
-        status: 'AVAILABLE',
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-      },
-      orderBy: { uploadedAt: 'asc' },
-      select: { id: true, code: true },
+    // Claim-and-allocate in a single transaction so we never leave a code
+    // stuck as ALLOCATED without a matching allocation row. Matches the
+    // pattern used by cases.ts / batches.ts for multi-step mutations.
+    type TxResult =
+      | { kind: 'ok'; code: string; allocationId: string }
+      | { kind: 'out_of_stock' }
+      | { kind: 'race' };
+    const outcome = await prisma.$transaction(async (tx): Promise<TxResult> => {
+      // Pick an AVAILABLE code (oldest first = FIFO burn of inventory).
+      const candidate = await tx.promoCode.findFirst({
+        where: {
+          configId: pool.id,
+          status: 'AVAILABLE',
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        orderBy: { uploadedAt: 'asc' },
+        select: { id: true, code: true },
+      });
+      if (!candidate) return { kind: 'out_of_stock' };
+
+      // TOCTOU guard: only claim if still AVAILABLE.
+      const claim = await tx.promoCode.updateMany({
+        where: { id: candidate.id, status: 'AVAILABLE' },
+        data: { status: 'ALLOCATED' },
+      });
+      if (claim.count === 0) return { kind: 'race' };
+
+      const allocation = await tx.promoAllocation.create({
+        data: {
+          codeId: candidate.id,
+          caseId: data.caseId ?? null,
+          customerEmail: data.customerEmail,
+          customerName: data.customerName ?? null,
+          requestedById: user.id,
+          reason: data.reason ?? null,
+          emailedAt: pool.type === 'CUSTOMER_COMPENSATION' ? new Date() : null,
+        },
+      });
+
+      return { kind: 'ok', code: candidate.code, allocationId: allocation.id };
     });
-    if (!candidate) {
+
+    if (outcome.kind === 'out_of_stock') {
       return { ok: false, error: 'This pool is out of stock. Upload more codes before allocating.' };
     }
-
-    // TOCTOU guard: only claim the code if it's still AVAILABLE.
-    const claim = await prisma.promoCode.updateMany({
-      where: { id: candidate.id, status: 'AVAILABLE' },
-      data: { status: 'ALLOCATED' },
-    });
-    if (claim.count === 0) {
-      return {
-        ok: false,
-        error: 'Another allocation just claimed that code. Please retry.',
-      };
+    if (outcome.kind === 'race') {
+      return { ok: false, error: 'Another allocation just claimed that code. Please retry.' };
     }
-
-    const allocation = await prisma.promoAllocation.create({
-      data: {
-        codeId: candidate.id,
-        caseId: data.caseId ?? null,
-        customerEmail: data.customerEmail,
-        customerName: data.customerName ?? null,
-        requestedById: user.id,
-        reason: data.reason ?? null,
-        emailedAt: pool.type === 'CUSTOMER_COMPENSATION' ? new Date() : null,
-      },
-    });
 
     // TODO(phase-4.2): dispatch real email via Power Automate for
     // CUSTOMER_COMPENSATION pools. For now the `emailedAt` timestamp doubles
@@ -116,7 +129,7 @@ export async function allocatePromoAction(input: unknown): Promise<
 
     revalidatePath('/promo');
     revalidatePath('/promo/allocate');
-    return { ok: true, data: { code: candidate.code, allocationId: allocation.id } };
+    return { ok: true, data: { code: outcome.code, allocationId: outcome.allocationId } };
   } catch (e) {
     console.error('[allocatePromoAction]', e);
     return { ok: false, error: 'Failed to allocate promo.' };
@@ -223,7 +236,13 @@ export async function loadCustomerPromoHistoryAction(
     createdAt: Date;
   }>;
 }> {
-  await requireSession();
+  const user = await requireSession();
+  if (!HISTORY_ROLES.has(user.role ?? '')) {
+    // Return an empty result rather than throwing so a restricted agent's UI
+    // simply shows "no history" instead of crashing — but the action still
+    // refuses to leak another customer's codes.
+    return { recentCount: 0, totalCount: 0, history: [] };
+  }
   if (!email) return { recentCount: 0, totalCount: 0, history: [] };
   const raw = await getCustomerPromoHistoryRaw(email);
   return {
