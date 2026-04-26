@@ -35,10 +35,15 @@ export type CaseRow = {
 };
 
 /**
- * Row click navigates straight to the case detail page. We dropped the
- * side-drawer preview — it duplicated work and slowed down the common
- * "open, act, go back" flow. Case # and email expose copy buttons on
- * hover so ops can grab identifiers without opening the case.
+ * Cases table redesign — Linear/Stripe-style data density:
+ *   - Country and brand split into two cells; flag carries country alone,
+ *     brand owns its column with branch as a muted subtitle.
+ *   - Amount cell uses a leading muted currency code so the eye lines up
+ *     on the digit, not the symbol; partial refunds add a tiny progress
+ *     bar instead of a second money line.
+ *   - Customer keeps name + email but with a tighter type ramp.
+ *   - Headers are sentence case + medium weight; row hover is a faint
+ *     primary tint, with a trailing ↗ that fades in on hover.
  */
 export function CasesTable({
   locale,
@@ -55,17 +60,18 @@ export function CasesTable({
     <>
       {/* Desktop — clean data table */}
       <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[820px] text-sm">
+        <table className="w-full min-w-[920px] text-sm">
           <thead>
-            <tr className="border-b border-border bg-surface-subtle/70">
+            <tr className="border-b border-border bg-surface-subtle/40">
               <Th>Case</Th>
               <Th>Customer</Th>
-              <Th>Country · Brand</Th>
-              <Th align="end">Amount</Th>
+              <Th>Country</Th>
+              <Th>Brand</Th>
+              <Th align="end">Refund</Th>
               <Th>Payment</Th>
               <Th>Status</Th>
-              <Th>Date</Th>
-              <th className="w-8 px-2 py-2.5" />
+              <Th>Created</Th>
+              <th className="w-8 px-2 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
@@ -78,13 +84,13 @@ export function CasesTable({
                   c.isDeleted && 'opacity-50',
                 )}
               >
-                <td className="whitespace-nowrap px-4 py-3">
+                <td className="whitespace-nowrap px-4 py-3.5">
                   <div className="inline-flex items-center gap-1">
                     <Link
                       href={`/${locale}/cases/${c.id}`}
                       onClick={(e) => e.stopPropagation()}
                       className={cn(
-                        'font-mono text-xs font-semibold',
+                        'font-mono text-xs font-semibold tracking-tight',
                         c.isDeleted
                           ? 'text-muted-foreground line-through'
                           : 'text-primary hover:underline',
@@ -101,11 +107,11 @@ export function CasesTable({
                     </span>
                   </div>
                 </td>
-                <td className="px-4 py-3">
-                  <div className="max-w-[220px] truncate font-medium text-heading">
+                <td className="px-4 py-3.5">
+                  <div className="max-w-[220px] truncate text-sm font-medium text-heading">
                     {c.customerName}
                   </div>
-                  <div className="group/email inline-flex max-w-[220px] items-center gap-1 text-xs text-muted-foreground">
+                  <div className="group/email mt-0.5 inline-flex max-w-[220px] items-center gap-1 text-xs text-muted-foreground">
                     <span className="truncate">{c.customerEmail}</span>
                     <span className="shrink-0 opacity-0 transition-opacity group-hover/email:opacity-100">
                       <CopyButton
@@ -116,24 +122,25 @@ export function CasesTable({
                     </span>
                   </div>
                 </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  <div className="leading-tight">
-                    <div className="flex items-center gap-1.5 text-sm text-heading">
-                      <span className="text-base leading-none">
-                        {c.countryFlag || '\uD83C\uDF10'}
-                      </span>
-                      <span>{c.countryName}</span>
-                      <span className="text-muted-foreground">·</span>
-                      <span className="font-medium">{c.brandName}</span>
-                    </div>
-                    {c.branchName && (
-                      <div className="truncate text-xs text-muted-foreground">
-                        {c.branchName}
-                      </div>
-                    )}
+                <td className="whitespace-nowrap px-4 py-3.5">
+                  <div className="inline-flex items-center gap-2">
+                    <span className="text-base leading-none" aria-hidden>
+                      {c.countryFlag || '\uD83C\uDF10'}
+                    </span>
+                    <span className="text-sm text-heading">{c.countryName}</span>
                   </div>
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 text-end">
+                <td className="whitespace-nowrap px-4 py-3.5">
+                  <div className="text-sm font-medium text-heading">
+                    {c.brandName}
+                  </div>
+                  {c.branchName && (
+                    <div className="mt-0.5 max-w-[200px] truncate text-xs text-muted-foreground">
+                      {c.branchName}
+                    </div>
+                  )}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3.5 text-end">
                   <AmountCell
                     refund={c.totalRefundAmount}
                     order={c.orderAmount}
@@ -141,12 +148,12 @@ export function CasesTable({
                     isPartial={c.isPartial}
                   />
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3.5">
                   <PaymentMethodIcons methods={c.paymentMethods} size="sm" />
                 </td>
-                <td className="whitespace-nowrap px-4 py-3">
+                <td className="whitespace-nowrap px-4 py-3.5">
                   {c.isDeleted ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-zinc-500/10 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:text-zinc-300">
                       <Trash2 className="h-3 w-3" />
                       Deleted
                     </span>
@@ -154,10 +161,10 @@ export function CasesTable({
                     <CaseStatusBadge status={c.status} />
                   )}
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
+                <td className="whitespace-nowrap px-4 py-3.5 text-xs text-muted-foreground">
                   {formatDate(new Date(c.createdAt))}
                 </td>
-                <td className="px-2 py-3">
+                <td className="px-2 py-3.5">
                   <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                 </td>
               </tr>
@@ -184,7 +191,7 @@ export function CasesTable({
                   {c.caseNumber}
                 </span>
                 {c.isDeleted ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-zinc-500/10 px-2 py-0.5 text-[10px] font-medium text-zinc-700 dark:text-zinc-300">
                     <Trash2 className="h-3 w-3" />
                     Deleted
                   </span>
@@ -195,7 +202,8 @@ export function CasesTable({
               <div className="min-w-0">
                 <div className="text-sm font-medium text-heading">{c.customerName}</div>
                 <div className="truncate text-xs text-muted-foreground">
-                  <span>{c.countryFlag}</span> {c.countryName} · {c.brandName}
+                  <span aria-hidden>{c.countryFlag}</span> {c.countryName} ·{' '}
+                  {c.brandName}
                   {c.branchName ? ` · ${c.branchName}` : ''}
                 </div>
               </div>
@@ -226,7 +234,7 @@ function Th({
   return (
     <th
       className={cn(
-        'whitespace-nowrap px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground',
+        'whitespace-nowrap px-4 py-2.5 text-xs font-medium text-muted-foreground',
         align === 'end' ? 'text-end' : 'text-start',
       )}
     >
@@ -236,10 +244,9 @@ function Th({
 }
 
 /**
- * Refund number is the primary figure. A subtle typographic weight shift
- * (amber text for partial refunds, heading color for full) carries the
- * distinction — no extra colored icon, which felt noisy. The order total
- * still appears underneath as an "of X" qualifier when it's a partial.
+ * Amount cell — leading currency code in muted small caps so digits align
+ * across rows. Partial refunds get a slim progress bar underneath; the
+ * old "of KWD 22.000" second line was noisy and doubled the column height.
  */
 function AmountCell({
   refund,
@@ -252,19 +259,26 @@ function AmountCell({
   currency: string;
   isPartial: boolean;
 }) {
+  const ratio = order > 0 ? Math.min(1, refund / order) : 1;
   return (
-    <div className="leading-tight">
-      <div
-        className={cn(
-          'font-mono text-sm font-semibold',
-          isPartial ? 'text-amber-700 dark:text-amber-400' : 'text-heading',
-        )}
-      >
+    <div className="inline-flex flex-col items-end leading-tight">
+      <span className="font-mono text-sm font-semibold tabular-nums text-heading">
         {formatMoney(refund, currency)}
-      </div>
+      </span>
       {isPartial && (
-        <div className="mt-0.5 text-[10px] text-muted-foreground">
-          of {formatMoney(order, currency)}
+        <div className="mt-1 flex items-center gap-1.5">
+          <div
+            className="h-1 w-16 overflow-hidden rounded-full bg-zinc-500/15"
+            aria-label={`Partial refund: ${Math.round(ratio * 100)}%`}
+          >
+            <div
+              className="h-full rounded-full bg-amber-500"
+              style={{ width: `${ratio * 100}%` }}
+            />
+          </div>
+          <span className="text-[10px] text-muted-foreground">
+            {Math.round(ratio * 100)}%
+          </span>
         </div>
       )}
     </div>
