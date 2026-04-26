@@ -1,5 +1,6 @@
 import { prisma } from '@wow/db';
-import type { CaseStatus } from '@wow/db';
+import type { CaseStatus, Prisma } from '@wow/db';
+import { buildSlaConditions, parseSlaParam, type SlaTier } from '@/lib/cases/sla';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +10,7 @@ import { Plus, FileText, Search, Download } from 'lucide-react';
 import { auth } from '@/auth';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { caseStatusVariant, caseStatusLabel } from '@/lib/cases/case-status-display';
+import { SlaPill } from '@/components/cases/sla-pill';
 
 const STATUS_TABS: Array<{ key: 'ALL' | CaseStatus; label: string }> = [
   { key: 'ALL', label: 'All' },
@@ -26,8 +28,17 @@ const PAGE_SIZE = 25;
 interface SearchParams {
   q?: string;
   status?: string;
+  sla?: string;
   page?: string;
 }
+
+const SLA_TABS: Array<{ key: 'all' | 'breached' | 'warning' | 'on_track' | 'closed'; label: string }> = [
+  { key: 'all', label: 'Any SLA' },
+  { key: 'breached', label: 'Breached' },
+  { key: 'warning', label: 'At risk' },
+  { key: 'on_track', label: 'On track' },
+  { key: 'closed', label: 'Closed' },
+];
 
 export default async function CasesPage(props: { searchParams: Promise<SearchParams> }) {
   const sp = await props.searchParams;
@@ -38,11 +49,23 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
   const q = (sp.q ?? '').trim();
   const statusParam = (sp.status ?? '').toUpperCase();
   const status = STATUS_TABS.find((t) => t.key === statusParam)?.key ?? 'ALL';
+  const sla: SlaTier | 'all' = parseSlaParam(sp.sla);
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
 
-  const where = {
+  // Translate the SLA filter into Prisma conditions. We always emit the
+  // `notIn: TERMINAL` guard for tier filters (breached/warning/on_track),
+  // even when a specific status tab is also selected, so that combinations
+  // like `status=REFUNDED + sla=breached` correctly return zero rows
+  // instead of leaking terminal cases that just happen to be old enough —
+  // which the SlaPill would render as "Closed", contradicting the active
+  // tab. The conditions are AND'd into the where clause so they don't
+  // collide with the top-level `status` key.
+  const slaConditions = buildSlaConditions(sla);
+
+  const where: Prisma.RefundCaseWhereInput = {
     deletedAt: null,
     ...(status !== 'ALL' ? { status: status as CaseStatus } : {}),
+    ...(slaConditions.length > 0 ? { AND: slaConditions } : {}),
     ...(q
       ? {
           OR: [
@@ -85,7 +108,17 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (status !== 'ALL') params.set('status', status);
+    if (sla !== 'all') params.set('sla', sla);
     if (p > 1) params.set('page', String(p));
+    const qs = params.toString();
+    return `/cases${qs ? `?${qs}` : ''}`;
+  }
+
+  function slaUrl(key: typeof SLA_TABS[number]['key']) {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (status !== 'ALL') params.set('status', status);
+    if (key !== 'all') params.set('sla', key);
     const qs = params.toString();
     return `/cases${qs ? `?${qs}` : ''}`;
   }
@@ -106,6 +139,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
                 const p = new URLSearchParams();
                 if (q) p.set('q', q);
                 if (status !== 'ALL') p.set('status', status);
+                if (sla !== 'all') p.set('sla', sla);
                 const qs = p.toString();
                 return `/api/export/cases${qs ? `?${qs}` : ''}`;
               })()}
@@ -137,11 +171,32 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
             />
           </div>
           {status !== 'ALL' ? <input type="hidden" name="status" value={status} /> : null}
+          {sla !== 'all' ? <input type="hidden" name="sla" value={sla} /> : null}
           <Button type="submit" size="sm" variant="outline">
             Search
           </Button>
         </form>
       </Card>
+
+      {/* SLA tabs */}
+      <div className="mb-3 flex flex-wrap gap-1">
+        {SLA_TABS.map((tab) => {
+          const active = tab.key === sla;
+          return (
+            <Link
+              key={tab.key}
+              href={slaUrl(tab.key)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                active
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-surface-subtle text-muted-foreground hover:bg-surface-subtle/70'
+              }`}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </div>
 
       {/* Status tabs */}
       <div className="mb-4 flex flex-wrap gap-1">
@@ -149,6 +204,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
           const params = new URLSearchParams();
           if (q) params.set('q', q);
           if (tab.key !== 'ALL') params.set('status', tab.key);
+          if (sla !== 'all') params.set('sla', sla);
           const href = `/cases${params.toString() ? `?${params.toString()}` : ''}`;
           const active = tab.key === status;
           return (
@@ -188,6 +244,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
                   <th>Customer</th>
                   <th className="text-end">Amount</th>
                   <th>Status</th>
+                  <th>Age</th>
                   <th>Created</th>
                 </tr>
               </thead>
@@ -214,6 +271,9 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
                     </td>
                     <td className="px-4 py-2.5">
                       <Badge variant={caseStatusVariant(r.status)}>{caseStatusLabel(r.status)}</Badge>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <SlaPill status={r.status} createdAt={r.createdAt} />
                     </td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground tabular">
                       {formatDate(r.createdAt, localePrefix)}

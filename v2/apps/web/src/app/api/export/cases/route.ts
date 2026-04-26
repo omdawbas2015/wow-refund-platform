@@ -3,6 +3,7 @@ import { prisma, Prisma } from '@wow/db';
 import type { CaseStatus } from '@wow/db';
 import { auth } from '@/auth';
 import { buildSingleSheetXlsx, attachmentDisposition, XLSX_MIME } from '@/lib/exports/xlsx';
+import { buildSlaConditions, parseSlaParam } from '@/lib/cases/sla';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,12 +38,17 @@ export async function GET(req: NextRequest) {
   const countryId = sp.get('countryId') ?? '';
   const brandId = sp.get('brandId') ?? '';
   const q = (sp.get('q') ?? '').trim();
+  // The cases list page also accepts an `sla` filter; honor it here so the
+  // exported file matches the filtered on-screen view.
+  const sla = parseSlaParam(sp.get('sla') ?? undefined);
+  const slaConditions = buildSlaConditions(sla);
 
   const where: Prisma.RefundCaseWhereInput = {
     deletedAt: null,
     ...(status && VALID_STATUSES.has(status) ? { status: status as CaseStatus } : {}),
     ...(countryId ? { countryId } : {}),
     ...(brandId ? { brandId } : {}),
+    ...(slaConditions.length > 0 ? { AND: slaConditions } : {}),
     ...(q
       ? {
           OR: [
