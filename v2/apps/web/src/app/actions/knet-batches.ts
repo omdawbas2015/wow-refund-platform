@@ -276,8 +276,14 @@ export async function ingestKnetArnsAction(
       // this round's `updated` against `totalComponents` would leave the
       // batch stuck at AWAITING_ARNS forever when ARNs are ingested in
       // multiple partial calls (e.g. finance replies in tranches).
+      //
+      // Exclude FAILED components: verifyKnetArnAction sets `arn: null,
+      // status: 'FAILED'` when an agent rejects an ARN, and those rows
+      // are terminally decided — counting them here would block the
+      // batch from ever reaching ARNS_RECEIVED. Mirrors the remaining-
+      // count logic at the bottom of verifyKnetArnAction.
       const remaining = await tx.refundComponent.count({
-        where: { batchId, arn: null },
+        where: { batchId, arn: null, status: { notIn: ['FAILED'] } },
       });
       await tx.knetBatch.update({
         where: { id: batchId },
