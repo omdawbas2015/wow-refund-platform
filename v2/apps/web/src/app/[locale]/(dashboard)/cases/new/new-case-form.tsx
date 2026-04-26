@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { createCaseAction } from '@/app/actions/cases';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,19 +21,24 @@ import { cn } from '@/lib/utils';
 
 type Country = { id: string; code: string; name: string; flag: string; currency: string };
 type Brand = { id: string; name: string };
+type Branch = { id: string; countryId: string; name: string };
 type PaymentMethod = { id: string; key: string; label: string; requiresAuthCode: boolean };
 type RootCause = { id: string; name: string };
+
+const NO_BRANCH = '__none__';
 
 export function NewCaseForm({
   locale,
   countries,
   brands,
+  branches,
   paymentMethods,
   rootCauses,
 }: {
   locale: string;
   countries: Country[];
   brands: Brand[];
+  branches: Branch[];
   paymentMethods: PaymentMethod[];
   rootCauses: RootCause[];
 }) {
@@ -42,6 +47,7 @@ export function NewCaseForm({
 
   const [countryId, setCountryId] = useState(countries[0]?.id ?? '');
   const [brandId, setBrandId] = useState(brands[0]?.id ?? '');
+  const [branchId, setBranchId] = useState<string>('');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -63,6 +69,18 @@ export function NewCaseForm({
 
   const country = countries.find((c) => c.id === countryId);
   const currency = country?.currency ?? 'USD';
+
+  const branchesForCountry = useMemo(
+    () => branches.filter((b) => b.countryId === countryId),
+    [branches, countryId],
+  );
+
+  // Reset branch when country changes (branches are scoped per-country)
+  useEffect(() => {
+    if (branchId && !branchesForCountry.some((b) => b.id === branchId)) {
+      setBranchId('');
+    }
+  }, [branchesForCountry, branchId]);
 
   const selectedMethod = paymentMethods.find((m) => m.id === paymentMethodId);
   const orderNum = Number(orderAmount) || 0;
@@ -90,6 +108,7 @@ export function NewCaseForm({
 
     const payload = {
       countryId,
+      branchId: branchId || undefined,
       brandId,
       customerName: customerName.trim(),
       customerEmail: customerEmail.trim(),
@@ -178,7 +197,7 @@ export function NewCaseForm({
         </Alert>
       )}
 
-      {/* ── Country & Brand ── */}
+      {/* ── Country, Brand & Branch ── */}
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="country">Country</Label>
@@ -204,6 +223,36 @@ export function NewCaseForm({
             </SelectTrigger>
             <SelectContent>
               {brands.map((b) => (
+                <SelectItem key={b.id} value={b.id}>
+                  {b.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="branch">
+            Branch <span className="text-muted-foreground">(optional)</span>
+          </Label>
+          <Select
+            value={branchId || NO_BRANCH}
+            onValueChange={(v) => setBranchId(v === NO_BRANCH ? '' : v)}
+            disabled={branchesForCountry.length === 0}
+          >
+            <SelectTrigger id="branch">
+              <SelectValue
+                placeholder={
+                  branchesForCountry.length === 0
+                    ? 'No branches configured for this country'
+                    : 'Select branch'
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_BRANCH}>
+                <span className="text-muted-foreground">No branch</span>
+              </SelectItem>
+              {branchesForCountry.map((b) => (
                 <SelectItem key={b.id} value={b.id}>
                   {b.name}
                 </SelectItem>

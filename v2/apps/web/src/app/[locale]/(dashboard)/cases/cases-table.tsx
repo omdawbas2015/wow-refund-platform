@@ -143,9 +143,7 @@ export function CasesTable({
                 <td className="whitespace-nowrap px-4 py-3.5 text-end">
                   <AmountCell
                     refund={c.totalRefundAmount}
-                    order={c.orderAmount}
                     currency={c.orderCurrency}
-                    isPartial={c.isPartial}
                   />
                 </td>
                 <td className="px-4 py-3.5">
@@ -211,9 +209,7 @@ export function CasesTable({
                 <PaymentMethodIcons methods={c.paymentMethods} size="sm" />
                 <AmountCell
                   refund={c.totalRefundAmount}
-                  order={c.orderAmount}
                   currency={c.orderCurrency}
-                  isPartial={c.isPartial}
                 />
               </div>
             </Link>
@@ -244,43 +240,20 @@ function Th({
 }
 
 /**
- * Amount cell — leading currency code in muted small caps so digits align
- * across rows. Partial refunds get a slim progress bar underneath; the
- * old "of KWD 22.000" second line was noisy and doubled the column height.
+ * Amount cell — single tabular-nums money line so digits align across rows.
+ * Partial refunds are signalled by the `Partially refunded` status pill in
+ * the next column; we don't need a second visual cue here.
  */
 function AmountCell({
   refund,
-  order,
   currency,
-  isPartial,
 }: {
   refund: number;
-  order: number;
   currency: string;
-  isPartial: boolean;
 }) {
-  const ratio = order > 0 ? Math.min(1, refund / order) : 1;
   return (
-    <div className="inline-flex flex-col items-end leading-tight">
-      <span className="font-mono text-sm font-semibold tabular-nums text-heading">
-        {formatMoney(refund, currency)}
-      </span>
-      {isPartial && (
-        <div className="mt-1 flex items-center gap-1.5">
-          <div
-            className="h-1 w-16 overflow-hidden rounded-full bg-zinc-500/15"
-            aria-label={`Partial refund: ${Math.round(ratio * 100)}%`}
-          >
-            <div
-              className="h-full rounded-full bg-amber-500"
-              style={{ width: `${ratio * 100}%` }}
-            />
-          </div>
-          <span className="text-[10px] text-muted-foreground">
-            {Math.round(ratio * 100)}%
-          </span>
-        </div>
-      )}
-    </div>
+    <span className="font-mono text-sm font-semibold tabular-nums text-heading">
+      {formatMoney(refund, currency)}
+    </span>
   );
 }
