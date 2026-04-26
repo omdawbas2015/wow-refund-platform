@@ -39,8 +39,13 @@ export default async function UserDetailPage({
 
   const { id } = await params;
 
-  const user = await prisma.user.findUnique({
-    where: { id },
+  // Mirror the deletedAt filter used by /admin/users (page.tsx:15) so a
+  // soft-deleted/ARCHIVED user can't be browsed via direct URL,
+  // bookmark, or browser history. findUnique with a composite where is
+  // fine here — `id` is unique on its own, the deletedAt clause just
+  // turns this into "find by id AND not soft-deleted".
+  const user = await prisma.user.findFirst({
+    where: { id, deletedAt: null },
     include: {
       role: true,
       approvedBy: { select: { email: true, name: true } },
