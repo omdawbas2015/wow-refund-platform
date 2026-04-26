@@ -1,19 +1,27 @@
 'use server';
 
 import { prisma } from '@wow/db';
-import { approveUserSchema, rejectUserSchema } from '@wow/validators';
+import {
+  approveUserSchema,
+  rejectUserSchema,
+  updateCountrySchema,
+  upsertBrandSchema,
+  upsertPaymentMethodSchema,
+  upsertRootCauseSchema,
+  updateEmailTemplateSchema,
+  createEmailTemplateSchema,
+  type UpdateCountryInput,
+  type UpsertBrandInput,
+  type UpsertPaymentMethodInput,
+  type UpsertRootCauseInput,
+  type UpdateEmailTemplateInput,
+  type CreateEmailTemplateInput,
+} from '@wow/validators';
 import { auth } from '@/auth';
 import { dispatchEmail } from '@/lib/email/dispatcher';
 import { revalidatePath } from 'next/cache';
 
-type ActionResult = { ok: true } | { ok: false; error: string };
-
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) throw new Error('UNAUTHENTICATED');
-  if (session.user.role !== 'ADMIN') throw new Error('FORBIDDEN');
-  return session.user;
-}
+// ── Pending signup approvals ─────────────────────────────────────────────
 
 export async function approveUserAction(formData: FormData): Promise<ActionResult> {
   try {
@@ -51,7 +59,6 @@ export async function approveUserAction(formData: FormData): Promise<ActionResul
       },
     });
 
-    // Notify the user — email them with a link to /forgot-password so they set a password
     await dispatchEmail({
       templateKey: 'AUTH_SIGNUP_APPROVED',
       locale: user.preferredLocale as 'en' | 'ar',
@@ -109,5 +116,326 @@ export async function rejectUserAction(formData: FormData): Promise<ActionResult
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: msg };
+  }
+}
+
+type ActionResult<T = void> =
+  | (T extends void ? { ok: true } : { ok: true; data: T })
+  | { ok: false; error: string };
+
+async function requireAdmin() {
+  const session = await auth();
+  if (!session?.user) throw new Error('UNAUTHENTICATED');
+  if (session.user.role !== 'ADMIN') throw new Error('FORBIDDEN');
+  return session.user;
+}
+
+async function audit(args: {
+  actorId: string;
+  actorEmail: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  before?: unknown;
+  after?: unknown;
+}) {
+  await prisma.auditLog.create({
+    data: {
+      actorId: args.actorId,
+      actorEmail: args.actorEmail,
+      action: args.action,
+      entityType: args.entityType,
+      entityId: args.entityId,
+      ...(args.before !== undefined ? { beforeData: JSON.stringify(args.before) } : {}),
+      ...(args.after !== undefined ? { afterData: JSON.stringify(args.after) } : {}),
+    },
+  });
+}
+
+// ── Countries ─────────────────────────────────────────────────────────────
+
+export async function updateCountryAction(
+  input: UpdateCountryInput,
+): Promise<ActionResult> {
+  try {
+    const me = await requireAdmin();
+    const parsed = updateCountrySchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const { countryId, ...rest } = parsed.data;
+    const before = await prisma.country.findUnique({ where: { id: countryId } });
+    if (!before) return { ok: false, error: 'Country not found' };
+
+    const data: Record<string, unknown> = {};
+    if (rest.isActive !== undefined) data['isActive'] = rest.isActive;
+    if (rest.managerEmail !== undefined) data['managerEmail'] = rest.managerEmail || null;
+    if (rest.cutoffTime !== undefined) data['cutoffTime'] = rest.cutoffTime;
+    if (rest.sortOrder !== undefined) data['sortOrder'] = rest.sortOrder;
+
+    const updated = await prisma.country.update({ where: { id: countryId }, data });
+    await audit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: 'admin.country.updated',
+      entityType: 'COUNTRY',
+      entityId: countryId,
+      before,
+      after: updated,
+    });
+    revalidatePath('/admin/countries');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ── Brands ────────────────────────────────────────────────────────────────
+
+export async function upsertBrandAction(input: UpsertBrandInput): Promise<ActionResult<{ id: string }>> {
+  try {
+    const me = await requireAdmin();
+    const parsed = upsertBrandSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const { brandId, name, nameAr, slug, logoUrl, isActive, sortOrder } = parsed.data;
+
+    const data = {
+      name,
+      nameAr: nameAr || null,
+      slug,
+      logoUrl: logoUrl || null,
+      ...(isActive !== undefined ? { isActive } : {}),
+      ...(sortOrder !== undefined ? { sortOrder } : {}),
+    };
+
+    if (brandId) {
+      const before = await prisma.brand.findUnique({ where: { id: brandId } });
+      if (!before) return { ok: false, error: 'Brand not found' };
+      const updated = await prisma.brand.update({ where: { id: brandId }, data });
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'admin.brand.updated',
+        entityType: 'BRAND',
+        entityId: brandId,
+        before,
+        after: updated,
+      });
+      revalidatePath('/admin/brands');
+      return { ok: true, data: { id: updated.id } };
+    } else {
+      const dupName = await prisma.brand.findUnique({ where: { name } });
+      if (dupName) return { ok: false, error: 'A brand with this name already exists' };
+      const dupSlug = await prisma.brand.findUnique({ where: { slug } });
+      if (dupSlug) return { ok: false, error: 'A brand with this slug already exists' };
+      const created = await prisma.brand.create({ data });
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'admin.brand.created',
+        entityType: 'BRAND',
+        entityId: created.id,
+        after: created,
+      });
+      revalidatePath('/admin/brands');
+      return { ok: true, data: { id: created.id } };
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ── Payment methods ───────────────────────────────────────────────────────
+
+export async function upsertPaymentMethodAction(
+  input: UpsertPaymentMethodInput,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const me = await requireAdmin();
+    const parsed = upsertPaymentMethodSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const {
+      paymentMethodId,
+      key,
+      label,
+      labelAr,
+      iconSlug,
+      iconUrl,
+      color,
+      requiresAuthCode,
+      executionType,
+      isActive,
+      sortOrder,
+    } = parsed.data;
+
+    const data = {
+      key,
+      label,
+      labelAr: labelAr || null,
+      iconSlug: iconSlug || null,
+      iconUrl: iconUrl || null,
+      color: color || null,
+      ...(requiresAuthCode !== undefined ? { requiresAuthCode } : {}),
+      ...(executionType !== undefined ? { executionType } : {}),
+      ...(isActive !== undefined ? { isActive } : {}),
+      ...(sortOrder !== undefined ? { sortOrder } : {}),
+    };
+
+    if (paymentMethodId) {
+      const before = await prisma.paymentMethod.findUnique({ where: { id: paymentMethodId } });
+      if (!before) return { ok: false, error: 'Payment method not found' };
+      const updated = await prisma.paymentMethod.update({ where: { id: paymentMethodId }, data });
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'admin.payment_method.updated',
+        entityType: 'PAYMENT_METHOD',
+        entityId: paymentMethodId,
+        before,
+        after: updated,
+      });
+      revalidatePath('/admin/payment-methods');
+      return { ok: true, data: { id: updated.id } };
+    } else {
+      const dup = await prisma.paymentMethod.findUnique({ where: { key } });
+      if (dup) return { ok: false, error: 'A payment method with this key already exists' };
+      const created = await prisma.paymentMethod.create({ data });
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'admin.payment_method.created',
+        entityType: 'PAYMENT_METHOD',
+        entityId: created.id,
+        after: created,
+      });
+      revalidatePath('/admin/payment-methods');
+      return { ok: true, data: { id: created.id } };
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ── Root causes ──────────────────────────────────────────────────────────
+
+export async function upsertRootCauseAction(
+  input: UpsertRootCauseInput,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const me = await requireAdmin();
+    const parsed = upsertRootCauseSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const { rootCauseId, key, label, labelAr, category, requiresEvidence, isActive, sortOrder } =
+      parsed.data;
+
+    const data = {
+      key,
+      label,
+      labelAr: labelAr || null,
+      category: category || null,
+      ...(requiresEvidence !== undefined ? { requiresEvidence } : {}),
+      ...(isActive !== undefined ? { isActive } : {}),
+      ...(sortOrder !== undefined ? { sortOrder } : {}),
+    };
+
+    if (rootCauseId) {
+      const before = await prisma.rootCause.findUnique({ where: { id: rootCauseId } });
+      if (!before) return { ok: false, error: 'Root cause not found' };
+      const updated = await prisma.rootCause.update({ where: { id: rootCauseId }, data });
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'admin.root_cause.updated',
+        entityType: 'ROOT_CAUSE',
+        entityId: rootCauseId,
+        before,
+        after: updated,
+      });
+      revalidatePath('/admin/root-causes');
+      return { ok: true, data: { id: updated.id } };
+    } else {
+      const dup = await prisma.rootCause.findUnique({ where: { key } });
+      if (dup) return { ok: false, error: 'A root cause with this key already exists' };
+      const created = await prisma.rootCause.create({ data });
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'admin.root_cause.created',
+        entityType: 'ROOT_CAUSE',
+        entityId: created.id,
+        after: created,
+      });
+      revalidatePath('/admin/root-causes');
+      return { ok: true, data: { id: created.id } };
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ── Email templates ──────────────────────────────────────────────────────
+
+export async function updateEmailTemplateAction(
+  input: UpdateEmailTemplateInput,
+): Promise<ActionResult> {
+  try {
+    const me = await requireAdmin();
+    const parsed = updateEmailTemplateSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const { templateId, subject, body, description, isActive } = parsed.data;
+    const before = await prisma.emailTemplate.findUnique({ where: { id: templateId } });
+    if (!before) return { ok: false, error: 'Template not found' };
+    const updated = await prisma.emailTemplate.update({
+      where: { id: templateId },
+      data: {
+        subject,
+        body,
+        description: description || null,
+        ...(isActive !== undefined ? { isActive } : {}),
+      },
+    });
+    await audit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: 'admin.email_template.updated',
+      entityType: 'EMAIL_TEMPLATE',
+      entityId: templateId,
+      before,
+      after: updated,
+    });
+    revalidatePath('/admin/email-templates');
+    revalidatePath(`/admin/email-templates/${templateId}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function createEmailTemplateAction(
+  input: CreateEmailTemplateInput,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const me = await requireAdmin();
+    const parsed = createEmailTemplateSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const { key, category, locale, subject, body, description } = parsed.data;
+    const dup = await prisma.emailTemplate.findUnique({
+      where: { key_locale: { key, locale } },
+    });
+    if (dup) return { ok: false, error: `Template ${key} (${locale}) already exists` };
+
+    const created = await prisma.emailTemplate.create({
+      data: { key, category, locale, subject, body, description: description || null },
+    });
+    await audit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: 'admin.email_template.created',
+      entityType: 'EMAIL_TEMPLATE',
+      entityId: created.id,
+      after: created,
+    });
+    revalidatePath('/admin/email-templates');
+    return { ok: true, data: { id: created.id } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
