@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={cn(inter.variable, jetbrainsMono.variable, 'min-h-screen bg-background font-sans text-foreground antialiased')}>
-        <ThemeProvider attribute="data-theme" defaultTheme="light" enableSystem={false}>
+        <ThemeProvider attribute="data-theme" defaultTheme="system" enableSystem>
           <SessionProvider>
             {children}
             <Toaster richColors position="top-right" />
