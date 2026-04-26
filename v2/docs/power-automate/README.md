@@ -8,18 +8,23 @@ cloud flows:
 | **Outbound** | App → Mailbox | HTTP request from `dispatchEmail()` | `Office 365 Outlook · Send an email (V2)` |
 | **Inbound**  | Mailbox → App | `Office 365 Outlook · When a new email arrives (V3)` | `HTTP · POST` to `/api/webhooks/power-automate` |
 
-This folder ships ready-to-import **flow definition JSON** for both flows
-plus sample test payloads. You can paste the JSON into Power Automate's
-*Code view* (or use it as a reference for the manual click-through setup
-described below).
+This folder ships **two ways to install** each flow:
 
-> **Note**: Power Automate doesn't have a single-click "Import this
-> JSON" button for cloud flows. The reliable path is: create a blank
-> flow → click **My flows → New flow → Instant cloud flow** (outbound)
-> or **Automated cloud flow** (inbound) → switch to **Code view** in
-> the editor and paste the matching definition. We also document a
-> step-by-step UI build in case Code view isn't available in your
-> tenant.
+1. **Recommended — Legacy Package zip** (`packages/wow-outbound-mailer.zip`,
+   `packages/wow-inbound-listener.zip`). Power Automate → **My flows →
+   Import → Import Package (Legacy)** → upload the zip → map your
+   Office 365 connection → **Import**. The flow lands as a draft you
+   can open and turn on.
+2. **Manual — Code view paste** using `flows/*.json`. Use this if your
+   tenant blocks legacy package imports, or you want to hand-edit the
+   definition first.
+
+The packages are generated from the JSON definitions next door — if
+you tweak a definition, regenerate the zips with:
+
+```bash
+python3 v2/docs/power-automate/build-packages.py
+```
 
 ---
 
