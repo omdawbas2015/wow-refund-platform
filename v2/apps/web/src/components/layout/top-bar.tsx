@@ -3,9 +3,12 @@
 import { signOut } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { useRouter, usePathname } from 'next/navigation';
+import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
-import { LogOut, Globe, Moon, Sun } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { LogOut, Globe, Moon, Sun, Search } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { NotificationBell } from './notification-bell';
 
 interface TopBarProps {
   userName: string;
@@ -18,6 +21,16 @@ export function TopBar({ userName, userEmail, currentLocale }: TopBarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
+  const [searchQ, setSearchQ] = useState('');
+
+  function onSearch(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const q = searchQ.trim();
+    if (!q) return;
+    // Locale prefix is auto-added by the i18n routing; pushing to a plain
+    // path keeps client-side navigation snappy.
+    router.push(`/${currentLocale}/search?q=${encodeURIComponent(q)}`);
+  }
 
   function toggleLocale() {
     const next = currentLocale === 'en' ? 'ar' : 'en';
@@ -41,6 +54,18 @@ export function TopBar({ userName, userEmail, currentLocale }: TopBarProps) {
         <span>{userEmail}</span>
       </div>
       <div className="flex items-center gap-2">
+        <form onSubmit={onSearch} className="relative hidden md:block">
+          <Search className="pointer-events-none absolute start-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            placeholder="Search…"
+            aria-label="Global search"
+            className="h-8 w-56 ps-8"
+          />
+        </form>
+        <NotificationBell />
         <Button variant="ghost" size="sm" onClick={toggleLocale} aria-label="Toggle language">
           <Globe className="h-4 w-4" />
           <span className="ms-1 uppercase">{currentLocale === 'en' ? 'AR' : 'EN'}</span>
