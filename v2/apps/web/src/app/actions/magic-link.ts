@@ -3,6 +3,7 @@
 import { prisma } from '@wow/db';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { resolveApproverFromRecipients } from '@/lib/batches/resolve-approver';
 
 const decisionSchema = z.object({
   token: z.string().trim().min(10),
@@ -26,6 +27,8 @@ export async function decideMagicLinkBatchAction(input: unknown): Promise<Action
     const batch = await prisma.approvalBatch.findUnique({
       where: { magicLinkToken: token },
       include: { cases: { select: { id: true, status: true } } },
+      // `recipientEmails` is needed to attribute the approval to a specific
+      // User in the audit trail (the public magic-link page has no session).
     });
     if (!batch) return { ok: false, error: 'This approval link is invalid or expired.' };
     if (batch.status === 'COMPLETED' || batch.status === 'CANCELLED') {
@@ -51,6 +54,15 @@ export async function decideMagicLinkBatchAction(input: unknown): Promise<Action
         return { ok: false as const, error: 'This approval link has already been used or revoked.' };
       }
 
+      // Best-effort attribution: pick the first authorized recipient that
+      // resolves to a real (non-deleted) User. We can't know which specific
+      // recipient clicked the link, but recording any one of the authorized
+      // approvers is strictly more useful than leaving `approvedById` null.
+      const approverId =
+        decision === 'APPROVED'
+          ? await resolveApproverFromRecipients(tx, batch.recipientEmails)
+          : null;
+
       let approved = 0;
       let rejected = 0;
       for (const c of batch.cases) {
@@ -59,7 +71,7 @@ export async function decideMagicLinkBatchAction(input: unknown): Promise<Action
           where: { id: c.id, status: 'PENDING_APPROVAL' },
           data:
             decision === 'APPROVED'
-              ? { status: 'APPROVED', approvedAt: now }
+              ? { status: 'APPROVED', approvedAt: now, approvedById: approverId }
               : { status: 'REJECTED', rejectedReason: reason ?? 'Rejected via magic link' },
         });
         if (guard.count === 0) continue;

@@ -6,6 +6,7 @@ import {
 } from '@wow/validators';
 import { parseApprovalReply } from './parse-reply';
 import { parseArnReply } from './parse-arn';
+import { resolveApproverByEmail } from './resolve-approver';
 
 export interface ProcessOutcome {
   intent:
@@ -40,7 +41,7 @@ export async function processInboundReply(args: {
   const auraMatch = haystack.match(AURA_BATCH_NUMBER_REGEX);
 
   if (approvalMatch?.length) {
-    return await applyApprovalReply(approvalMatch[0]!, rawBody);
+    return await applyApprovalReply(approvalMatch[0]!, rawBody, args.fromEmail);
   }
   if (knetMatch?.length) {
     return await applyKnetArnReply(knetMatch[0]!, rawBody);
@@ -55,6 +56,7 @@ export async function processInboundReply(args: {
 async function applyApprovalReply(
   batchNumber: string,
   rawBody: string,
+  fromEmail: string,
 ): Promise<ProcessOutcome> {
   const batch = await prisma.approvalBatch.findUnique({
     where: { batchNumber },
@@ -84,6 +86,14 @@ async function applyApprovalReply(
   }
 
   await prisma.$transaction(async (tx) => {
+    // Best-effort attribution: resolve the replying manager's email to a
+    // User row so the case detail "Approved by" sidebar and audit trail
+    // record who actually approved. Returns null when the email isn't
+    // associated with any (non-deleted) User; in that case we still record
+    // `approvedAt` and the activity log preserves attribution at
+    // `actorLabel: 'Manager (email)'`.
+    const approverId = await resolveApproverByEmail(tx, fromEmail);
+
     let approved = 0;
     let rejected = 0;
     for (const c of batch.cases) {
@@ -95,7 +105,7 @@ async function applyApprovalReply(
         where: { id: c.id, status: 'PENDING_APPROVAL' },
         data:
           decision === 'APPROVED'
-            ? { status: 'APPROVED', approvedAt: new Date() }
+            ? { status: 'APPROVED', approvedAt: new Date(), approvedById: approverId }
             : { status: 'REJECTED', rejectedReason: 'Manager rejected via email' },
       });
       if (guard.count === 0) continue;
