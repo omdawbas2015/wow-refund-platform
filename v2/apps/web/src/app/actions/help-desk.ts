@@ -98,6 +98,7 @@ export async function sendStoreMessageAction(
     // internally and returns `{ delivered: false, error }`. So we MUST inspect
     // the result, not rely on a thrown error. (Try/catch still wraps the call
     // because template loading / DB writes inside dispatchEmail can throw.)
+    let dispatched = false;
     try {
       const result = await dispatchEmail({
         templateKey: `STORE_${template.key}`,
@@ -111,23 +112,48 @@ export async function sendStoreMessageAction(
       });
       if (!result.delivered) {
         const reason = result.error ?? 'Unknown dispatch error';
+        try {
+          await prisma.storeMessageLog.update({
+            where: { id: log.id },
+            data: { deliveryStatus: 'FAILED', failureReason: reason },
+          });
+        } catch (logErr) {
+          console.error('[help-desk] failed to mark log FAILED after dispatch returned !delivered', logErr);
+        }
+        return { ok: false, error: `Email dispatch failed: ${reason}` };
+      }
+      dispatched = true;
+    } catch (emailErr) {
+      // dispatchEmail itself threw — email was NOT sent. Mark FAILED and report.
+      const reason = emailErr instanceof Error ? emailErr.message : String(emailErr);
+      try {
         await prisma.storeMessageLog.update({
           where: { id: log.id },
           data: { deliveryStatus: 'FAILED', failureReason: reason },
         });
-        return { ok: false, error: `Email dispatch failed: ${reason}` };
+      } catch (logErr) {
+        console.error('[help-desk] failed to mark log FAILED after dispatchEmail threw', logErr);
       }
-      await prisma.storeMessageLog.update({
-        where: { id: log.id },
-        data: { deliveryStatus: 'SENT', deliveredAt: new Date() },
-      });
-    } catch (emailErr) {
-      const reason = emailErr instanceof Error ? emailErr.message : String(emailErr);
-      await prisma.storeMessageLog.update({
-        where: { id: log.id },
-        data: { deliveryStatus: 'FAILED', failureReason: reason },
-      });
       return { ok: false, error: `Email dispatch failed: ${reason}` };
+    }
+
+    // Email has been dispatched (irreversible side effect). From this point on,
+    // any failure must be logged but must NOT surface as `ok: false`, since
+    // the user would retry and double-send. The status update sits OUTSIDE
+    // the dispatch try/catch so a transient DB error here cannot be confused
+    // with a dispatch failure.
+    if (dispatched) {
+      try {
+        await prisma.storeMessageLog.update({
+          where: { id: log.id },
+          data: { deliveryStatus: 'SENT', deliveredAt: new Date() },
+        });
+      } catch (statusErr) {
+        console.error(
+          '[help-desk] CRITICAL: email sent but storeMessageLog status update failed; manual reconciliation needed',
+          { logId: log.id, err: statusErr },
+        );
+      }
     }
 
     // Email has already been dispatched (irreversible side effect). Never let
