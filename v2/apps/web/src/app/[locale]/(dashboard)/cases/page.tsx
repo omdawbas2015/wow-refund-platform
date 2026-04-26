@@ -11,6 +11,7 @@ import { auth } from '@/auth';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { caseStatusVariant, caseStatusLabel } from '@/lib/cases/case-status-display';
 import { SlaPill } from '@/components/cases/sla-pill';
+import { SavedViewsMenu } from '@/components/cases/saved-views-menu';
 import { BulkActionsBar, BulkSelectAll, BulkRowCheckbox } from './bulk-actions';
 
 const STATUS_TABS: Array<{ key: 'ALL' | CaseStatus; label: string }> = [
@@ -134,6 +135,18 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <SavedViewsMenu
+            scope="CASES"
+            basePath="/cases"
+            currentQs={(() => {
+              const p = new URLSearchParams();
+              if (q) p.set('q', q);
+              if (status !== 'ALL') p.set('status', status);
+              if (sla !== 'all') p.set('sla', sla);
+              return p.toString();
+            })()}
+            isAdmin={session?.user?.role === 'ADMIN'}
+          />
           <Button asChild variant="outline">
             <a
               href={(() => {
