@@ -86,3 +86,25 @@ export const createEmailTemplateSchema = z.object({
   description: z.string().trim().max(500).optional().or(z.literal('')),
 });
 export type CreateEmailTemplateInput = z.infer<typeof createEmailTemplateSchema>;
+
+// ── Feature flags / settings ──────────────────────────────────────────────
+
+export const toggleFeatureFlagSchema = z.object({
+  key: nonEmptyString.max(96),
+  enabled: z.coerce.boolean(),
+});
+export type ToggleFeatureFlagInput = z.infer<typeof toggleFeatureFlagSchema>;
+
+export const upsertSettingSchema = z.object({
+  key: nonEmptyString
+    .max(96)
+    .regex(/^[a-z0-9._-]+$/, 'lowercase letters, digits, dot/underscore/dash only'),
+  value: z.string().max(8000),
+  description: z.string().trim().max(500).optional().or(z.literal('')),
+});
+export type UpsertSettingInput = z.infer<typeof upsertSettingSchema>;
+
+export const deleteSettingSchema = z.object({
+  key: nonEmptyString.max(96),
+});
+export type DeleteSettingInput = z.infer<typeof deleteSettingSchema>;

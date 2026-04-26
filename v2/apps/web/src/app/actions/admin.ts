@@ -10,12 +10,18 @@ import {
   upsertRootCauseSchema,
   updateEmailTemplateSchema,
   createEmailTemplateSchema,
+  toggleFeatureFlagSchema,
+  upsertSettingSchema,
+  deleteSettingSchema,
   type UpdateCountryInput,
   type UpsertBrandInput,
   type UpsertPaymentMethodInput,
   type UpsertRootCauseInput,
   type UpdateEmailTemplateInput,
   type CreateEmailTemplateInput,
+  type ToggleFeatureFlagInput,
+  type UpsertSettingInput,
+  type DeleteSettingInput,
 } from '@wow/validators';
 import { auth } from '@/auth';
 import { dispatchEmail } from '@/lib/email/dispatcher';
@@ -512,6 +518,109 @@ export async function createEmailTemplateAction(
     });
     revalidatePath('/admin/email-templates');
     return { ok: true, data: { id: created.id } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ── Feature flags ─────────────────────────────────────────────────────────
+
+export async function toggleFeatureFlagAction(
+  input: ToggleFeatureFlagInput,
+): Promise<ActionResult> {
+  try {
+    const me = await requireAdmin();
+    const parsed = toggleFeatureFlagSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: 'Invalid input' };
+    const { key, enabled } = parsed.data;
+
+    const existing = await prisma.featureFlag.findUnique({ where: { key } });
+    if (!existing) return { ok: false, error: 'Unknown feature flag' };
+    if (existing.enabled === enabled) return { ok: true };
+
+    const updated = await prisma.featureFlag.update({
+      where: { key },
+      data: { enabled },
+    });
+    await audit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: enabled ? 'admin.feature_flag.enabled' : 'admin.feature_flag.disabled',
+      entityType: 'FEATURE_FLAG',
+      entityId: key,
+      before: { enabled: existing.enabled },
+      after: { enabled: updated.enabled },
+    });
+    revalidatePath('/admin/settings');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ── System settings ───────────────────────────────────────────────────────
+
+export async function upsertSettingAction(
+  input: UpsertSettingInput,
+): Promise<ActionResult> {
+  try {
+    const me = await requireAdmin();
+    const parsed = upsertSettingSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    }
+    const { key, value, description } = parsed.data;
+
+    const before = await prisma.setting.findUnique({ where: { key } });
+    const data = {
+      value,
+      description: description || null,
+      updatedBy: me.id,
+    };
+    const after = await prisma.setting.upsert({
+      where: { key },
+      create: { key, ...data },
+      update: data,
+    });
+    await audit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: before ? 'admin.setting.updated' : 'admin.setting.created',
+      entityType: 'SETTING',
+      entityId: key,
+      ...(before ? { before } : {}),
+      after,
+    });
+    revalidatePath('/admin/settings');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function deleteSettingAction(
+  input: DeleteSettingInput,
+): Promise<ActionResult> {
+  try {
+    const me = await requireAdmin();
+    const parsed = deleteSettingSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: 'Invalid input' };
+    const { key } = parsed.data;
+
+    const existing = await prisma.setting.findUnique({ where: { key } });
+    if (!existing) return { ok: false, error: 'Setting not found' };
+
+    await prisma.setting.delete({ where: { key } });
+    await audit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: 'admin.setting.deleted',
+      entityType: 'SETTING',
+      entityId: key,
+      before: existing,
+    });
+    revalidatePath('/admin/settings');
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

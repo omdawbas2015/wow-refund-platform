@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link } from '@/i18n/routing';
 import { auth } from '@/auth';
-import { Globe, Tag, CreditCard, AlertTriangle, Mail, Users, ChevronRight } from 'lucide-react';
+import { Globe, Tag, CreditCard, AlertTriangle, Mail, Users, Settings, ChevronRight } from 'lucide-react';
 
 const SECTIONS = [
   { href: '/admin/countries', icon: Globe, title: 'Countries', desc: 'Manager email, cutoff time, sort order' },
@@ -12,6 +12,7 @@ const SECTIONS = [
   { href: '/admin/email-templates', icon: Mail, title: 'Email templates', desc: 'Subjects, bodies, locales' },
   { href: '/admin/users', icon: Users, title: 'Users & roles', desc: 'Manage staff access' },
   { href: '/admin/pending-approvals', icon: Users, title: 'Pending signups', desc: 'Approve or reject new signups' },
+  { href: '/admin/settings', icon: Settings, title: 'Settings', desc: 'Feature flags and system settings' },
 ];
 
 export default async function AdminPage() {
