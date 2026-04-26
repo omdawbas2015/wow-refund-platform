@@ -34,7 +34,11 @@ export default async function UsersPage({
 
   const sp = await searchParams;
   const q = (sp.q ?? '').trim();
-  const statusKey = (sp.status ?? 'ALL') as 'ALL' | UserStatus;
+  // Validate the status param against the known tab keys before letting it
+  // anywhere near Prisma. A bare cast would let `?status=INVALID` propagate
+  // into the where clause and trigger a PrismaClientValidationError.
+  const statusKey: 'ALL' | UserStatus =
+    STATUS_TABS.find((t) => t.key === (sp.status ?? 'ALL'))?.key ?? 'ALL';
 
   const where: Prisma.UserWhereInput = {};
   // ARCHIVED users carry deletedAt; we still want to surface them when the
