@@ -41,7 +41,8 @@ export default async function PromoPage() {
   if (!session?.user) redirect('/login');
   if (!PROMO_VIEW_ROLES.has(session.user.role ?? '')) redirect('/');
 
-  const [pools, stockCounts, recentAllocations] = await Promise.all([
+  const now = new Date();
+  const [pools, stockCounts, staleAvailableCounts, recentAllocations] = await Promise.all([
     prisma.promoConfig.findMany({
       where: { isActive: true },
       include: {
@@ -52,6 +53,17 @@ export default async function PromoPage() {
     }),
     prisma.promoCode.groupBy({
       by: ['configId', 'status'],
+      _count: { _all: true },
+    }),
+    // Codes still flagged AVAILABLE but whose expiresAt has already passed —
+    // counted separately so we can subtract them from "Available" (matches the
+    // filter used by allocate page + allocatePromoAction).
+    prisma.promoCode.groupBy({
+      by: ['configId'],
+      where: {
+        status: 'AVAILABLE',
+        expiresAt: { not: null, lte: now },
+      },
       _count: { _all: true },
     }),
     prisma.promoAllocation.findMany({
@@ -79,13 +91,20 @@ export default async function PromoPage() {
     if (!countByPool.has(k)) countByPool.set(k, {});
     countByPool.get(k)![row.status] = row._count._all;
   }
+  const staleByPool = new Map<string, number>(
+    staleAvailableCounts.map((r) => [r.configId, r._count._all]),
+  );
 
   const summaries: PoolSummary[] = pools.map((p) => {
     const counts = countByPool.get(p.id) ?? {};
-    const available = counts['AVAILABLE'] ?? 0;
+    const rawAvailable = counts['AVAILABLE'] ?? 0;
+    const stale = staleByPool.get(p.id) ?? 0;
+    // "Available" should exclude already-expired codes that still carry the
+    // AVAILABLE status flag; treat those as expired in the UI.
+    const available = Math.max(0, rawAvailable - stale);
     const allocated = counts['ALLOCATED'] ?? 0;
     const used = counts['USED'] ?? 0;
-    const expired = counts['EXPIRED'] ?? 0;
+    const expired = (counts['EXPIRED'] ?? 0) + stale;
     const disabled = counts['DISABLED'] ?? 0;
     return {
       configId: p.id,

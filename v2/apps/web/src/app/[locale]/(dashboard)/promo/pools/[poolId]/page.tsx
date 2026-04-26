@@ -32,11 +32,21 @@ export default async function PoolDetailPage({
   });
   if (!pool) notFound();
 
-  const [countsByStatus, recentCodes, recentAllocations] = await Promise.all([
+  const now = new Date();
+  const [countsByStatus, staleAvailable, recentCodes, recentAllocations] = await Promise.all([
     prisma.promoCode.groupBy({
       by: ['status'],
       where: { configId: poolId },
       _count: { _all: true },
+    }),
+    // AVAILABLE-but-past-expiresAt codes we should treat as expired in the UI
+    // (mirrors the filter used by allocate page / allocatePromoAction).
+    prisma.promoCode.count({
+      where: {
+        configId: poolId,
+        status: 'AVAILABLE',
+        expiresAt: { not: null, lte: now },
+      },
     }),
     prisma.promoCode.findMany({
       where: { configId: poolId },
@@ -63,11 +73,12 @@ export default async function PoolDetailPage({
 
   const counts: Record<string, number> = {};
   for (const row of countsByStatus) counts[row.status] = row._count._all;
-  const available = counts['AVAILABLE'] ?? 0;
+  const rawAvailable = counts['AVAILABLE'] ?? 0;
+  const available = Math.max(0, rawAvailable - staleAvailable);
   const allocated = counts['ALLOCATED'] ?? 0;
   const used = counts['USED'] ?? 0;
-  const expired = counts['EXPIRED'] ?? 0;
-  const total = available + allocated + used + expired + (counts['DISABLED'] ?? 0);
+  const expired = (counts['EXPIRED'] ?? 0) + staleAvailable;
+  const total = rawAvailable + allocated + used + (counts['EXPIRED'] ?? 0) + (counts['DISABLED'] ?? 0);
 
   const canUpload = UPLOAD_ROLES.has(session.user.role ?? '');
 

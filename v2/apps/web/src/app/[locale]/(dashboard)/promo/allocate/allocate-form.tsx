@@ -143,6 +143,9 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
     }
     if (lookup.email === trimmed) return;
 
+    // Any change of email invalidates a previous acknowledgment — the agent
+    // must review the new customer's history before proceeding.
+    setFraudAck(false);
     setLookup((s) => ({ ...s, loading: true }));
     const handle = setTimeout(async () => {
       try {
