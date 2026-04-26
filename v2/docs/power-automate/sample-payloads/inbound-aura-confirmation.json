@@ -1,0 +1,7 @@
+{
+  "fromEmail": "aura-team@example.com",
+  "toEmail": "refund-ops@example.com",
+  "subject": "Re: Aura redemption batch AURA-2026-0001",
+  "rawBody": "All confirmed and credited. تم.\n\nAura Team",
+  "powerAutomateRunId": "08585312000000000000000000000003"
+}

@@ -14,13 +14,17 @@ export default async function NewCasePage({
 }) {
   const { locale } = await params;
 
-  const [countries, brands, paymentMethods, rootCauses] = await Promise.all([
+  const [countries, brands, branches, paymentMethods, rootCauses] = await Promise.all([
     prisma.country.findMany({
       where: { isActive: true },
       include: { registry: true },
       orderBy: { sortOrder: 'asc' },
     }),
     prisma.brand.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
+    prisma.branch.findMany({
+      where: { isActive: true },
+      orderBy: [{ countryId: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+    }),
     prisma.paymentMethod.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
     prisma.rootCause.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
   ]);
@@ -55,6 +59,11 @@ export default async function NewCasePage({
               currency: c.registry.currencyCode,
             }))}
             brands={brands.map((b) => ({ id: b.id, name: b.name }))}
+            branches={branches.map((b) => ({
+              id: b.id,
+              countryId: b.countryId,
+              name: b.name,
+            }))}
             paymentMethods={paymentMethods.map((pm) => ({
               id: pm.id,
               key: pm.key,
