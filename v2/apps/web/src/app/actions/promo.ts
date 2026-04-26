@@ -561,7 +561,13 @@ export async function lookupCaseByNumberAction(
   } | null>
 > {
   try {
-    await requireSession();
+    const user = await requireSession();
+    // Same role gate as the allocate form / promo-history actions: this
+    // returns customer PII (name / email / phone) so we must refuse it
+    // for roles that can't already see that data through the allocate UI.
+    if (!HISTORY_ROLES.has(user.role ?? '')) {
+      return { ok: true, data: null };
+    }
     const trimmed = caseNumber.trim();
     if (!trimmed || trimmed.length < 3) return { ok: true, data: null };
 
