@@ -182,6 +182,115 @@ async function seedDefaultBrands() {
   }
 }
 
+async function seedBrandCountries() {
+  console.log('→ Linking brands to active countries...');
+  const [brands, countries] = await Promise.all([
+    prisma.brand.findMany({ where: { isActive: true } }),
+    prisma.country.findMany({ where: { isActive: true } }),
+  ]);
+  for (const b of brands) {
+    for (const c of countries) {
+      await prisma.brandCountry.upsert({
+        where: { brandId_countryId: { brandId: b.id, countryId: c.id } },
+        create: { brandId: b.id, countryId: c.id, isActive: true },
+        update: { isActive: true },
+      });
+    }
+  }
+}
+
+/**
+ * Seed PromoConfig pools (3 customer-compensation tiers + 1 service-recovery)
+ * per brand × active country, plus a batch of AVAILABLE codes in each pool.
+ */
+async function seedPromos() {
+  console.log('→ Seeding promo pools and codes...');
+  const [brands, countries] = await Promise.all([
+    prisma.brand.findMany({ where: { isActive: true } }),
+    prisma.country.findMany({ where: { isActive: true }, include: { registry: true } }),
+  ]);
+
+  for (const brand of brands) {
+    for (const country of countries) {
+      const currency = country.registry?.currencyCode ?? 'USD';
+      const compensationTiers: Array<{ value: number; label: string }> = [
+        { value: 10, label: 'Small compensation' },
+        { value: 25, label: 'Standard compensation' },
+        { value: 50, label: 'Large compensation' },
+      ];
+
+      for (const tier of compensationTiers) {
+        const pool = await prisma.promoConfig.upsert({
+          where: {
+            brandId_countryId_type_value: {
+              brandId: brand.id,
+              countryId: country.id,
+              type: 'CUSTOMER_COMPENSATION',
+              value: tier.value,
+            },
+          },
+          create: {
+            brandId: brand.id,
+            countryId: country.id,
+            type: 'CUSTOMER_COMPENSATION',
+            value: tier.value,
+            currency,
+            label: `${brand.name} · ${country.registryCode} · ${tier.label}`,
+            isActive: true,
+          },
+          update: { isActive: true },
+        });
+        await ensurePoolStock(pool.id, brand.slug, country.registryCode, tier.value, 'C');
+      }
+
+      const recoveryPool = await prisma.promoConfig.upsert({
+        where: {
+          brandId_countryId_type_value: {
+            brandId: brand.id,
+            countryId: country.id,
+            type: 'SERVICE_RECOVERY',
+            value: 100,
+          },
+        },
+        create: {
+          brandId: brand.id,
+          countryId: country.id,
+          type: 'SERVICE_RECOVERY',
+          value: 100,
+          currency,
+          label: `${brand.name} · ${country.registryCode} · Service recovery (100%)`,
+          isActive: true,
+        },
+        update: { isActive: true },
+      });
+      await ensurePoolStock(recoveryPool.id, brand.slug, country.registryCode, 100, 'S');
+    }
+  }
+}
+
+async function ensurePoolStock(
+  poolId: string,
+  brandSlug: string,
+  countryCode: string,
+  value: number,
+  kind: 'C' | 'S',
+) {
+  const existing = await prisma.promoCode.count({ where: { configId: poolId } });
+  const target = 20;
+  if (existing >= target) return;
+  const needed = target - existing;
+  const codes = Array.from({ length: needed }, (_, i) => ({
+    configId: poolId,
+    code: `${kind}-${brandSlug.substring(0, 3).toUpperCase()}-${countryCode}-${value}-${Math.random()
+      .toString(36)
+      .slice(2, 8)
+      .toUpperCase()}`,
+    status: 'AVAILABLE' as const,
+    uploadedAt: new Date(),
+  }));
+  await prisma.promoCode.createMany({ data: codes });
+}
+
 async function seedDefaultAdmin() {
   const email = 'admin@wow.local';
   const password = 'admin123';
@@ -493,6 +602,8 @@ async function main() {
   await seedStoreMessageTemplates();
   await seedActiveCountries();
   await seedDefaultBrands();
+  await seedBrandCountries();
+  await seedPromos();
   await seedDefaultAdmin();
   await seedFeatureFlags();
   await seedDemoCases();
