@@ -59,7 +59,12 @@ export default async function UsersPage({
     ];
   }
 
-  const [users, counts] = await Promise.all([
+  // For tab badge counts we want PENDING/ACTIVE/SUSPENDED from the active
+  // queue and the ARCHIVED bucket separately (archive sets deletedAt, so a
+  // groupBy filtered on `deletedAt: null` will always report 0 archived
+  // users — that was the bug). The ALL tab matches the listing's "ALL"
+  // semantics: active queue only, archived users excluded.
+  const [users, activeCounts, archivedCount] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
@@ -71,12 +76,17 @@ export default async function UsersPage({
       where: { deletedAt: null },
       _count: { _all: true },
     }),
+    prisma.user.count({
+      where: { OR: [{ status: 'ARCHIVED' }, { deletedAt: { not: null } }] },
+    }),
   ]);
 
-  const countByStatus = (s: UserStatus) =>
-    counts.find((row) => row.status === s)?._count?._all ?? 0;
+  const countByStatus = (s: UserStatus): number => {
+    if (s === 'ARCHIVED') return archivedCount;
+    return activeCounts.find((row) => row.status === s)?._count?._all ?? 0;
+  };
   const tabCount = (key: 'ALL' | UserStatus): number => {
-    if (key === 'ALL') return counts.reduce((sum, row) => sum + row._count._all, 0);
+    if (key === 'ALL') return activeCounts.reduce((sum, row) => sum + row._count._all, 0);
     return countByStatus(key);
   };
 
