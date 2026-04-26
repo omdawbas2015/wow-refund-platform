@@ -164,7 +164,14 @@ export async function createCaseAction(
               totalRefundAmount,
               isPartial,
               auraPoints: data.auraPoints ?? null,
-              auraStatus: data.auraPoints != null ? 'PENDING' : 'NONE',
+              // Only enter the PENDING-batch queue when there are actual
+              // points to award. The Aura batch query in
+              // `operations/page.tsx` filters on `auraPoints > 0`, so a
+              // case created with `auraPoints: 0` and `auraStatus: PENDING`
+              // would never appear in any batch and stay stuck on
+              // "Awaiting batch" forever.
+              auraStatus:
+                data.auraPoints != null && data.auraPoints > 0 ? 'PENDING' : 'NONE',
               status: 'DRAFT',
               rootCauseId: data.rootCauseId || null,
               rootCauseNotes: data.rootCauseNotes || null,
