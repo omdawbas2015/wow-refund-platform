@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { Sidebar } from '@/components/layout/sidebar';
 import { TopBar } from '@/components/layout/top-bar';
+import { ThemeGate } from '@/components/providers/theme-gate';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 
 export default async function DashboardLayout({
   children,
@@ -14,20 +16,24 @@ export default async function DashboardLayout({
   if (!session?.user) redirect('/login');
 
   const { locale } = await params;
+  const darkModeEnabled = await isFeatureEnabled('feature.dark_mode', true);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar role={session.user.role ?? null} />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar
-          userName={session.user.name ?? ''}
-          userEmail={session.user.email ?? ''}
-          currentLocale={locale}
-        />
-        <main className="scrollbar-thin flex-1 overflow-y-auto">
-          {children}
-        </main>
+    <ThemeGate darkModeEnabled={darkModeEnabled}>
+      <div className="flex h-screen overflow-hidden bg-background">
+        <Sidebar role={session.user.role ?? null} />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <TopBar
+            userName={session.user.name ?? ''}
+            userEmail={session.user.email ?? ''}
+            currentLocale={locale}
+            darkModeEnabled={darkModeEnabled}
+          />
+          <main className="scrollbar-thin flex-1 overflow-y-auto">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </ThemeGate>
   );
 }
