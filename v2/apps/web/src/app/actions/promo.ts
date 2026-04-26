@@ -129,6 +129,7 @@ export async function allocatePromoAction(input: unknown): Promise<
 
     revalidatePath('/promo');
     revalidatePath('/promo/allocate');
+    revalidatePath(`/promo/pools/${pool.id}`);
     return { ok: true, data: { code: outcome.code, allocationId: outcome.allocationId } };
   } catch (e) {
     console.error('[allocatePromoAction]', e);
