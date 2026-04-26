@@ -58,10 +58,6 @@ export default async function CustomerPage({
   if (cases.length === 0) notFound();
 
   // Aggregate snapshot at the top.
-  const totalRefunded = cases.reduce(
-    (sum, c) => (c.status === 'REFUNDED' ? sum + c.totalRefundAmount : sum),
-    0,
-  );
   const inFlight = cases.filter(
     (c) => c.status !== 'REFUNDED' && c.status !== 'REJECTED' && c.status !== 'CANCELLED',
   ).length;
@@ -72,15 +68,22 @@ export default async function CustomerPage({
   const phoneVariants = Array.from(
     new Set(cases.map((c) => c.customerPhone).filter((p): p is string => !!p)),
   ).slice(0, 5);
-  // Currency mix — most refund totals will share one currency, but a
-  // multi-country customer could legitimately mix. Display the dominant.
-  const currencyCounts = new Map<string, number>();
+  // Per-currency refund totals. Summing across currencies into a single
+  // figure would produce a nonsensical number — e.g. a 50 KWD + 100 AED
+  // refund would render as "150 KWD" if we picked the dominant currency
+  // and just summed everything. Instead we sum REFUNDED case amounts per
+  // currency and render each line on the stat card.
+  const refundedByCurrency = new Map<string, number>();
   for (const c of cases) {
-    currencyCounts.set(c.orderCurrency, (currencyCounts.get(c.orderCurrency) ?? 0) + 1);
+    if (c.status !== 'REFUNDED') continue;
+    refundedByCurrency.set(
+      c.orderCurrency,
+      (refundedByCurrency.get(c.orderCurrency) ?? 0) + c.totalRefundAmount,
+    );
   }
-  const dominantCurrency = [...currencyCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
-    ?? cases[0]?.orderCurrency
-    ?? 'KWD';
+  const refundedLines = Array.from(refundedByCurrency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([currency, amount]) => formatCurrency(amount, currency, localeFmt, 2));
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
@@ -97,7 +100,8 @@ export default async function CustomerPage({
         <StatCard label="In flight" value={String(inFlight)} tint={inFlight > 0 ? 'text-warning' : undefined} />
         <StatCard
           label="Refunded to date"
-          value={formatCurrency(totalRefunded, dominantCurrency, localeFmt, 2)}
+          value={refundedLines.length === 0 ? '—' : refundedLines[0]!}
+          extra={refundedLines.length > 1 ? refundedLines.slice(1) : undefined}
         />
         <StatCard
           label="Latest case"
@@ -225,7 +229,17 @@ export default async function CustomerPage({
   );
 }
 
-function StatCard({ label, value, tint }: { label: string; value: string; tint?: string }) {
+function StatCard({
+  label,
+  value,
+  tint,
+  extra,
+}: {
+  label: string;
+  value: string;
+  tint?: string;
+  extra?: string[];
+}) {
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -233,6 +247,13 @@ function StatCard({ label, value, tint }: { label: string; value: string; tint?:
       </CardHeader>
       <CardContent>
         <div className={`text-display-md font-light tabular ${tint ?? ''}`}>{value}</div>
+        {extra && extra.length > 0 ? (
+          <div className="mt-1 space-y-0.5 text-xs text-muted-foreground tabular">
+            {extra.map((line) => (
+              <div key={line}>{line}</div>
+            ))}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
