@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   allocatePromoAction,
+  listMyRecentPromoAllocationsAction,
   loadCustomerPromoHistoryAction,
   lookupCaseByNumberAction,
 } from '@/app/actions/promo';
@@ -57,6 +58,7 @@ import {
   FileSearch,
   Loader2,
   X,
+  Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatPromoValue } from '@/lib/promo/format';
@@ -163,6 +165,10 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
       }
     | null
   >(null);
+  // Bumped after every successful allocation so the "Recently allocated"
+  // ribbon below the form can refresh itself without us prop-drilling
+  // the latest entry through SuccessDialog state.
+  const [recentTick, setRecentTick] = useState(0);
   const [lookup, setLookup] = useState<LookupState>({
     loading: false,
     email: null,
@@ -351,6 +357,7 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
         customerName: customerName.trim() || null,
         caseNumber,
       });
+      setRecentTick((n) => n + 1);
       // Reset transient state but keep type/country/brand so the agent can
       // quickly issue another for the same brand-country with one click.
       setCaseQuery('');
@@ -648,6 +655,12 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
         </div>
       </form>
 
+      {/* "Recently allocated" ribbon — shows the agent's own recent
+          allocations (last 24h) as a personal reference so they don't have
+          to bounce to /promo/history after every issue. Refreshes whenever
+          recentTick bumps (i.e. after a successful allocation). */}
+      <MyRecentAllocations refreshKey={recentTick} />
+
       {/* Success popup — distinct from the form so it's unmissable. */}
       <SuccessDialog
         success={success}
@@ -863,57 +876,76 @@ function SuccessDialog({
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md overflow-hidden p-0 duration-300 data-[state=open]:slide-in-from-bottom-4">
-        {/* Top accent banner with celebratory icon entrance + halo */}
+      <DialogContent className="max-w-xl overflow-hidden p-0 duration-300 data-[state=open]:slide-in-from-bottom-4">
+        {/* Top hero banner with celebratory icon + halo + soft sheen sweep */}
         <div
           className={cn(
-            'relative flex items-center gap-3 px-6 pb-4 pt-6',
+            'relative overflow-hidden px-8 pb-6 pt-8',
             isRecovery
-              ? 'bg-gradient-to-br from-emerald-500/10 to-emerald-500/5'
-              : 'bg-gradient-to-br from-blue-500/10 to-blue-500/5',
+              ? 'bg-gradient-to-br from-emerald-500/15 via-emerald-500/8 to-transparent'
+              : 'bg-gradient-to-br from-blue-500/15 via-blue-500/8 to-transparent',
           )}
         >
-          <div className="relative flex-none">
+          {/* Sheen — a thin diagonal streak that drifts across once on entry */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 motion-safe:animate-in motion-safe:slide-in-from-left-full motion-safe:duration-700"
+          >
             <span
-              aria-hidden
               className={cn(
-                'absolute inset-0 rounded-full opacity-60 motion-safe:animate-ping',
-                isRecovery ? 'bg-emerald-500/40' : 'bg-blue-500/40',
-              )}
-              style={{ animationDuration: '1.6s', animationIterationCount: 2 }}
-            />
-            <div
-              className={cn(
-                'relative flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-500',
+                'absolute -inset-y-4 left-1/4 w-1/3 rotate-12 opacity-40 blur-2xl',
                 isRecovery
-                  ? 'bg-emerald-500 shadow-emerald-500/30'
-                  : 'bg-blue-500 shadow-blue-500/30',
+                  ? 'bg-gradient-to-r from-transparent via-emerald-300/50 to-transparent'
+                  : 'bg-gradient-to-r from-transparent via-blue-300/50 to-transparent',
               )}
-            >
-              <Sparkles className="h-6 w-6" />
+            />
+          </span>
+
+          <div className="relative flex items-start gap-4">
+            <div className="relative flex-none">
+              <span
+                aria-hidden
+                className={cn(
+                  'absolute inset-0 rounded-full opacity-60 motion-safe:animate-ping',
+                  isRecovery ? 'bg-emerald-500/40' : 'bg-blue-500/40',
+                )}
+                style={{ animationDuration: '1.6s', animationIterationCount: 2 }}
+              />
+              <div
+                className={cn(
+                  'relative flex h-14 w-14 items-center justify-center rounded-full text-white shadow-xl motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-500',
+                  isRecovery
+                    ? 'bg-emerald-500 shadow-emerald-500/40'
+                    : 'bg-blue-500 shadow-blue-500/40',
+                )}
+              >
+                <Sparkles className="h-7 w-7" />
+              </div>
             </div>
+            <DialogHeader className="flex-1 space-y-1">
+              <DialogTitle className="text-2xl font-semibold tracking-tight">
+                {isRecovery ? 'Recovery code issued' : 'Promo allocated'}
+              </DialogTitle>
+              <DialogDescription className="text-sm">
+                {isRecovery ? (
+                  <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
+                    <Shield className="h-4 w-4" /> Internal only — share this code
+                    manually with the customer.
+                  </span>
+                ) : (
+                  <span className="inline-flex flex-wrap items-center gap-1.5 text-blue-700 dark:text-blue-300">
+                    <Mail className="h-4 w-4" /> Queued for email delivery to{' '}
+                    <span className="font-medium text-heading">
+                      {success.customerEmail}
+                    </span>
+                  </span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
           </div>
-          <DialogHeader className="flex-1 space-y-0.5">
-            <DialogTitle>
-              {isRecovery ? 'Recovery code issued' : 'Promo allocated'}
-            </DialogTitle>
-            <DialogDescription>
-              {isRecovery ? (
-                <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
-                  <Shield className="h-3.5 w-3.5" /> Internal only — share this
-                  code manually with the customer.
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-blue-700 dark:text-blue-300">
-                  <Mail className="h-3.5 w-3.5" /> Queued for email delivery to{' '}
-                  <span className="font-medium">{success.customerEmail}</span>.
-                </span>
-              )}
-            </DialogDescription>
-          </DialogHeader>
         </div>
-        {/* Animated divider that draws in from the centre. Adds a tiny
-            celebratory motion without leaning on a heavy library. */}
+
+        {/* Animated gradient divider drawing in from the centre */}
         <span
           aria-hidden
           className={cn(
@@ -924,68 +956,132 @@ function SuccessDialog({
           )}
         />
 
-        <div className="space-y-4 px-6 pb-6">
-          {/* The code itself */}
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Promo code</Label>
-            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2.5">
-              <span className="flex-1 select-all font-mono text-base font-semibold tracking-wider text-heading">
+        <div className="space-y-5 px-8 pb-6 pt-6">
+          {/* Hero code block — the star of the popup */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Promo code
+              </Label>
+              <span
+                className={cn(
+                  'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                  isRecovery
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-blue-500/10 text-blue-700 dark:text-blue-300',
+                )}
+              >
+                {isRecovery ? 'Service recovery · 100% off' : 'Customer compensation'}
+              </span>
+            </div>
+            <div
+              className={cn(
+                'flex items-center gap-3 rounded-xl border-2 px-5 py-4 transition',
+                isRecovery
+                  ? 'border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-transparent'
+                  : 'border-blue-500/30 bg-gradient-to-br from-blue-500/5 to-transparent',
+              )}
+            >
+              <span className="flex-1 select-all font-mono text-xl font-bold tracking-[0.15em] text-heading">
                 {success.code}
               </span>
-              <Button type="button" size="sm" variant="outline" onClick={copy}>
+              <Button
+                type="button"
+                size="default"
+                variant={copied ? 'default' : 'outline'}
+                onClick={copy}
+                className="min-w-[110px]"
+              >
                 {copied ? (
                   <>
                     <Check className="mr-1.5 h-4 w-4" /> Copied
                   </>
                 ) : (
                   <>
-                    <Copy className="mr-1.5 h-4 w-4" /> Copy
+                    <Copy className="mr-1.5 h-4 w-4" /> Copy code
                   </>
                 )}
               </Button>
             </div>
           </div>
 
-          {/* Allocation context */}
-          <dl className="space-y-1.5 text-xs">
+          {/* Allocation context — three info chips in a row */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {success.caseNumber && (
-              <div className="flex items-center gap-2">
-                <dt className="w-24 text-muted-foreground">Case #</dt>
-                <dd className="font-mono text-heading">{success.caseNumber}</dd>
-              </div>
+              <InfoChip
+                label="Case"
+                value={success.caseNumber}
+                mono
+              />
             )}
-            <div className="flex items-center gap-2">
-              <dt className="w-24 text-muted-foreground">Customer</dt>
-              <dd className="text-heading">
-                {success.customerName ? `${success.customerName} · ` : ''}
-                {success.customerEmail}
-              </dd>
-            </div>
-            <div className="flex items-center gap-2">
-              <dt className="w-24 text-muted-foreground">Delivery</dt>
-              <dd>
-                {isRecovery ? (
-                  <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
-                    Not emailed (internal)
+            <InfoChip
+              label="Customer"
+              value={success.customerName ?? success.customerEmail.split('@')[0]}
+              hint={success.customerName ? success.customerEmail : undefined}
+            />
+            <InfoChip
+              label="Delivery"
+              value={
+                isRecovery ? (
+                  <span className="inline-flex items-center gap-1 text-muted-foreground">
+                    <Shield className="h-3 w-3" /> Internal only
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300">
+                  <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
                     <Mail className="h-3 w-3" /> Email queued
                   </span>
-                )}
-              </dd>
-            </div>
-          </dl>
+                )
+              }
+            />
+          </div>
         </div>
 
-        <DialogFooter className="border-t border-border bg-muted/20 px-6 py-3">
+        <DialogFooter className="border-t border-border bg-muted/20 px-8 py-4">
           <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={onClose}>Allocate another</Button>
+          <Button onClick={onClose}>
+            <Sparkles className="mr-1.5 h-4 w-4" />
+            Allocate another
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Small label/value chip used in the success popup info row. */
+function InfoChip({
+  label,
+  value,
+  hint,
+  mono,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+      <p
+        className={cn(
+          'mt-0.5 truncate text-sm text-heading',
+          mono && 'font-mono',
+        )}
+        title={hint ?? (typeof value === 'string' ? value : undefined)}
+      >
+        {value}
+      </p>
+      {hint && (
+        <p className="truncate text-[11px] text-muted-foreground" title={hint}>
+          {hint}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -1262,6 +1358,178 @@ function FraudHistoryRow({ entry }: { entry: HistoryEntry }) {
           )}
         </div>
       )}
+    </li>
+  );
+}
+
+type RecentItem = Awaited<
+  ReturnType<typeof listMyRecentPromoAllocationsAction>
+>['items'][number];
+
+function formatRelativeShort(d: Date | string): string {
+  const date = typeof d === 'string' ? new Date(d) : d;
+  const ms = Date.now() - date.getTime();
+  const m = Math.floor(ms / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const days = Math.floor(h / 24);
+  return `${days}d ago`;
+}
+
+/**
+ * "Recently allocated" ribbon shown directly under the allocate form.
+ *
+ * Lists the *current agent's* allocations from the last 24h (max 8) so
+ * they can copy a code they just issued, or scan what they've already
+ * sent today without leaving the page. Refreshes whenever
+ * `refreshKey` changes (the form bumps it after every successful
+ * allocate).
+ */
+function MyRecentAllocations({ refreshKey }: { refreshKey: number }) {
+  const [items, setItems] = useState<RecentItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const genRef = useRef(0);
+
+  useEffect(() => {
+    const gen = ++genRef.current;
+    setError(null);
+    listMyRecentPromoAllocationsAction({ limit: 8, sinceHours: 24 })
+      .then((res) => {
+        if (genRef.current !== gen) return;
+        setItems(res.items);
+      })
+      .catch(() => {
+        if (genRef.current !== gen) return;
+        setError("Couldn't load your recent allocations.");
+      });
+  }, [refreshKey]);
+
+  // While the very first request is loading, render a low-key placeholder
+  // so the area doesn't pop into existence later. Once we know the user
+  // has nothing in the last 24h, hide entirely — this is a reference
+  // ribbon, not a section that demands attention.
+  if (items === null) {
+    return (
+      <div className="mt-6 rounded-xl border border-dashed border-border bg-card/40 px-4 py-3 text-xs text-muted-foreground">
+        <Loader2 className="mr-2 inline h-3 w-3 animate-spin" />
+        Loading your recent allocations…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="mt-6 rounded-xl border border-dashed border-border bg-card/40 px-4 py-3 text-xs text-muted-foreground">
+        {error}
+      </div>
+    );
+  }
+  if (items.length === 0) return null;
+
+  return (
+    <section className="mt-8">
+      <header className="mb-3 flex items-center gap-2 px-1">
+        <Clock className="h-4 w-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold text-heading">
+          Recently allocated by you
+        </h3>
+        <span className="text-xs text-muted-foreground">· last 24 hours</span>
+        <span className="ms-auto rounded-full bg-muted px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+          {items.length}
+        </span>
+      </header>
+      <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+        {items.map((it) => (
+          <RecentRow key={it.id} item={it} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function RecentRow({ item }: { item: RecentItem }) {
+  const [copied, setCopied] = useState(false);
+  const isRecovery = item.type === 'SERVICE_RECOVERY';
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(item.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard unavailable — code text is still selectable */
+    }
+  }
+
+  return (
+    <li className="group relative flex flex-wrap items-center gap-3 px-4 py-3">
+      <span
+        aria-hidden
+        className={cn(
+          'absolute inset-y-0 left-0 w-0.5',
+          isRecovery ? 'bg-emerald-500/70' : 'bg-blue-500/70',
+        )}
+      />
+      <div
+        className={cn(
+          'flex h-8 w-8 flex-none items-center justify-center rounded-md',
+          isRecovery
+            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+            : 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+        )}
+      >
+        {isRecovery ? (
+          <Shield className="h-4 w-4" />
+        ) : (
+          <Gift className="h-4 w-4" />
+        )}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+        <span className="select-all font-mono text-sm font-semibold tracking-wide text-heading">
+          {item.code}
+        </span>
+        <span
+          className={cn(
+            'rounded px-1.5 py-0.5 text-[11px] font-medium',
+            isRecovery
+              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+              : 'bg-blue-500/10 text-blue-700 dark:text-blue-300',
+          )}
+        >
+          {formatPromoValue(item.type, item.value, item.currency)}
+        </span>
+        <span className="text-xs text-heading">{item.brand}</span>
+        <span className="text-xs text-muted-foreground">· {item.country}</span>
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+        <span className="truncate" title={item.customerEmail}>
+          {item.customerName ?? item.customerEmail}
+        </span>
+        {item.caseNumber && (
+          <span className="font-mono text-[11px]">#{item.caseNumber}</span>
+        )}
+        <span className="tabular-nums" title={formatDateTime(item.createdAt)}>
+          {formatRelativeShort(item.createdAt)}
+        </span>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={copy}
+        className="ms-auto h-7 px-2 text-xs"
+      >
+        {copied ? (
+          <>
+            <Check className="mr-1 h-3 w-3" /> Copied
+          </>
+        ) : (
+          <>
+            <Copy className="mr-1 h-3 w-3" /> Copy
+          </>
+        )}
+      </Button>
     </li>
   );
 }

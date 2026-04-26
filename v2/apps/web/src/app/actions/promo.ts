@@ -468,6 +468,81 @@ export async function loadCustomerPromoHistoryAction(
 }
 
 /**
+ * Returns the *currently signed-in agent's* most recent allocations,
+ * regardless of role. Used by the "Recently allocated" ribbon under the
+ * allocate form so the agent can see the codes they just issued without
+ * leaving the page.
+ *
+ * - Always scoped to `requestedById = user.id` — never leaks another
+ *   agent's codes.
+ * - Defaults to today only (last 24h), capped at `limit` (default 8).
+ * - Includes both compensation and recovery in one list, ordered by
+ *   most recent first.
+ */
+export async function listMyRecentPromoAllocationsAction(
+  input?: { limit?: number; sinceHours?: number },
+): Promise<{
+  items: Array<{
+    id: string;
+    code: string;
+    type: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY';
+    brand: string;
+    country: string;
+    value: number;
+    currency: string;
+    customerEmail: string;
+    customerName: string | null;
+    caseNumber: string | null;
+    emailedAt: Date | null;
+    createdAt: Date;
+  }>;
+}> {
+  const user = await requireSession();
+  const limit = Math.min(Math.max(input?.limit ?? 8, 1), 25);
+  const sinceHours = Math.max(input?.sinceHours ?? 24, 1);
+  const since = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
+
+  const rows = await prisma.promoAllocation.findMany({
+    where: { requestedById: user.id, createdAt: { gte: since } },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    include: {
+      code: {
+        include: {
+          config: {
+            include: {
+              brand: true,
+              country: { include: { registry: true } },
+            },
+          },
+        },
+      },
+      case: { select: { caseNumber: true, externalCaseNumber: true } },
+    },
+  });
+
+  return {
+    items: rows.map((a) => ({
+      id: a.id,
+      code: a.code.code,
+      type: a.code.config.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
+      brand: a.code.config.brand.name,
+      country:
+        a.code.config.country.registry?.nameEn ??
+        a.code.config.country.registryCode,
+      value: a.code.config.value,
+      currency: a.code.config.currency,
+      customerEmail: a.customerEmail,
+      customerName: a.customerName,
+      caseNumber:
+        a.case?.externalCaseNumber ?? a.case?.caseNumber ?? null,
+      emailedAt: a.emailedAt,
+      createdAt: a.createdAt,
+    })),
+  };
+}
+
+/**
  * Permanently delete a code. Only safe for codes in AVAILABLE status — we
  * never delete codes that have already been allocated (would break audit
  * history). Uses `deleteMany` with a status guard so a concurrent allocation
