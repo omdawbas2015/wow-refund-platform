@@ -84,7 +84,14 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
   const [fraudAck, setFraudAck] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<{ code: string } | null>(null);
+  // Capture the type at allocation time — the selector is still interactive
+  // while the success card is visible, so reading the live `type` state would
+  // flip the "emailed" vs "internal only" copy if the user clicked the other
+  // card after a successful allocation.
+  const [success, setSuccess] = useState<
+    | { code: string; type: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY' }
+    | null
+  >(null);
   const [lookup, setLookup] = useState<LookupState>({
     loading: false,
     email: null,
@@ -201,7 +208,7 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
         setError(result.error);
         return;
       }
-      setSuccess({ code: result.data!.code });
+      setSuccess({ code: result.data!.code, type });
       // Reset transient form state but keep pool + type for quick repeats
       setCustomerEmail('');
       setCustomerName('');
@@ -379,7 +386,7 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {success && <SuccessCard code={success.code} type={type} />}
+      {success && <SuccessCard code={success.code} type={success.type} />}
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">

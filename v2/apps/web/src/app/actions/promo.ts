@@ -288,7 +288,9 @@ export async function listPromoAllocationsAction(input: {
 }> {
   const user = await requireSession();
   const roleKey = user.role ?? '';
-  const isFullView = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']).has(roleKey);
+  // READ_ONLY gets a full view (audit) — matches what the promo landing
+  // redirect into /promo/history assumes, and matches the page's VIEW_ROLES.
+  const isFullView = new Set(['ADMIN', 'MANAGER', 'OPERATIONS', 'READ_ONLY']).has(roleKey);
   const isScopedView = new Set(['AGENT', 'TEAM_LEAD']).has(roleKey);
   if (!isFullView && !isScopedView) {
     return { items: [], total: 0, scope: 'EMPTY' };
