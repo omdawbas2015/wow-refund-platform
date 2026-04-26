@@ -51,7 +51,6 @@ export async function CaseTimeline({ caseId, localeFmt }: Props) {
       action: true,
       actorEmail: true,
       createdAt: true,
-      metadata: true,
       afterData: true,
     },
   });
@@ -74,7 +73,7 @@ export async function CaseTimeline({ caseId, localeFmt }: Props) {
       {entries.map((entry) => {
         const meta = metaFor(entry.action);
         const Icon = meta.icon;
-        const detail = renderDetail(entry.action, entry.afterData, entry.metadata);
+        const detail = renderDetail(entry.action, entry.afterData);
         return (
           <li key={entry.id} className="relative">
             <span
@@ -98,33 +97,27 @@ export async function CaseTimeline({ caseId, localeFmt }: Props) {
 }
 
 /**
- * Pull a short human-friendly detail string out of the JSON-encoded payloads.
+ * Pull a short human-friendly detail string out of the JSON-encoded payload.
  * We deliberately keep this terse — full JSON inspection lives on `/reports/audit`.
  */
-function renderDetail(
-  action: string,
-  afterData: string | null,
-  metadata: string | null,
-): string | null {
+function renderDetail(action: string, afterData: string | null): string | null {
   const after = safeParse(afterData);
-  const meta = safeParse(metadata);
+  if (!after || typeof after !== 'object') return null;
+  const a = after as Record<string, unknown>;
 
-  if (action === 'case.rejected' && after && typeof after === 'object' && 'reason' in after) {
-    return String((after as Record<string, unknown>).reason ?? '');
+  if ((action === 'case.rejected' || action === 'case.cancelled') && 'reason' in a) {
+    return String(a.reason ?? '') || null;
   }
-  if (action === 'case.cancelled' && after && typeof after === 'object' && 'reason' in after) {
-    return String((after as Record<string, unknown>).reason ?? '');
-  }
-  if (
-    action === 'case.component_refunded' &&
-    meta &&
-    typeof meta === 'object' &&
-    'paymentMethod' in meta
-  ) {
-    const m = meta as Record<string, unknown>;
+  if (action === 'case.component_refunded' && 'paymentMethod' in a) {
     const parts: string[] = [];
-    if (m['paymentMethod']) parts.push(String(m['paymentMethod']));
-    if (m['amount']) parts.push(String(m['amount']));
+    if (a['paymentMethod']) parts.push(String(a['paymentMethod']));
+    if (a['amount'] != null) {
+      parts.push(
+        a['currency']
+          ? `${String(a['amount'])} ${String(a['currency'])}`
+          : String(a['amount']),
+      );
+    }
     return parts.join(' · ') || null;
   }
   return null;
