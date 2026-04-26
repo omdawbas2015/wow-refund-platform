@@ -24,6 +24,7 @@ const SHORTCUTS: Shortcut[] = [
   { keys: 'g r', letter: 'r', label: 'Go to Reports', href: '/reports' },
   { keys: 'g a', letter: 'a', label: 'Go to Admin', href: '/admin' },
   { keys: 'g n', letter: 'n', label: 'New refund case', href: '/cases/new' },
+  { keys: 'g u', letter: 'u', label: 'Go to Profile', href: '/profile' },
   { keys: '/', solo: '/', label: 'Focus global search', action: 'focus-search' },
   { keys: '?', solo: '?', label: 'Show this help', action: 'show-help' },
 ];

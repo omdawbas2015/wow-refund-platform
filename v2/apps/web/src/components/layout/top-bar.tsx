@@ -6,7 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { LogOut, Globe, Moon, Sun, Search, Keyboard } from 'lucide-react';
+import { LogOut, Globe, Moon, Sun, Search, Keyboard, User } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { NotificationBell } from './notification-bell';
 
@@ -49,11 +49,18 @@ export function TopBar({ userName, userEmail, currentLocale, darkModeEnabled = t
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-surface px-4">
-      <div className="text-sm text-muted-foreground">
+      <button
+        type="button"
+        onClick={() => router.push(`/${currentLocale}/profile`)}
+        className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+        aria-label="Open profile"
+        title="Open profile"
+      >
+        <User className="h-4 w-4" />
         <span className="font-medium text-foreground">{userName}</span>
-        <span className="mx-2">·</span>
-        <span>{userEmail}</span>
-      </div>
+        <span className="hidden sm:inline mx-1">·</span>
+        <span className="hidden sm:inline">{userEmail}</span>
+      </button>
       <div className="flex items-center gap-2">
         <form onSubmit={onSearch} className="relative hidden md:block">
           <Search className="pointer-events-none absolute start-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
