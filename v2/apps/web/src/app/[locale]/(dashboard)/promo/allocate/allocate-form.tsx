@@ -54,7 +54,6 @@ import {
   Shield,
   Mail,
   Copy,
-  Sparkles,
   FileSearch,
   Loader2,
   X,
@@ -874,214 +873,155 @@ function SuccessDialog({
     }
   }
 
+  // Operations-desk styling per DESIGN.md: restrained accents, no
+  // decorative gradients/sheen/halos. A single 1px accent stripe at the
+  // top of the dialog is the only colour cue. Motion is limited to the
+  // Dialog's built-in fade/slide-in.
+  const accentStripe = isRecovery ? 'bg-emerald-500' : 'bg-blue-500';
+  const accentText = isRecovery
+    ? 'text-emerald-700 dark:text-emerald-300'
+    : 'text-blue-700 dark:text-blue-300';
+
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-xl overflow-hidden p-0 duration-300 data-[state=open]:slide-in-from-bottom-4">
-        {/* Top hero banner with celebratory icon + halo + soft sheen sweep */}
-        <div
-          className={cn(
-            'relative overflow-hidden px-8 pb-6 pt-8',
-            isRecovery
-              ? 'bg-gradient-to-br from-emerald-500/15 via-emerald-500/8 to-transparent'
-              : 'bg-gradient-to-br from-blue-500/15 via-blue-500/8 to-transparent',
-          )}
-        >
-          {/* Sheen — a thin diagonal streak that drifts across once on entry */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-0 motion-safe:animate-in motion-safe:slide-in-from-left-full motion-safe:duration-700"
-          >
-            <span
-              className={cn(
-                'absolute -inset-y-4 left-1/4 w-1/3 rotate-12 opacity-40 blur-2xl',
-                isRecovery
-                  ? 'bg-gradient-to-r from-transparent via-emerald-300/50 to-transparent'
-                  : 'bg-gradient-to-r from-transparent via-blue-300/50 to-transparent',
-              )}
-            />
-          </span>
+      <DialogContent className="max-w-lg overflow-hidden p-0">
+        {/* 2px solid accent stripe — the only colour identifier */}
+        <span aria-hidden className={cn('block h-[2px] w-full', accentStripe)} />
 
-          <div className="relative flex items-start gap-4">
-            <div className="relative flex-none">
+        <div className="space-y-5 px-6 pb-5 pt-5">
+          {/* Header row: small icon + short title + status line */}
+          <DialogHeader className="space-y-1.5">
+            <div className="flex items-center gap-2">
               <span
-                aria-hidden
                 className={cn(
-                  'absolute inset-0 rounded-full opacity-60 motion-safe:animate-ping',
-                  isRecovery ? 'bg-emerald-500/40' : 'bg-blue-500/40',
-                )}
-                style={{ animationDuration: '1.6s', animationIterationCount: 2 }}
-              />
-              <div
-                className={cn(
-                  'relative flex h-14 w-14 items-center justify-center rounded-full text-white shadow-xl motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-500',
+                  'inline-flex h-7 w-7 items-center justify-center rounded-md',
                   isRecovery
-                    ? 'bg-emerald-500 shadow-emerald-500/40'
-                    : 'bg-blue-500 shadow-blue-500/40',
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
                 )}
               >
-                <Sparkles className="h-7 w-7" />
-              </div>
-            </div>
-            <DialogHeader className="flex-1 space-y-1">
-              <DialogTitle className="text-2xl font-semibold tracking-tight">
+                {isRecovery ? (
+                  <Shield className="h-4 w-4" />
+                ) : (
+                  <Gift className="h-4 w-4" />
+                )}
+              </span>
+              <DialogTitle className="text-base font-semibold text-heading">
                 {isRecovery ? 'Recovery code issued' : 'Promo allocated'}
               </DialogTitle>
-              <DialogDescription className="text-sm">
-                {isRecovery ? (
-                  <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
-                    <Shield className="h-4 w-4" /> Internal only — share this code
-                    manually with the customer.
-                  </span>
-                ) : (
-                  <span className="inline-flex flex-wrap items-center gap-1.5 text-blue-700 dark:text-blue-300">
-                    <Mail className="h-4 w-4" /> Queued for email delivery to{' '}
-                    <span className="font-medium text-heading">
-                      {success.customerEmail}
-                    </span>
-                  </span>
-                )}
-              </DialogDescription>
-            </DialogHeader>
-          </div>
-        </div>
-
-        {/* Animated gradient divider drawing in from the centre */}
-        <span
-          aria-hidden
-          className={cn(
-            'block h-[2px] w-full origin-center motion-safe:animate-in motion-safe:slide-in-from-left-1/2 motion-safe:slide-in-from-right-1/2 motion-safe:duration-500',
-            isRecovery
-              ? 'bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent'
-              : 'bg-gradient-to-r from-transparent via-blue-500/50 to-transparent',
-          )}
-        />
-
-        <div className="space-y-5 px-8 pb-6 pt-6">
-          {/* Hero code block — the star of the popup */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Promo code
-              </Label>
               <span
                 className={cn(
-                  'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                  'ms-auto rounded-full px-2 py-0.5 text-[11px] font-medium',
                   isRecovery
                     ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
                     : 'bg-blue-500/10 text-blue-700 dark:text-blue-300',
                 )}
               >
-                {isRecovery ? 'Service recovery · 100% off' : 'Customer compensation'}
+                {isRecovery
+                  ? 'Service recovery · 100% off'
+                  : 'Customer compensation'}
               </span>
             </div>
-            <div
-              className={cn(
-                'flex items-center gap-3 rounded-xl border-2 px-5 py-4 transition',
-                isRecovery
-                  ? 'border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-transparent'
-                  : 'border-blue-500/30 bg-gradient-to-br from-blue-500/5 to-transparent',
+            <DialogDescription className="text-sm text-muted-foreground">
+              {isRecovery ? (
+                <span className={accentText}>
+                  Internal only — share this code manually with the customer.
+                </span>
+              ) : (
+                <span>
+                  <Mail className="me-1 inline h-3.5 w-3.5 align-[-2px]" />
+                  Queued for email delivery to{' '}
+                  <span className="font-medium text-heading">
+                    {success.customerEmail}
+                  </span>
+                  .
+                </span>
               )}
-            >
-              <span className="flex-1 select-all font-mono text-xl font-bold tracking-[0.15em] text-heading">
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Code block — single border, plain surface, mono code, copy
+              action on the right. No gradients, no thick borders. */}
+          <div>
+            <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Promo code
+            </Label>
+            <div className="flex items-stretch gap-0 overflow-hidden rounded-md border border-border bg-surface-subtle/60">
+              <span className="flex-1 select-all px-3 py-2.5 font-mono text-base font-semibold tracking-wide text-heading">
                 {success.code}
               </span>
-              <Button
+              <button
                 type="button"
-                size="default"
-                variant={copied ? 'default' : 'outline'}
                 onClick={copy}
-                className="min-w-[110px]"
+                className={cn(
+                  'flex w-[112px] items-center justify-center gap-1.5 border-l border-border text-xs font-medium transition-colors',
+                  copied
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                    : 'text-heading hover:bg-surface-subtle',
+                )}
+                aria-label="Copy promo code"
               >
                 {copied ? (
                   <>
-                    <Check className="mr-1.5 h-4 w-4" /> Copied
+                    <Check className="h-3.5 w-3.5" /> Copied
                   </>
                 ) : (
                   <>
-                    <Copy className="mr-1.5 h-4 w-4" /> Copy code
+                    <Copy className="h-3.5 w-3.5" /> Copy code
                   </>
                 )}
-              </Button>
+              </button>
             </div>
           </div>
 
-          {/* Allocation context — three info chips in a row */}
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {/* Context — definition list, restrained type, no chips. */}
+          <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
             {success.caseNumber && (
-              <InfoChip
-                label="Case"
-                value={success.caseNumber}
-                mono
-              />
+              <>
+                <dt className="text-xs text-muted-foreground">Case</dt>
+                <dd className="font-mono text-sm text-heading">
+                  {success.caseNumber}
+                </dd>
+              </>
             )}
-            <InfoChip
-              label="Customer"
-              value={success.customerName ?? success.customerEmail.split('@')[0]}
-              hint={success.customerName ? success.customerEmail : undefined}
-            />
-            <InfoChip
-              label="Delivery"
-              value={
-                isRecovery ? (
-                  <span className="inline-flex items-center gap-1 text-muted-foreground">
-                    <Shield className="h-3 w-3" /> Internal only
+            <dt className="text-xs text-muted-foreground">Customer</dt>
+            <dd className="min-w-0 truncate text-sm text-heading">
+              {success.customerName ? (
+                <>
+                  {success.customerName}{' '}
+                  <span className="text-muted-foreground">
+                    · {success.customerEmail}
                   </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
-                    <Mail className="h-3 w-3" /> Email queued
-                  </span>
-                )
-              }
-            />
-          </div>
+                </>
+              ) : (
+                success.customerEmail
+              )}
+            </dd>
+            <dt className="text-xs text-muted-foreground">Delivery</dt>
+            <dd className="text-sm">
+              {isRecovery ? (
+                <span className="text-muted-foreground">
+                  Not emailed (internal only)
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
+                  <Mail className="h-3.5 w-3.5" /> Email queued for delivery
+                </span>
+              )}
+            </dd>
+          </dl>
         </div>
 
-        <DialogFooter className="border-t border-border bg-muted/20 px-8 py-4">
-          <Button variant="ghost" onClick={onClose}>
+        <DialogFooter className="border-t border-border bg-surface-subtle/30 px-6 py-3">
+          <Button variant="ghost" onClick={onClose} size="sm">
             Close
           </Button>
-          <Button onClick={onClose}>
-            <Sparkles className="mr-1.5 h-4 w-4" />
+          <Button onClick={onClose} size="sm">
             Allocate another
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/** Small label/value chip used in the success popup info row. */
-function InfoChip({
-  label,
-  value,
-  hint,
-  mono,
-}: {
-  label: string;
-  value: React.ReactNode;
-  hint?: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <p
-        className={cn(
-          'mt-0.5 truncate text-sm text-heading',
-          mono && 'font-mono',
-        )}
-        title={hint ?? (typeof value === 'string' ? value : undefined)}
-      >
-        {value}
-      </p>
-      {hint && (
-        <p className="truncate text-[11px] text-muted-foreground" title={hint}>
-          {hint}
-        </p>
-      )}
-    </div>
   );
 }
 
