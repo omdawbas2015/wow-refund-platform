@@ -671,100 +671,146 @@ function CaseLookupPanel({
   state: CaseLookupState;
   onClear: () => void;
 }) {
+  const accent =
+    state.state === 'found'
+      ? 'before:bg-emerald-500'
+      : state.state === 'error'
+        ? 'before:bg-red-500'
+        : 'before:bg-blue-500';
   return (
-    <div className="space-y-2">
-      <div className="flex items-baseline justify-between">
-        <Label htmlFor="case-number" className="text-sm font-medium text-heading">
-          Case number
-        </Label>
-        <span className="text-xs text-muted-foreground">
-          The single most important field — auto-fills the customer details below
-        </span>
-      </div>
-      <div className="relative">
-        <FileSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          id="case-number"
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="e.g. KW-2025-00042 or CRM-12345"
-          className={cn(
-            'pl-9 pr-9 font-mono text-base tracking-wide',
-            state.state === 'found' &&
-              'border-emerald-500/50 ring-1 ring-emerald-500/20',
-            state.state === 'not_found' &&
-              'border-amber-500/50 ring-1 ring-amber-500/20',
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-blue-500/[0.04] via-card to-card p-4 shadow-sm sm:p-5',
+        "before:absolute before:inset-y-0 before:left-0 before:w-1 before:content-['']",
+        accent,
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className="hidden h-9 w-9 flex-none items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 sm:flex">
+          <FileSearch className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <Label
+                htmlFor="case-number"
+                className="text-sm font-semibold text-heading"
+              >
+                Case number
+              </Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Auto-fills customer name, email, phone, and complaint reason.
+              </p>
+            </div>
+            <InlineLookupStatus state={state} />
+          </div>
+          <div className="relative">
+            <Input
+              id="case-number"
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+              placeholder="e.g. KW-2025-00042 or CRM-12345"
+              className="h-11 pr-10 font-mono text-base tracking-wide"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {query && state.state !== 'loading' && (
+              <button
+                type="button"
+                onClick={onClear}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-heading"
+                aria-label="Clear case number"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          {state.state === 'found' && <CaseFoundCard match={state.match} />}
+          {state.state === 'error' && (
+            <p className="text-xs text-red-600 dark:text-red-400">
+              Couldn't look up that case — try again in a moment.
+            </p>
           )}
-          autoComplete="off"
-          spellCheck={false}
-        />
-        {state.state === 'loading' && (
-          <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-        )}
-        {state.state !== 'idle' && state.state !== 'loading' && query && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-heading"
-            aria-label="Clear case number"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
+        </div>
       </div>
-
-      {state.state === 'found' && (
-        <CaseFoundCard match={state.match} />
-      )}
-      {state.state === 'not_found' && (
-        <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-          No case found for{' '}
-          <span className="font-mono">{state.query}</span>. You can still
-          allocate without a linked case — fill in the customer details
-          manually below.
-        </p>
-      )}
-      {state.state === 'error' && (
-        <p className="text-xs text-red-600 dark:text-red-400">
-          Couldn't look up that case — try again in a moment.
-        </p>
-      )}
     </div>
+  );
+}
+
+/**
+ * Tiny chip on the right of the panel header that mirrors the lookup state.
+ * Replaces the bulky 'not found' message block — a chip is enough signal,
+ * and the customer fields below are obviously empty if there's no match.
+ */
+function InlineLookupStatus({ state }: { state: CaseLookupState }) {
+  if (state.state === 'idle') return null;
+  if (state.state === 'loading')
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Searching…
+      </span>
+    );
+  if (state.state === 'found')
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+        <Check className="h-3 w-3" />
+        Match found
+      </span>
+    );
+  if (state.state === 'not_found')
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+        No match
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400">
+      <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+      Lookup failed
+    </span>
   );
 }
 
 /** Compact "found case" summary card shown beneath the case-number input. */
 function CaseFoundCard({ match }: { match: CaseMatch }) {
   return (
-    <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="inline-flex items-center gap-1 font-mono text-heading">
-              <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-              {match.caseNumber}
-            </span>
-            {match.externalCaseNumber && (
-              <span className="text-xs text-muted-foreground">
-                CRM <span className="font-mono">{match.externalCaseNumber}</span>
-              </span>
-            )}
-            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              {match.status.replace(/_/g, ' ')}
-            </span>
-          </div>
-          <div className="text-sm text-heading">{match.customerName}</div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-            <span>{match.customerEmail}</span>
-            {match.customerPhone && <span>{match.customerPhone}</span>}
-            <span>
-              {match.brandName} · {match.countryName}
-            </span>
-            {match.rootCauseLabel && (
-              <span className="italic">"{match.rootCauseLabel}"</span>
-            )}
-          </div>
-        </div>
+    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] p-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="font-mono text-sm font-semibold text-heading">
+          {match.caseNumber}
+        </span>
+        {match.externalCaseNumber && (
+          <span className="text-xs text-muted-foreground">
+            CRM <span className="font-mono">{match.externalCaseNumber}</span>
+          </span>
+        )}
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {match.status.replace(/_/g, ' ')}
+        </span>
+      </div>
+      <div className="mt-1.5 text-sm font-medium text-heading">
+        {match.customerName}
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+        <span>{match.customerEmail}</span>
+        {match.customerPhone && (
+          <>
+            <span aria-hidden>·</span>
+            <span>{match.customerPhone}</span>
+          </>
+        )}
+        <span aria-hidden>·</span>
+        <span>
+          {match.brandName} · {match.countryName}
+        </span>
+        {match.rootCauseLabel && (
+          <>
+            <span aria-hidden>·</span>
+            <span className="italic">“{match.rootCauseLabel}”</span>
+          </>
+        )}
       </div>
     </div>
   );
