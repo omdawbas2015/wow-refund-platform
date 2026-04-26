@@ -289,21 +289,27 @@ export async function completeAuraBatchAction(
     const caseIds = snapshot.map((s) => s.caseId);
 
     const now = new Date();
-    await prisma.$transaction([
-      prisma.refundCase.updateMany({
+    // Use an interactive transaction so we can capture the actual number of
+    // case rows transitioned (cases that were still PENDING). Snapshot length
+    // ≠ confirmed count: cases already moved to COMPLETED via a prior batch
+    // (allowed by design) or stuck in FAILED are skipped by the updateMany,
+    // so completedCases must reflect what actually flipped, mirroring the
+    // approval/KNET batch counters which use `{ increment: actualCount }`.
+    const completedCount = await prisma.$transaction(async (tx) => {
+      const updated = await tx.refundCase.updateMany({
         where: { id: { in: caseIds }, auraStatus: 'PENDING' },
         data: {
           auraStatus: 'COMPLETED',
           auraProcessedAt: now,
           auraProcessedById: me.id,
         },
-      }),
-      prisma.auraBatch.update({
+      });
+      await tx.auraBatch.update({
         where: { id: batch.id },
         data: {
           status: 'COMPLETED',
           completedAt: now,
-          completedCases: snapshot.length,
+          completedCases: updated.count,
           ...(parsed.data.responseRawBody
             ? {
                 responseReceivedAt: now,
@@ -311,8 +317,9 @@ export async function completeAuraBatchAction(
               }
             : {}),
         },
-      }),
-    ]);
+      });
+      return updated.count;
+    });
 
     await audit({
       actorId: me.id,
@@ -320,7 +327,8 @@ export async function completeAuraBatchAction(
       action: 'aura_batch.completed',
       entityId: batch.id,
       before: { status: batch.status },
-      after: { status: 'COMPLETED', completedCases: snapshot.length },
+      after: { status: 'COMPLETED', completedCases: completedCount },
+      metadata: { snapshotSize: snapshot.length, transitioned: completedCount },
     });
 
     revalidatePath('/operations');
