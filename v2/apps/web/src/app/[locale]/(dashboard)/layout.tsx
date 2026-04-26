@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { Sidebar } from '@/components/layout/sidebar';
 import { TopBar } from '@/components/layout/top-bar';
 import { ThemeGate } from '@/components/providers/theme-gate';
+import { KeyboardShortcuts } from '@/components/layout/keyboard-shortcuts';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 
 export default async function DashboardLayout({
@@ -34,6 +35,7 @@ export default async function DashboardLayout({
           </main>
         </div>
       </div>
+      <KeyboardShortcuts />
     </ThemeGate>
   );
 }

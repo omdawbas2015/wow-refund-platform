@@ -6,7 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { LogOut, Globe, Moon, Sun, Search } from 'lucide-react';
+import { LogOut, Globe, Moon, Sun, Search, Keyboard } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { NotificationBell } from './notification-bell';
 
@@ -67,6 +67,18 @@ export function TopBar({ userName, userEmail, currentLocale, darkModeEnabled = t
           />
         </form>
         <NotificationBell />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            const ev = new KeyboardEvent('keydown', { key: '?' });
+            window.dispatchEvent(ev);
+          }}
+          aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts (press ?)"
+        >
+          <Keyboard className="h-4 w-4" />
+        </Button>
         <Button variant="ghost" size="sm" onClick={toggleLocale} aria-label="Toggle language">
           <Globe className="h-4 w-4" />
           <span className="ms-1 uppercase">{currentLocale === 'en' ? 'AR' : 'EN'}</span>
