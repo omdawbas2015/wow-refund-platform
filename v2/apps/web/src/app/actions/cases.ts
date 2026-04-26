@@ -214,7 +214,14 @@ export async function approveCaseAction(formData: FormData): Promise<ActionResul
 
     const c = await prisma.refundCase.findUnique({
       where: { id: parsed.data.caseId },
-      select: { id: true, status: true, customerEmail: true, customerName: true, caseNumber: true },
+      select: {
+        id: true,
+        status: true,
+        customerEmail: true,
+        customerName: true,
+        caseNumber: true,
+        createdById: true,
+      },
     });
     if (!c) return { ok: false, error: 'Case not found' };
     assertCaseTransition(c.status, 'APPROVED');
@@ -237,6 +244,26 @@ export async function approveCaseAction(formData: FormData): Promise<ActionResul
       after: { status: 'APPROVED' },
     });
 
+    // Notify the case creator that their case was approved (in-app bell).
+    // Skip self-notification when an admin approves their own case.
+    if (c.createdById && c.createdById !== me.id) {
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: c.createdById,
+            type: 'CASE_APPROVED',
+            title: `Case ${c.caseNumber} approved`,
+            body: `${me.name ?? me.email} approved this case.`,
+            href: `/cases/${c.id}`,
+            contextType: 'CASE',
+            contextId: c.id,
+          },
+        });
+      } catch (notifErr) {
+        console.error('[cases] failed to write CASE_APPROVED notification', notifErr);
+      }
+    }
+
     revalidatePath(`/cases/${c.id}`);
     revalidatePath('/cases');
     return { ok: true };
@@ -257,7 +284,7 @@ export async function rejectCaseAction(formData: FormData): Promise<ActionResult
 
     const c = await prisma.refundCase.findUnique({
       where: { id: caseId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, caseNumber: true, createdById: true },
     });
     if (!c) return { ok: false, error: 'Case not found' };
     assertCaseTransition(c.status, 'REJECTED');
@@ -275,6 +302,24 @@ export async function rejectCaseAction(formData: FormData): Promise<ActionResult
       before: { status: c.status },
       after: { status: 'REJECTED', reason },
     });
+
+    if (c.createdById && c.createdById !== me.id) {
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: c.createdById,
+            type: 'CASE_REJECTED',
+            title: `Case ${c.caseNumber} rejected`,
+            body: reason.slice(0, 240),
+            href: `/cases/${c.id}`,
+            contextType: 'CASE',
+            contextId: c.id,
+          },
+        });
+      } catch (notifErr) {
+        console.error('[cases] failed to write CASE_REJECTED notification', notifErr);
+      }
+    }
 
     revalidatePath(`/cases/${caseId}`);
     revalidatePath('/cases');
