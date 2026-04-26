@@ -175,12 +175,21 @@ export async function uploadPromoCodesAction(
     const codes = parseCodesText(codesRaw);
     if (codes.length === 0) return { ok: false, error: 'No codes parsed from input' };
 
-    // SQLite has a default param limit; chunk inserts to be safe.
+    // PromoCode.code is @unique — Prisma's SQLite createMany does not support
+    // skipDuplicates in our installed Prisma version. To keep the upload
+    // idempotent we pre-filter existing codes (cheap thanks to the unique
+    // index), then createMany the survivors in chunks.
+    const existing = await prisma.promoCode.findMany({
+      where: { code: { in: codes } },
+      select: { code: true },
+    });
+    const existingSet = new Set(existing.map((e) => e.code));
+    const fresh = codes.filter((c) => !existingSet.has(c));
+
     const CHUNK = 500;
     let created = 0;
-    let skipped = 0;
-    for (let i = 0; i < codes.length; i += CHUNK) {
-      const slice = codes.slice(i, i + CHUNK);
+    for (let i = 0; i < fresh.length; i += CHUNK) {
+      const slice = fresh.slice(i, i + CHUNK);
       const result = await prisma.promoCode.createMany({
         data: slice.map((code) => ({
           configId,
@@ -190,8 +199,8 @@ export async function uploadPromoCodesAction(
         })),
       });
       created += result.count;
-      skipped += slice.length - result.count;
     }
+    const skipped = codes.length - created;
 
     await audit({
       actorId: me.id,
