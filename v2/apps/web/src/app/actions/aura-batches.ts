@@ -222,14 +222,24 @@ export async function sendAuraBatchAction(
       data: { status: 'SENT', sentAt: new Date() },
     });
 
-    await audit({
-      actorId: me.id,
-      actorEmail: me.email,
-      action: 'aura_batch.sent',
-      entityId: batch.id,
-      before: { status: batch.status },
-      after: { status: 'SENT' },
-    });
+    // Email is dispatched and the batch row is already flipped to SENT — both
+    // are irreversible. A transient audit failure must NOT surface as `ok:
+    // false`, since the user would retry and re-trigger the email.
+    try {
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'aura_batch.sent',
+        entityId: batch.id,
+        before: { status: batch.status },
+        after: { status: 'SENT' },
+      });
+    } catch (auditErr) {
+      console.error(
+        '[aura-batch] audit write failed after successful send',
+        auditErr,
+      );
+    }
 
     revalidatePath('/operations');
     revalidatePath(`/operations/aura/${batch.id}`);
