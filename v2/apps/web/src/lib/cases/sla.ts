@@ -1,4 +1,4 @@
-import type { CaseStatus } from '@wow/db';
+import type { CaseStatus, Prisma } from '@wow/db';
 
 /**
  * SLA tiers for open refund cases. Days are inclusive. Terminal statuses
@@ -81,4 +81,54 @@ export function formatSlaCell(tier: SlaTier, days: number): string {
   if (tier === 'breached') return `${days}d ‼`;
   if (tier === 'warning') return `${days}d ⚠`;
   return `${days}d`;
+}
+
+/**
+ * Translate an SLA filter key into Prisma where conditions. The conditions
+ * are returned as an array intended to be combined via `AND` so they never
+ * collide with an explicit `where.status` set elsewhere in the query.
+ *
+ * For tier filters (breached / warning / on_track) we always include the
+ * `notIn: TERMINAL` constraint. If callers also set `status: 'REFUNDED'`
+ * (etc.) at the top level, the AND'd `notIn` correctly returns 0 rows —
+ * which is the right answer, since terminal cases are never SLA-tracked.
+ */
+export function buildSlaConditions(
+  sla: SlaTier | 'all',
+  now: Date = new Date(),
+): Prisma.RefundCaseWhereInput[] {
+  if (sla === 'all') return [];
+  const dayMs = 24 * 60 * 60 * 1000;
+  const TERMINAL_ARR: CaseStatus[] = ['REFUNDED', 'REJECTED', 'CANCELLED'];
+  if (sla === 'closed') return [{ status: { in: TERMINAL_ARR } }];
+  const notTerminal: Prisma.RefundCaseWhereInput = { status: { notIn: TERMINAL_ARR } };
+  if (sla === 'breached') {
+    return [
+      notTerminal,
+      { createdAt: { lte: new Date(now.getTime() - BREACHED_AT_DAYS * dayMs) } },
+    ];
+  }
+  if (sla === 'warning') {
+    return [
+      notTerminal,
+      {
+        createdAt: {
+          lte: new Date(now.getTime() - WARNING_AT_DAYS * dayMs),
+          gt: new Date(now.getTime() - BREACHED_AT_DAYS * dayMs),
+        },
+      },
+    ];
+  }
+  // on_track
+  return [
+    notTerminal,
+    { createdAt: { gt: new Date(now.getTime() - WARNING_AT_DAYS * dayMs) } },
+  ];
+}
+
+/** Coerce an arbitrary string param into a known SLA tier or 'all'. */
+export function parseSlaParam(raw: string | undefined): SlaTier | 'all' {
+  const v = (raw ?? '').toLowerCase();
+  if (v === 'breached' || v === 'warning' || v === 'on_track' || v === 'closed') return v;
+  return 'all';
 }

@@ -1,5 +1,6 @@
 import { prisma } from '@wow/db';
 import type { CaseStatus, Prisma } from '@wow/db';
+import { buildSlaConditions, parseSlaParam, type SlaTier } from '@/lib/cases/sla';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,36 +49,18 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
   const q = (sp.q ?? '').trim();
   const statusParam = (sp.status ?? '').toUpperCase();
   const status = STATUS_TABS.find((t) => t.key === statusParam)?.key ?? 'ALL';
-  const slaParam = (sp.sla ?? '').toLowerCase();
-  const sla = SLA_TABS.find((t) => t.key === slaParam)?.key ?? 'all';
+  const sla: SlaTier | 'all' = parseSlaParam(sp.sla);
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
 
-  // Translate SLA filter into a createdAt window + (sometimes) status
-  // constraint. The thresholds match `lib/cases/sla.ts`: warning at >=3d,
-  // breached at >=6d. We collect the constraints into AND clauses below
-  // so the explicit status tab and the SLA tier never collide on the
-  // single `where.status` key.
-  const now = new Date();
-  const dayMs = 24 * 60 * 60 * 1000;
-  const TERMINAL: CaseStatus[] = ['REFUNDED', 'REJECTED', 'CANCELLED'];
-  const slaConditions: Prisma.RefundCaseWhereInput[] = [];
-  if (sla === 'closed') {
-    slaConditions.push({ status: { in: TERMINAL } });
-  } else if (sla === 'breached') {
-    if (status === 'ALL') slaConditions.push({ status: { notIn: TERMINAL } });
-    slaConditions.push({ createdAt: { lte: new Date(now.getTime() - 6 * dayMs) } });
-  } else if (sla === 'warning') {
-    if (status === 'ALL') slaConditions.push({ status: { notIn: TERMINAL } });
-    slaConditions.push({
-      createdAt: {
-        lte: new Date(now.getTime() - 3 * dayMs),
-        gt: new Date(now.getTime() - 6 * dayMs),
-      },
-    });
-  } else if (sla === 'on_track') {
-    if (status === 'ALL') slaConditions.push({ status: { notIn: TERMINAL } });
-    slaConditions.push({ createdAt: { gt: new Date(now.getTime() - 3 * dayMs) } });
-  }
+  // Translate the SLA filter into Prisma conditions. We always emit the
+  // `notIn: TERMINAL` guard for tier filters (breached/warning/on_track),
+  // even when a specific status tab is also selected, so that combinations
+  // like `status=REFUNDED + sla=breached` correctly return zero rows
+  // instead of leaking terminal cases that just happen to be old enough —
+  // which the SlaPill would render as "Closed", contradicting the active
+  // tab. The conditions are AND'd into the where clause so they don't
+  // collide with the top-level `status` key.
+  const slaConditions = buildSlaConditions(sla);
 
   const where: Prisma.RefundCaseWhereInput = {
     deletedAt: null,
@@ -156,6 +139,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
                 const p = new URLSearchParams();
                 if (q) p.set('q', q);
                 if (status !== 'ALL') p.set('status', status);
+                if (sla !== 'all') p.set('sla', sla);
                 const qs = p.toString();
                 return `/api/export/cases${qs ? `?${qs}` : ''}`;
               })()}
