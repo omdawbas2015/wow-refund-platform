@@ -240,17 +240,15 @@ export function NewCaseForm({
             disabled={branchesForCountry.length === 0}
           >
             <SelectTrigger id="branch">
-              <SelectValue
-                placeholder={
-                  branchesForCountry.length === 0
-                    ? 'No branches configured for this country'
-                    : 'Select branch'
-                }
-              />
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NO_BRANCH}>
-                <span className="text-muted-foreground">No branch</span>
+                <span className="text-muted-foreground">
+                  {branchesForCountry.length === 0
+                    ? 'No branches configured for this country'
+                    : 'No branch'}
+                </span>
               </SelectItem>
               {branchesForCountry.map((b) => (
                 <SelectItem key={b.id} value={b.id}>
