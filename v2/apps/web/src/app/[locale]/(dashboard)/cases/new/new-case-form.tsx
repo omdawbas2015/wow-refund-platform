@@ -51,6 +51,7 @@ export function NewCaseForm({
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [externalCaseNumber, setExternalCaseNumber] = useState('');
   const [orderNumber, setOrderNumber] = useState('');
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [orderAmount, setOrderAmount] = useState('');
@@ -106,10 +107,16 @@ export function NewCaseForm({
       return;
     }
 
+    if (!externalCaseNumber.trim()) {
+      setError('Case number is required.');
+      return;
+    }
+
     const payload = {
       countryId,
       branchId: branchId || undefined,
       brandId,
+      externalCaseNumber: externalCaseNumber.trim(),
       customerName: customerName.trim(),
       customerEmail: customerEmail.trim(),
       customerPhone: customerPhone.trim() || undefined,
@@ -302,7 +309,23 @@ export function NewCaseForm({
       {/* ── Order ── */}
       <section className="space-y-3">
         <h3 className="text-heading-sm text-heading">Order</h3>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="externalCaseNumber">
+              Case # <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="externalCaseNumber"
+              value={externalCaseNumber}
+              onChange={(e) => setExternalCaseNumber(e.target.value)}
+              required
+              placeholder="e.g. CRM-98421"
+              className="font-mono"
+            />
+            <p className="text-xs text-muted-foreground">
+              CRM / helpdesk ticket reference for this refund.
+            </p>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="orderNumber">Order #</Label>
             <Input

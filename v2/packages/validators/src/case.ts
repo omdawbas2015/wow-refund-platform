@@ -40,6 +40,10 @@ export const createCaseSchema = z.object({
   branchId: z.string().trim().optional().nullable(),
   brandId: nonEmptyString,
 
+  // Required — the CRM/helpdesk ticket reference the agent must attach
+  // before opening a refund. Free-form string (CRM formats vary).
+  externalCaseNumber: nonEmptyString.max(64),
+
   customerName: nonEmptyString.max(200),
   customerEmail: emailSchema,
   customerPhone: phoneSchema.optional().or(z.literal('')).transform((v) => (v ? v : null)),

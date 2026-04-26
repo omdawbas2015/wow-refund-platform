@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { AlertTriangle, Check, History, Gift } from 'lucide-react';
+import { AlertTriangle, Check, History, Gift, Shield, Mail, Copy, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type PoolOption = {
@@ -214,21 +214,25 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-5 rounded-lg border border-border bg-card p-5">
-      {/* Type toggle */}
-      <div className="space-y-1.5">
+      {/* Type toggle — visually distinct cards */}
+      <div className="space-y-2">
         <Label>Promo type</Label>
-        <div className="flex gap-2">
-          <TypeChip
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TypeCard
             active={type === 'CUSTOMER_COMPENSATION'}
             onClick={() => setType('CUSTOMER_COMPENSATION')}
+            Icon={Gift}
             label="Customer compensation"
             hint="Fixed value · emailed to customer"
+            tone="blue"
           />
-          <TypeChip
+          <TypeCard
             active={type === 'SERVICE_RECOVERY'}
             onClick={() => setType('SERVICE_RECOVERY')}
+            Icon={Shield}
             label="Service recovery"
-            hint="Internal only · never emailed"
+            hint="Internal use only · never emailed"
+            tone="emerald"
           />
         </div>
       </div>
@@ -375,18 +379,7 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {success && (
-        <Alert>
-          <Check className="h-4 w-4" />
-          <AlertTitle>Promo allocated</AlertTitle>
-          <AlertDescription>
-            Code <span className="font-mono font-medium">{success.code}</span> has been assigned
-            {type === 'CUSTOMER_COMPENSATION'
-              ? ' and queued for email delivery.'
-              : ' for internal use.'}
-          </AlertDescription>
-        </Alert>
-      )}
+      {success && <SuccessCard code={success.code} type={type} />}
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
@@ -403,30 +396,139 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
   );
 }
 
-function TypeChip({
+function SuccessCard({
+  code,
+  type,
+}: {
+  code: string;
+  type: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY';
+}) {
+  const [copied, setCopied] = useState(false);
+  const isRecovery = type === 'SERVICE_RECOVERY';
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API unavailable (insecure context / denied) — silently skip;
+      // the code is still plainly visible on screen for manual copy.
+    }
+  }
+  return (
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-xl border p-5',
+        isRecovery
+          ? 'border-emerald-500/40 bg-gradient-to-br from-emerald-500/5 to-emerald-500/10'
+          : 'border-blue-500/40 bg-gradient-to-br from-blue-500/5 to-blue-500/10',
+      )}
+    >
+      <div className="flex items-start gap-4">
+        <div
+          className={cn(
+            'flex h-12 w-12 flex-none items-center justify-center rounded-full',
+            isRecovery ? 'bg-emerald-500 text-white' : 'bg-blue-500 text-white',
+          )}
+        >
+          <Sparkles className="h-6 w-6" />
+        </div>
+        <div className="min-w-0 flex-1 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-heading">
+              {isRecovery ? 'Service-recovery code issued' : 'Customer promo allocated'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {isRecovery ? (
+                <span className="inline-flex items-center gap-1">
+                  <Shield className="h-3 w-3" /> Internal only — not emailed to the customer.
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <Mail className="h-3 w-3" /> Queued for email delivery to the customer.
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+            <span className="flex-1 select-all font-mono text-base tracking-wider text-heading">
+              {code}
+            </span>
+            <Button type="button" size="sm" variant="ghost" onClick={copy}>
+              {copied ? (
+                <>
+                  <Check className="mr-1.5 h-4 w-4" /> Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="mr-1.5 h-4 w-4" /> Copy
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TypeCard({
   active,
   onClick,
   label,
   hint,
+  Icon,
+  tone,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   hint: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  tone: 'blue' | 'emerald';
 }) {
+  // Build tone classes at module-eval time so Tailwind JIT keeps them.
+  const toneActive =
+    tone === 'blue'
+      ? 'border-blue-500/60 bg-blue-500/10 ring-1 ring-blue-500/20'
+      : 'border-emerald-500/60 bg-emerald-500/10 ring-1 ring-emerald-500/20';
+  const toneIconActive =
+    tone === 'blue'
+      ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30'
+      : 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30';
+  const toneIconIdle =
+    tone === 'blue' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        'flex-1 rounded-md border px-3 py-2 text-left text-sm transition',
+        'group flex items-start gap-3 rounded-lg border p-4 text-left transition',
         active
-          ? 'border-primary bg-primary/5 text-heading'
-          : 'border-border text-muted-foreground hover:border-foreground/20 hover:text-heading',
+          ? toneActive
+          : 'border-border bg-background hover:border-foreground/20',
       )}
     >
-      <div className="font-medium">{label}</div>
-      <div className="text-xs text-muted-foreground">{hint}</div>
+      <div
+        className={cn(
+          'flex h-10 w-10 flex-none items-center justify-center rounded-md transition',
+          active ? toneIconActive : toneIconIdle,
+        )}
+      >
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="space-y-0.5">
+        <div className="text-sm font-semibold text-heading">{label}</div>
+        <div className="text-xs text-muted-foreground">{hint}</div>
+      </div>
+      {active && (
+        <Check
+          className={cn(
+            'ml-auto h-4 w-4 flex-none',
+            tone === 'blue' ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400',
+          )}
+        />
+      )}
     </button>
   );
 }

@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from '@wow/db';
+import { Prisma, prisma } from '@wow/db';
 import { allocatePromoSchema, uploadPromoCodesSchema } from '@wow/validators';
 import { auth } from '@/auth';
 import { revalidatePath } from 'next/cache';
@@ -245,6 +245,141 @@ async function getCustomerPromoHistoryRaw(email: string) {
   ]);
 
   return { recentCount, totalCount, recentAllocations };
+}
+
+/**
+ * Search + list historical promo allocations with role-based scoping.
+ *
+ * RBAC rules (mirrors user expectation):
+ * - ADMIN / MANAGER / OPERATIONS: see every allocation, every type.
+ * - AGENT / TEAM_LEAD: see every CUSTOMER_COMPENSATION allocation but only
+ *   their own SERVICE_RECOVERY allocations (the 100% codes must not leak
+ *   across agents — avoids fraud + misattribution).
+ * - anyone else: empty list.
+ *
+ * Supports free-text search (email / customer name / case reference / code)
+ * and an optional date range on `createdAt`.
+ */
+export async function listPromoAllocationsAction(input: {
+  q?: string;
+  type?: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY' | 'ALL';
+  fromDate?: string;
+  toDate?: string;
+  limit?: number;
+}): Promise<{
+  items: Array<{
+    id: string;
+    code: string;
+    type: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY';
+    brand: string;
+    country: string;
+    value: number;
+    currency: string;
+    customerEmail: string;
+    customerName: string | null;
+    caseId: string | null;
+    reason: string | null;
+    requestedBy: { id: string; name: string | null };
+    emailedAt: Date | null;
+    createdAt: Date;
+  }>;
+  total: number;
+  scope: 'ALL' | 'COMPENSATION_PLUS_OWN_RECOVERY' | 'EMPTY';
+}> {
+  const user = await requireSession();
+  const roleKey = user.role ?? '';
+  const isFullView = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']).has(roleKey);
+  const isScopedView = new Set(['AGENT', 'TEAM_LEAD']).has(roleKey);
+  if (!isFullView && !isScopedView) {
+    return { items: [], total: 0, scope: 'EMPTY' };
+  }
+
+  const q = input.q?.trim().toLowerCase() ?? '';
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+
+  const where: Prisma.PromoAllocationWhereInput = {};
+
+  if (input.fromDate || input.toDate) {
+    const createdAt: { gte?: Date; lte?: Date } = {};
+    if (input.fromDate) createdAt.gte = new Date(input.fromDate);
+    if (input.toDate) {
+      const end = new Date(input.toDate);
+      end.setHours(23, 59, 59, 999);
+      createdAt.lte = end;
+    }
+    where.createdAt = createdAt;
+  }
+
+  if (q) {
+    where.OR = [
+      { customerEmail: { contains: q } },
+      { customerName: { contains: q } },
+      { case: { caseNumber: { contains: q.toUpperCase() } } },
+      { case: { externalCaseNumber: { contains: q } } },
+      { code: { code: { contains: q.toUpperCase() } } },
+    ];
+  }
+
+  // Type + RBAC scope
+  if (input.type === 'CUSTOMER_COMPENSATION' || input.type === 'SERVICE_RECOVERY') {
+    const codeFilter: Prisma.PromoCodeWhereInput = {
+      config: { type: input.type },
+    };
+    where.code = codeFilter;
+  }
+  if (isScopedView) {
+    const scoped: Prisma.PromoAllocationWhereInput = {
+      OR: [
+        { code: { config: { type: 'CUSTOMER_COMPENSATION' } } },
+        {
+          AND: [
+            { code: { config: { type: 'SERVICE_RECOVERY' } } },
+            { requestedById: user.id },
+          ],
+        },
+      ],
+    };
+    where.AND = Array.isArray(where.AND)
+      ? [...where.AND, scoped]
+      : where.AND
+        ? [where.AND, scoped]
+        : [scoped];
+  }
+
+  const [rows, total] = await Promise.all([
+    prisma.promoAllocation.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: {
+        code: { include: { config: { include: { brand: true, country: { include: { registry: true } } } } } },
+        requestedBy: { select: { id: true, name: true } },
+        case: { select: { id: true, caseNumber: true, externalCaseNumber: true } },
+      },
+    }),
+    prisma.promoAllocation.count({ where }),
+  ]);
+
+  return {
+    items: rows.map((a) => ({
+      id: a.id,
+      code: a.code.code,
+      type: a.code.config.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
+      brand: a.code.config.brand.name,
+      country: a.code.config.country.registry?.nameEn ?? a.code.config.country.registryCode,
+      value: a.code.config.value,
+      currency: a.code.config.currency,
+      customerEmail: a.customerEmail,
+      customerName: a.customerName,
+      caseId: a.case?.externalCaseNumber ?? a.case?.caseNumber ?? null,
+      reason: a.reason,
+      requestedBy: a.requestedBy,
+      emailedAt: a.emailedAt,
+      createdAt: a.createdAt,
+    })),
+    total,
+    scope: isFullView ? 'ALL' : 'COMPENSATION_PLUS_OWN_RECOVERY',
+  };
 }
 
 /** Public server action wrapper — form uses this via fetch(searchParam pattern). */

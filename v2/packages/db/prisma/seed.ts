@@ -496,6 +496,8 @@ async function seedDemoCases() {
     const created = await prisma.refundCase.create({
       data: {
         caseNumber,
+        // Fabricated CRM reference so seeded cases surface in external-ticket searches.
+        externalCaseNumber: `CRM-${(100000 + i + 1).toString()}`,
         countryId: d.countryId,
         branchId: d.branchCode ? branchByCode.get(d.branchCode)?.id ?? null : null,
         brandId: d.brandId,

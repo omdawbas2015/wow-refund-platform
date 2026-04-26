@@ -3,10 +3,11 @@ import Link from 'next/link';
 import { prisma } from '@wow/db';
 import { auth } from '@/auth';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { History, Settings2 } from 'lucide-react';
 import { AllocatePromoForm, type PoolOption } from './allocate-form';
 
 const ALLOCATE_ROLES = new Set(['ADMIN', 'MANAGER', 'AGENT', 'TEAM_LEAD']);
+const POOL_MANAGEMENT_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']);
 
 export const dynamic = 'force-dynamic';
 
@@ -56,22 +57,34 @@ export default async function AllocatePromoPage({
     available: p.codes.length,
   }));
 
+  const canManagePools = POOL_MANAGEMENT_ROLES.has(session.user.role ?? '');
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-center gap-2 text-sm">
-        <Button asChild variant="ghost" size="sm">
-          <Link href={`/${locale}/promo`}>
-            <ArrowLeft className="h-4 w-4" />
-            <span>Back to promos</span>
-          </Link>
-        </Button>
-      </div>
-      <div>
-        <h1 className="text-2xl font-semibold text-heading">Allocate promo</h1>
-        <p className="text-sm text-muted-foreground">
-          Send a promo code to a customer or issue a service-recovery code internally. We'll flag any
-          recent promos this customer already received.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <div>
+          <h1 className="text-2xl font-semibold text-heading">Allocate promo</h1>
+          <p className="text-sm text-muted-foreground">
+            Send a promo code to a customer or issue a service-recovery code internally. We'll flag
+            any recent promos this customer already received.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/${locale}/promo/history`}>
+              <History className="h-4 w-4" />
+              <span>History</span>
+            </Link>
+          </Button>
+          {canManagePools && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/${locale}/promo`}>
+                <Settings2 className="h-4 w-4" />
+                <span>Manage pools</span>
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
       <AllocatePromoForm pools={poolOptions} />
     </div>
