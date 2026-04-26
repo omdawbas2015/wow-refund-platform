@@ -240,6 +240,9 @@ async function getCustomerPromoHistoryRaw(email: string) {
             config: { include: { brand: true, country: { include: { registry: true } } } },
           },
         },
+        case: {
+          select: { caseNumber: true, externalCaseNumber: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: 10,
@@ -402,6 +405,8 @@ export async function loadCustomerPromoHistoryAction(
     currency: string;
     emailedAt: Date | null;
     createdAt: Date;
+    caseNumber: string | null;
+    reason: string | null;
   }>;
 }> {
   const user = await requireSession();
@@ -426,6 +431,9 @@ export async function loadCustomerPromoHistoryAction(
       currency: a.code.config.currency,
       emailedAt: a.emailedAt,
       createdAt: a.createdAt,
+      caseNumber:
+        a.case?.externalCaseNumber ?? a.case?.caseNumber ?? null,
+      reason: a.reason,
     })),
   };
 }

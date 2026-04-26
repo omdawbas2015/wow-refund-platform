@@ -84,6 +84,8 @@ type HistoryEntry = {
   currency: string;
   emailedAt: Date | string | null;
   createdAt: Date | string;
+  caseNumber: string | null;
+  reason: string | null;
 };
 
 type LookupState = {
@@ -861,25 +863,35 @@ function SuccessDialog({
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md overflow-hidden p-0">
-        {/* Top accent banner */}
+      <DialogContent className="max-w-md overflow-hidden p-0 duration-300 data-[state=open]:slide-in-from-bottom-4">
+        {/* Top accent banner with celebratory icon entrance + halo */}
         <div
           className={cn(
-            'flex items-center gap-3 px-6 pb-4 pt-6',
+            'relative flex items-center gap-3 px-6 pb-4 pt-6',
             isRecovery
               ? 'bg-gradient-to-br from-emerald-500/10 to-emerald-500/5'
               : 'bg-gradient-to-br from-blue-500/10 to-blue-500/5',
           )}
         >
-          <div
-            className={cn(
-              'flex h-12 w-12 flex-none items-center justify-center rounded-full text-white shadow-lg',
-              isRecovery
-                ? 'bg-emerald-500 shadow-emerald-500/30'
-                : 'bg-blue-500 shadow-blue-500/30',
-            )}
-          >
-            <Sparkles className="h-6 w-6" />
+          <div className="relative flex-none">
+            <span
+              aria-hidden
+              className={cn(
+                'absolute inset-0 rounded-full opacity-60 motion-safe:animate-ping',
+                isRecovery ? 'bg-emerald-500/40' : 'bg-blue-500/40',
+              )}
+              style={{ animationDuration: '1.6s', animationIterationCount: 2 }}
+            />
+            <div
+              className={cn(
+                'relative flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-500',
+                isRecovery
+                  ? 'bg-emerald-500 shadow-emerald-500/30'
+                  : 'bg-blue-500 shadow-blue-500/30',
+              )}
+            >
+              <Sparkles className="h-6 w-6" />
+            </div>
           </div>
           <DialogHeader className="flex-1 space-y-0.5">
             <DialogTitle>
@@ -900,6 +912,17 @@ function SuccessDialog({
             </DialogDescription>
           </DialogHeader>
         </div>
+        {/* Animated divider that draws in from the centre. Adds a tiny
+            celebratory motion without leaning on a heavy library. */}
+        <span
+          aria-hidden
+          className={cn(
+            'block h-[2px] w-full origin-center motion-safe:animate-in motion-safe:slide-in-from-left-1/2 motion-safe:slide-in-from-right-1/2 motion-safe:duration-500',
+            isRecovery
+              ? 'bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent'
+              : 'bg-gradient-to-r from-transparent via-blue-500/50 to-transparent',
+          )}
+        />
 
         <div className="space-y-4 px-6 pb-6">
           {/* The code itself */}
@@ -1030,6 +1053,16 @@ function TypeCard({
   );
 }
 
+/**
+ * Fraud / repeat-customer panel. Three visual states:
+ *   - "clean":     no history at all  → muted, low-key, just confirms.
+ *   - "informational": old history but nothing recent → calm, no ack needed.
+ *   - "warning":   ≥ 1 promo in the last 90 days → amber accent, ack required.
+ *
+ * Each history row collapses inline reveals the original allocation reason
+ * + linked case number on click — the agent can audit prior promos without
+ * leaving the form.
+ */
 function FraudPanel({
   lookup,
   acknowledged,
@@ -1041,64 +1074,194 @@ function FraudPanel({
   onAcknowledge: (v: boolean) => void;
   needsAck: boolean;
 }) {
+  const tone: 'clean' | 'info' | 'warn' = needsAck
+    ? 'warn'
+    : lookup.totalCount > 0
+      ? 'info'
+      : 'clean';
+
+  const containerClass = cn(
+    'overflow-hidden rounded-xl border shadow-sm transition-colors',
+    tone === 'warn' && 'border-amber-500/40 bg-amber-500/[0.05]',
+    tone === 'info' && 'border-border bg-card',
+    tone === 'clean' && 'border-border bg-card',
+  );
+
+  const headerIcon = tone === 'warn' ? AlertTriangle : History;
+  const headerIconClass = cn(
+    'h-4 w-4',
+    tone === 'warn'
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-muted-foreground',
+  );
+
+  const headerTitle =
+    tone === 'warn'
+      ? `${lookup.recentCount} recent promo${lookup.recentCount === 1 ? '' : 's'} for this customer`
+      : tone === 'info'
+        ? 'Customer has prior promo history'
+        : 'No prior promos for this customer';
+
+  const headerSubtitle = lookup.loading
+    ? 'Looking up customer history…'
+    : tone === 'warn'
+      ? `${lookup.recentCount} in the last 90 days · ${lookup.totalCount} ever. Review before continuing.`
+      : tone === 'info'
+        ? `${lookup.totalCount} total · 0 in the last 90 days.`
+        : "First time we're sending a promo to this email.";
+
+  const HeaderIcon = headerIcon;
+
   return (
-    <div
-      className={cn(
-        'rounded-md border p-3 text-sm',
-        needsAck ? 'border-amber-500/40 bg-amber-500/5' : 'border-border bg-muted/30',
-      )}
-    >
-      <div className="flex items-center gap-2 text-heading">
-        <History className="h-4 w-4" />
-        <span className="font-medium">Promo history for this customer</span>
-        {lookup.loading && (
-          <span className="text-xs text-muted-foreground">loading…</span>
+    <div className={containerClass}>
+      <div className="flex items-start gap-3 p-4">
+        <div
+          className={cn(
+            'flex h-8 w-8 flex-none items-center justify-center rounded-full',
+            tone === 'warn'
+              ? 'bg-amber-500/15'
+              : tone === 'info'
+                ? 'bg-muted'
+                : 'bg-emerald-500/10',
+          )}
+        >
+          {tone === 'clean' ? (
+            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+          ) : (
+            <HeaderIcon className={headerIconClass} />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-heading">{headerTitle}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{headerSubtitle}</p>
+        </div>
+        {lookup.recentCount > 0 && (
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-amber-700 dark:text-amber-300">
+            {lookup.recentCount}/90d
+          </span>
         )}
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {lookup.totalCount === 0
-          ? 'No previous promos.'
-          : `${lookup.totalCount} total promo(s) ever · ${lookup.recentCount} in the last 90 days.`}
-      </p>
+
       {lookup.history.length > 0 && (
-        <ul className="mt-3 space-y-1.5">
-          {lookup.history.map((h) => (
-            <li
-              key={h.id}
-              className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
-            >
-              <span>
-                <span className="text-heading">{h.brand}</span> · {h.country} ·{' '}
-                {formatPromoValue(
-                  h.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
-                  h.value,
-                  h.currency,
-                )}
-                <span className="ml-1 text-[10px] uppercase tracking-wide">
-                  {h.type === 'CUSTOMER_COMPENSATION' ? 'compensation' : 'recovery'}
-                </span>
-              </span>
-              <span className="font-mono tabular-nums">
-                {formatDateTime(h.createdAt)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <div className="border-t border-border/60 bg-background/40">
+          <ul className="divide-y divide-border/60">
+            {lookup.history.map((h) => (
+              <FraudHistoryRow key={h.id} entry={h} />
+            ))}
+          </ul>
+        </div>
       )}
+
       {needsAck && (
-        <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-heading">
-          <input
-            type="checkbox"
-            checked={acknowledged}
-            onChange={(e) => onAcknowledge(e.target.checked)}
-            className="mt-0.5"
-          />
-          <span>
-            I reviewed this customer's recent promo history and confirm this allocation is
-            warranted.
-          </span>
-        </label>
+        <div className="border-t border-amber-500/30 bg-amber-500/[0.04] p-4">
+          <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(e) => onAcknowledge(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-amber-500/40 text-amber-600 focus:ring-amber-500/40"
+            />
+            <span className="text-heading">
+              I reviewed this customer's recent promo history and confirm this
+              allocation is warranted.
+            </span>
+          </label>
+        </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Single row inside FraudPanel. Click the row to toggle a small inline
+ * panel showing the allocation's case # and original reason — the two
+ * fields an agent needs to decide if a repeat promo is legitimate.
+ */
+function FraudHistoryRow({ entry }: { entry: HistoryEntry }) {
+  const [open, setOpen] = useState(false);
+  const isComp = entry.type === 'CUSTOMER_COMPENSATION';
+  const expandable = !!(entry.reason || entry.caseNumber);
+  const recent =
+    Date.now() - new Date(entry.createdAt).getTime() <
+    90 * 24 * 60 * 60 * 1000;
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => expandable && setOpen((v) => !v)}
+        disabled={!expandable}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors',
+          expandable && 'hover:bg-muted/40',
+          !expandable && 'cursor-default',
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            'h-2 w-2 flex-none rounded-full',
+            recent
+              ? 'bg-amber-500'
+              : isComp
+                ? 'bg-blue-500/60'
+                : 'bg-emerald-500/60',
+          )}
+        />
+        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-sm text-heading">{entry.brand}</span>
+          <span className="text-xs text-muted-foreground">· {entry.country}</span>
+          <span
+            className={cn(
+              'rounded px-1.5 py-0.5 text-[11px] font-medium',
+              isComp
+                ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+            )}
+          >
+            {formatPromoValue(
+              entry.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
+              entry.value,
+              entry.currency,
+            )}
+          </span>
+          {entry.caseNumber && (
+            <span className="font-mono text-[11px] text-muted-foreground">
+              #{entry.caseNumber}
+            </span>
+          )}
+        </span>
+        <span className="hidden flex-none text-[11px] tabular-nums text-muted-foreground sm:inline">
+          {formatDateTime(entry.createdAt)}
+        </span>
+        {expandable && (
+          <span
+            className={cn(
+              'ms-2 flex-none text-muted-foreground transition-transform',
+              open && 'rotate-90',
+            )}
+            aria-hidden
+          >
+            ›
+          </span>
+        )}
+      </button>
+      {open && expandable && (
+        <div className="border-t border-border/60 bg-muted/20 px-4 py-2.5 text-xs">
+          {entry.caseNumber && (
+            <p className="mb-1 text-muted-foreground">
+              Case:{' '}
+              <span className="font-mono text-heading">{entry.caseNumber}</span>
+            </p>
+          )}
+          {entry.reason ? (
+            <p className="italic text-heading">“{entry.reason}”</p>
+          ) : (
+            <p className="text-muted-foreground">
+              No reason was recorded for this allocation.
+            </p>
+          )}
+        </div>
+      )}
+    </li>
   );
 }

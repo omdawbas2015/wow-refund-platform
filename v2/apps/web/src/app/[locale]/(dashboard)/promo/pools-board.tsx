@@ -12,9 +12,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Search, X, AlertTriangle } from 'lucide-react';
+import {
+  Search,
+  X,
+  AlertTriangle,
+  ChevronRight,
+  Gift,
+  Shield,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatPromoValue, promoTypeShortLabel } from '@/lib/promo/format';
+import { formatPromoValue } from '@/lib/promo/format';
 
 export type PoolSummary = {
   configId: string;
@@ -37,11 +44,13 @@ export type PoolSummary = {
 type TypeFilter = 'ALL' | 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY';
 
 /**
- * Operational pool browser — filterable, dense, scannable.
+ * Country-first pool browser. Each country is a section header with a
+ * flag + total stock; inside, every brand operating in that country is a
+ * card showing its compensation tiers + recovery indicator. Clicking a
+ * tier on a card jumps directly to /promo/pools/[poolId] for management.
  *
- * Renders pools as table-style rows grouped by brand. With dozens of pools
- * (brands × countries × tiers), a card-grid wall becomes unreadable; rows
- * keep the data density a refund team needs while still being clickable.
+ * This mirrors how a refund agent thinks about the catalog — "what do we
+ * have for Kuwait?" — instead of forcing them to scan brand-by-brand.
  */
 export function PoolsBoard({ pools, locale }: { pools: PoolSummary[]; locale: string }) {
   const [q, setQ] = useState('');
@@ -82,7 +91,7 @@ export function PoolsBoard({ pools, locale }: { pools: PoolSummary[]; locale: st
     });
   }, [pools, q, brandId, countryId, type, stockOnly]);
 
-  const groups = useMemo(() => groupByBrand(filtered), [filtered]);
+  const countryGroups = useMemo(() => groupByCountry(filtered), [filtered]);
 
   const hasFilters =
     q.trim() !== '' || brandId !== 'ALL' || countryId !== 'ALL' || type !== 'ALL' || stockOnly !== 'ALL';
@@ -108,7 +117,7 @@ export function PoolsBoard({ pools, locale }: { pools: PoolSummary[]; locale: st
                 id="pools-q"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Brand, country, label, or value"
+                placeholder="Brand, country, or value"
                 className="pl-9"
               />
             </div>
@@ -178,15 +187,14 @@ export function PoolsBoard({ pools, locale }: { pools: PoolSummary[]; locale: st
         </div>
       </div>
 
-      {/* Grouped rows */}
-      {groups.length === 0 ? (
+      {countryGroups.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-card/40 px-6 py-12 text-center text-sm text-muted-foreground">
           No pools match your filters.
         </div>
       ) : (
-        <div className="space-y-4">
-          {groups.map((g) => (
-            <BrandSection key={g.brandId} group={g} locale={locale} />
+        <div className="space-y-6">
+          {countryGroups.map((g) => (
+            <CountrySection key={g.countryId} group={g} locale={locale} />
           ))}
         </div>
       )}
@@ -227,41 +235,81 @@ function TypeSegmented({
   );
 }
 
-function groupByBrand(pools: PoolSummary[]) {
-  const m = new Map<string, { brandId: string; brandName: string; items: PoolSummary[] }>();
+type CountryGroup = {
+  countryId: string;
+  countryName: string;
+  countryFlag: string;
+  brands: BrandGroup[];
+};
+
+type BrandGroup = {
+  brandId: string;
+  brandName: string;
+  pools: PoolSummary[];
+};
+
+function groupByCountry(pools: PoolSummary[]): CountryGroup[] {
+  const countries = new Map<
+    string,
+    { countryId: string; countryName: string; countryFlag: string; brands: Map<string, BrandGroup> }
+  >();
   for (const p of pools) {
-    if (!m.has(p.brandId)) m.set(p.brandId, { brandId: p.brandId, brandName: p.brandName, items: [] });
-    m.get(p.brandId)!.items.push(p);
+    if (!countries.has(p.countryId)) {
+      countries.set(p.countryId, {
+        countryId: p.countryId,
+        countryName: p.countryName,
+        countryFlag: p.countryFlag,
+        brands: new Map(),
+      });
+    }
+    const c = countries.get(p.countryId)!;
+    if (!c.brands.has(p.brandId)) {
+      c.brands.set(p.brandId, { brandId: p.brandId, brandName: p.brandName, pools: [] });
+    }
+    c.brands.get(p.brandId)!.pools.push(p);
   }
-  // Sort within each brand: country alpha → type → value
-  for (const g of m.values()) {
-    g.items.sort((a, b) => {
-      if (a.countryName !== b.countryName) return a.countryName.localeCompare(b.countryName);
-      if (a.type !== b.type) return a.type.localeCompare(b.type);
-      return a.value - b.value;
-    });
+  // Sort tiers within each brand: compensation tiers ascending, then recovery
+  for (const c of countries.values()) {
+    for (const b of c.brands.values()) {
+      b.pools.sort((a, x) => {
+        if (a.type !== x.type) return a.type === 'CUSTOMER_COMPENSATION' ? -1 : 1;
+        return a.value - x.value;
+      });
+    }
   }
-  return Array.from(m.values()).sort((a, b) => a.brandName.localeCompare(b.brandName));
+  return Array.from(countries.values())
+    .map((c) => ({
+      countryId: c.countryId,
+      countryName: c.countryName,
+      countryFlag: c.countryFlag,
+      brands: Array.from(c.brands.values()).sort((a, b) =>
+        a.brandName.localeCompare(b.brandName),
+      ),
+    }))
+    .sort((a, b) => a.countryName.localeCompare(b.countryName));
 }
 
-function BrandSection({
-  group,
-  locale,
-}: {
-  group: { brandId: string; brandName: string; items: PoolSummary[] };
-  locale: string;
-}) {
-  const totalAvailable = group.items.reduce((s, p) => s + p.available, 0);
-  const lowCount = group.items.filter((p) => p.available <= 3).length;
+function CountrySection({ group, locale }: { group: CountryGroup; locale: string }) {
+  const totalAvailable = group.brands.reduce(
+    (s, b) => s + b.pools.reduce((sb, p) => sb + p.available, 0),
+    0,
+  );
+  const lowBrands = group.brands.filter((b) =>
+    b.pools.some((p) => p.available <= 3),
+  ).length;
+
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border bg-surface-subtle/40 px-5 py-3">
+    <section>
+      <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2 px-1">
         <div className="flex items-baseline gap-3">
-          <span className="text-base font-semibold tracking-tight text-heading">
-            {group.brandName}
+          <span className="text-2xl leading-none" aria-hidden>
+            {group.countryFlag || '🌐'}
           </span>
+          <h3 className="text-lg font-semibold tracking-tight text-heading">
+            {group.countryName}
+          </h3>
           <span className="text-xs text-muted-foreground">
-            {group.items.length} pool{group.items.length === 1 ? '' : 's'}
+            {group.brands.length} brand{group.brands.length === 1 ? '' : 's'}
           </span>
         </div>
         <div className="flex items-center gap-3 text-xs">
@@ -271,107 +319,145 @@ function BrandSection({
             </span>{' '}
             available
           </span>
-          {lowCount > 0 && (
+          {lowBrands > 0 && (
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 font-medium text-amber-600 dark:text-amber-400">
               <AlertTriangle className="h-3 w-3" />
-              {lowCount} low
+              {lowBrands} brand{lowBrands === 1 ? '' : 's'} low
             </span>
           )}
         </div>
-      </div>
-      <ul className="divide-y divide-border/60">
-        {group.items.map((p) => (
-          <PoolRow key={p.configId} pool={p} locale={locale} />
+      </header>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {group.brands.map((b) => (
+          <BrandCard key={b.brandId} brand={b} locale={locale} />
         ))}
-      </ul>
-    </div>
+      </div>
+    </section>
   );
 }
 
-function PoolRow({ pool, locale }: { pool: PoolSummary; locale: string }) {
-  const out = pool.available === 0;
-  const low = !out && pool.available <= 3;
-  const isRecovery = pool.type === 'SERVICE_RECOVERY';
-  const stockPct = pool.total === 0 ? 0 : Math.min(100, (pool.available / pool.total) * 100);
+function BrandCard({ brand, locale }: { brand: BrandGroup; locale: string }) {
+  const compensation = brand.pools.filter((p) => p.type === 'CUSTOMER_COMPENSATION');
+  const recovery = brand.pools.find((p) => p.type === 'SERVICE_RECOVERY');
+  const totalAvailable = brand.pools.reduce((s, p) => s + p.available, 0);
+  const anyLow = brand.pools.some((p) => p.available > 0 && p.available <= 3);
+  const allOut = brand.pools.every((p) => p.available === 0);
 
   return (
-    <li>
-      <Link
-        href={`/${locale}/promo/pools/${pool.configId}`}
-        className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3 text-sm transition hover:bg-surface-subtle/40 sm:flex-nowrap"
-      >
-        {/* Country (flag + name) */}
-        <div className="flex w-full items-center gap-2 sm:w-44">
-          <span className="text-base leading-none" aria-hidden>
-            {pool.countryFlag || '🌐'}
-          </span>
-          <span className="truncate text-heading">{pool.countryName}</span>
-        </div>
-
-        {/* Type chip */}
-        <div className="flex-none">
-          <TypeChip type={pool.type} />
-        </div>
-
-        {/* Value */}
-        <div className="flex-none font-mono text-base font-semibold tabular-nums text-heading sm:w-32">
-          {formatPromoValue(pool.type, pool.value, pool.currency)}
-        </div>
-
-        {/* Stock bar (sparkline-style) */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between text-xs">
-            <span className="text-muted-foreground">Available</span>
-            <span className="font-mono tabular-nums text-heading">
-              {pool.available}
-              <span className="text-muted-foreground"> / {pool.total || '—'}</span>
-            </span>
-          </div>
-          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted/70">
-            <div
-              className={cn(
-                'h-full rounded-full transition-all',
-                out ? 'bg-red-500/80' : low ? 'bg-amber-500/80' : 'bg-emerald-500/80',
-              )}
-              style={{ width: `${Math.max(2, stockPct)}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Status pill */}
-        <div className="flex w-full flex-none items-center justify-end gap-2 sm:w-44">
-          {out ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400">
-              Out of stock
-            </span>
-          ) : low ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-              Low · {pool.available} left
-            </span>
-          ) : (
-            <span className="text-xs text-muted-foreground">
-              {pool.allocated} allocated
-              {isRecovery ? '' : pool.used ? ` · ${pool.used} used` : ''}
-            </span>
-          )}
-        </div>
-      </Link>
-    </li>
-  );
-}
-
-function TypeChip({ type }: { type: PoolSummary['type'] }) {
-  const recovery = type === 'SERVICE_RECOVERY';
-  return (
-    <span
+    <article
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-        recovery
-          ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-          : 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
+        'group relative flex flex-col gap-3 rounded-xl border border-border bg-card p-4 transition',
+        'hover:border-blue-500/40 hover:shadow-md',
       )}
     >
-      {promoTypeShortLabel(type)}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="truncate text-base font-semibold tracking-tight text-heading">
+            {brand.brandName}
+          </h4>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            <span className="font-semibold text-heading tabular-nums">
+              {totalAvailable.toLocaleString()}
+            </span>{' '}
+            codes available
+          </p>
+        </div>
+        <BrandStockChip allOut={allOut} anyLow={anyLow} />
+      </div>
+
+      {compensation.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Gift className="h-3 w-3" />
+            Customer compensation
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {compensation.map((p) => (
+              <PoolTierTile key={p.configId} pool={p} locale={locale} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {recovery && (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Shield className="h-3 w-3" />
+            Service recovery
+          </div>
+          <PoolTierTile pool={recovery} locale={locale} variant="recovery" />
+        </div>
+      )}
+
+      <div className="mt-1 flex items-center justify-end text-xs text-muted-foreground opacity-0 transition group-hover:opacity-100">
+        Click any tier to manage
+        <ChevronRight className="ml-1 h-3 w-3" />
+      </div>
+    </article>
+  );
+}
+
+function BrandStockChip({ allOut, anyLow }: { allOut: boolean; anyLow: boolean }) {
+  if (allOut)
+    return (
+      <span className="inline-flex flex-none items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400">
+        Out
+      </span>
+    );
+  if (anyLow)
+    return (
+      <span className="inline-flex flex-none items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+        <AlertTriangle className="h-3 w-3" />
+        Low
+      </span>
+    );
+  return (
+    <span className="inline-flex flex-none items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      Healthy
     </span>
+  );
+}
+
+/**
+ * Single tier inside a BrandCard. Click → pool detail page. Shows the
+ * tier's value (or "100% off") prominently and a small `available/total`
+ * pill below; disabled when the tier is out of stock.
+ */
+function PoolTierTile({
+  pool,
+  locale,
+  variant = 'compensation',
+}: {
+  pool: PoolSummary;
+  locale: string;
+  variant?: 'compensation' | 'recovery';
+}) {
+  const out = pool.available === 0;
+  const low = !out && pool.available <= 3;
+  const stockColor = out
+    ? 'text-red-600 dark:text-red-400'
+    : low
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-muted-foreground';
+
+  const baseClasses = cn(
+    'flex flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition',
+    'hover:border-blue-500/40 hover:bg-blue-500/[0.04] focus:outline-none focus:ring-2 focus:ring-blue-500/40',
+    out && 'opacity-60',
+    variant === 'recovery' &&
+      'border-emerald-500/30 bg-emerald-500/[0.04] hover:border-emerald-500/60 hover:bg-emerald-500/[0.08]',
+    variant === 'compensation' && 'border-border bg-surface-subtle/40',
+  );
+
+  return (
+    <Link href={`/${locale}/promo/pools/${pool.configId}`} className={baseClasses}>
+      <span className="font-mono text-sm font-semibold tabular-nums text-heading">
+        {formatPromoValue(pool.type, pool.value, pool.currency)}
+      </span>
+      <span className={cn('text-[10px] font-medium tabular-nums', stockColor)}>
+        {out ? 'Out of stock' : `${pool.available} / ${pool.total || '—'}`}
+      </span>
+    </Link>
   );
 }
