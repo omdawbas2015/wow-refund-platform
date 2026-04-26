@@ -14,9 +14,10 @@ interface TopBarProps {
   userName: string;
   userEmail: string;
   currentLocale: string;
+  darkModeEnabled?: boolean;
 }
 
-export function TopBar({ userName, userEmail, currentLocale }: TopBarProps) {
+export function TopBar({ userName, userEmail, currentLocale, darkModeEnabled = true }: TopBarProps) {
   const t = useTranslations('nav');
   const router = useRouter();
   const pathname = usePathname();
@@ -70,14 +71,16 @@ export function TopBar({ userName, userEmail, currentLocale }: TopBarProps) {
           <Globe className="h-4 w-4" />
           <span className="ms-1 uppercase">{currentLocale === 'en' ? 'AR' : 'EN'}</span>
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          aria-label="Toggle theme"
-        >
-          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </Button>
+        {darkModeEnabled ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"
