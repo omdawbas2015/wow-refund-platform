@@ -298,10 +298,15 @@ export async function decideApprovalBatchAction(
         });
       }
 
-      // Update batch counters and status
-      const decidedTotal = approved + rejected;
-      const totalCases = batch.cases.length;
-      const allDecided = decidedTotal >= totalCases;
+      // Count remaining undecided cases AFTER this round so a batch
+      // completed across multiple partial submissions correctly transitions
+      // to COMPLETED. Comparing decisions made in this single invocation
+      // against the batch total miscounts when an earlier round already
+      // decided some cases.
+      const remainingPending = await tx.refundCase.count({
+        where: { approvalBatchId: batch.id, status: 'PENDING_APPROVAL' },
+      });
+      const allDecided = remainingPending === 0;
       await tx.approvalBatch.update({
         where: { id: batch.id },
         data: {
