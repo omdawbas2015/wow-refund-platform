@@ -108,3 +108,34 @@ export const deleteSettingSchema = z.object({
   key: nonEmptyString.max(96),
 });
 export type DeleteSettingInput = z.infer<typeof deleteSettingSchema>;
+
+// ── SLA rules ─────────────────────────────────────────────────────────────
+
+export const upsertSlaRuleSchema = z
+  .object({
+    id: nonEmptyString.optional(),
+    name: nonEmptyString.max(96),
+    countryId: z.string().trim().optional().or(z.literal('')),
+    brandId: z.string().trim().optional().or(z.literal('')),
+    rootCauseId: z.string().trim().optional().or(z.literal('')),
+    thresholdHours: z.coerce.number().int().min(1).max(24 * 365),
+    warningHours: z.coerce.number().int().min(0).max(24 * 365).optional(),
+    escalateToRole: z.string().trim().max(32).optional().or(z.literal('')),
+    isActive: z.coerce.boolean().optional(),
+  })
+  .refine(
+    (v) => v.warningHours === undefined || v.warningHours < v.thresholdHours,
+    { message: 'warningHours must be less than thresholdHours', path: ['warningHours'] },
+  );
+export type UpsertSlaRuleInput = z.infer<typeof upsertSlaRuleSchema>;
+
+export const deleteSlaRuleSchema = z.object({
+  id: nonEmptyString,
+});
+export type DeleteSlaRuleInput = z.infer<typeof deleteSlaRuleSchema>;
+
+export const toggleSlaRuleActiveSchema = z.object({
+  id: nonEmptyString,
+  isActive: z.coerce.boolean(),
+});
+export type ToggleSlaRuleActiveInput = z.infer<typeof toggleSlaRuleActiveSchema>;

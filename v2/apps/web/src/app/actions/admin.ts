@@ -13,6 +13,9 @@ import {
   toggleFeatureFlagSchema,
   upsertSettingSchema,
   deleteSettingSchema,
+  upsertSlaRuleSchema,
+  deleteSlaRuleSchema,
+  toggleSlaRuleActiveSchema,
   type UpdateCountryInput,
   type UpsertBrandInput,
   type UpsertPaymentMethodInput,
@@ -22,6 +25,9 @@ import {
   type ToggleFeatureFlagInput,
   type UpsertSettingInput,
   type DeleteSettingInput,
+  type UpsertSlaRuleInput,
+  type DeleteSlaRuleInput,
+  type ToggleSlaRuleActiveInput,
 } from '@wow/validators';
 import { auth } from '@/auth';
 import { dispatchEmail } from '@/lib/email/dispatcher';
@@ -620,6 +626,117 @@ export async function deleteSettingAction(
       before: existing,
     });
     revalidatePath('/admin/settings');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ── SLA rules ─────────────────────────────────────────────────────────────
+
+export async function upsertSlaRuleAction(
+  input: UpsertSlaRuleInput,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const me = await requireAdmin();
+    const parsed = upsertSlaRuleSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    }
+    const v = parsed.data;
+    const data = {
+      name: v.name,
+      countryId: v.countryId || null,
+      brandId: v.brandId || null,
+      rootCauseId: v.rootCauseId || null,
+      thresholdHours: v.thresholdHours,
+      warningHours: v.warningHours ?? null,
+      escalateToRole: v.escalateToRole || null,
+      isActive: v.isActive ?? true,
+    };
+
+    if (v.id) {
+      const before = await prisma.slaRule.findUnique({ where: { id: v.id } });
+      if (!before) return { ok: false, error: 'SLA rule not found' };
+      const after = await prisma.slaRule.update({ where: { id: v.id }, data });
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'admin.sla_rule.updated',
+        entityType: 'SLA_RULE',
+        entityId: v.id,
+        before,
+        after,
+      });
+      revalidatePath('/admin/sla-rules');
+      return { ok: true, data: { id: v.id } };
+    }
+
+    const created = await prisma.slaRule.create({ data });
+    await audit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: 'admin.sla_rule.created',
+      entityType: 'SLA_RULE',
+      entityId: created.id,
+      after: created,
+    });
+    revalidatePath('/admin/sla-rules');
+    return { ok: true, data: { id: created.id } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function deleteSlaRuleAction(
+  input: DeleteSlaRuleInput,
+): Promise<ActionResult> {
+  try {
+    const me = await requireAdmin();
+    const parsed = deleteSlaRuleSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: 'Invalid input' };
+    const existing = await prisma.slaRule.findUnique({ where: { id: parsed.data.id } });
+    if (!existing) return { ok: false, error: 'SLA rule not found' };
+    await prisma.slaRule.delete({ where: { id: parsed.data.id } });
+    await audit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: 'admin.sla_rule.deleted',
+      entityType: 'SLA_RULE',
+      entityId: parsed.data.id,
+      before: existing,
+    });
+    revalidatePath('/admin/sla-rules');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function toggleSlaRuleActiveAction(
+  input: ToggleSlaRuleActiveInput,
+): Promise<ActionResult> {
+  try {
+    const me = await requireAdmin();
+    const parsed = toggleSlaRuleActiveSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: 'Invalid input' };
+    const before = await prisma.slaRule.findUnique({ where: { id: parsed.data.id } });
+    if (!before) return { ok: false, error: 'SLA rule not found' };
+    if (before.isActive === parsed.data.isActive) return { ok: true };
+    const after = await prisma.slaRule.update({
+      where: { id: parsed.data.id },
+      data: { isActive: parsed.data.isActive },
+    });
+    await audit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: parsed.data.isActive ? 'admin.sla_rule.activated' : 'admin.sla_rule.deactivated',
+      entityType: 'SLA_RULE',
+      entityId: parsed.data.id,
+      before: { isActive: before.isActive },
+      after: { isActive: after.isActive },
+    });
+    revalidatePath('/admin/sla-rules');
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link } from '@/i18n/routing';
 import { auth } from '@/auth';
-import { Globe, Tag, CreditCard, AlertTriangle, Mail, Users, Settings, ShieldAlert, ChevronRight } from 'lucide-react';
+import { Globe, Tag, CreditCard, AlertTriangle, Mail, Users, Settings, ShieldAlert, Timer, ChevronRight } from 'lucide-react';
 
 const SECTIONS = [
   { href: '/admin/countries', icon: Globe, title: 'Countries', desc: 'Manager email, cutoff time, sort order' },
@@ -14,6 +14,7 @@ const SECTIONS = [
   { href: '/admin/pending-approvals', icon: Users, title: 'Pending signups', desc: 'Approve or reject new signups' },
   { href: '/admin/settings', icon: Settings, title: 'Settings', desc: 'Feature flags and system settings' },
   { href: '/admin/fraud-signals', icon: ShieldAlert, title: 'Fraud signals', desc: 'Heuristic alerts and detection sweeps' },
+  { href: '/admin/sla-rules', icon: Timer, title: 'SLA rules', desc: 'Per-country / brand / cause SLA thresholds' },
 ];
 
 export default async function AdminPage() {
