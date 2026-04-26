@@ -49,11 +49,21 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
   }
 
-  const result = await runSlaBreachSweep(
-    { id: null, email: 'cron@system', label: 'cron' },
-    'cron',
-  );
-  return NextResponse.json({ ok: true, ...result });
+  // Wrap the sweep in a try/catch so a thrown DB error or transient failure
+  // returns a structured `{ ok: false, error }` payload — the cron scheduler
+  // logs that, distinguishes it from auth/config errors (which use 401/503),
+  // and we don't accidentally leak a stack trace via Next's default 500 page.
+  try {
+    const result = await runSlaBreachSweep(
+      { id: null, email: 'cron@system', label: 'cron' },
+      'cron',
+    );
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[cron/sla-breach-scan] sweep failed:', message);
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
