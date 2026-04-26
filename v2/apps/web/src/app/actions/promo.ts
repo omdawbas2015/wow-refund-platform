@@ -178,15 +178,21 @@ export async function uploadPromoCodesAction(
     // PromoCode.code is @unique — Prisma's SQLite createMany does not support
     // skipDuplicates in our installed Prisma version. To keep the upload
     // idempotent we pre-filter existing codes (cheap thanks to the unique
-    // index), then createMany the survivors in chunks.
-    const existing = await prisma.promoCode.findMany({
-      where: { code: { in: codes } },
-      select: { code: true },
-    });
-    const existingSet = new Set(existing.map((e) => e.code));
+    // index), then createMany the survivors in chunks. BOTH the findMany IN
+    // clause and the createMany payload must be chunked to stay within
+    // SQLite's SQLITE_MAX_VARIABLE_NUMBER (default 999 on older builds).
+    const CHUNK = 500;
+    const existingSet = new Set<string>();
+    for (let i = 0; i < codes.length; i += CHUNK) {
+      const slice = codes.slice(i, i + CHUNK);
+      const rows = await prisma.promoCode.findMany({
+        where: { code: { in: slice } },
+        select: { code: true },
+      });
+      for (const r of rows) existingSet.add(r.code);
+    }
     const fresh = codes.filter((c) => !existingSet.has(c));
 
-    const CHUNK = 500;
     let created = 0;
     for (let i = 0; i < fresh.length; i += CHUNK) {
       const slice = fresh.slice(i, i + CHUNK);
@@ -332,12 +338,25 @@ export async function markPromoUsedAction(
       include: { code: true },
     });
     if (!allocation) return { ok: false, error: 'Allocation not found' };
-    if (allocation.code.status === 'USED') return { ok: false, error: 'Already marked used' };
+    // ALLOCATED → USED is the only valid state transition here; reject all
+    // others (USED already, EXPIRED, DISABLED, AVAILABLE — which would mean
+    // the code was never allocated in the first place).
+    if (allocation.code.status !== 'ALLOCATED') {
+      return {
+        ok: false,
+        error: `Code is ${allocation.code.status}, expected ALLOCATED`,
+      };
+    }
 
-    await prisma.promoCode.update({
-      where: { id: allocation.codeId },
+    // Compare-and-set: only flip to USED if status is still ALLOCATED, so a
+    // concurrent EXPIRED/DISABLED change cannot be silently overwritten.
+    const flipped = await prisma.promoCode.updateMany({
+      where: { id: allocation.codeId, status: 'ALLOCATED' },
       data: { status: 'USED' },
     });
+    if (flipped.count !== 1) {
+      return { ok: false, error: 'Code state changed concurrently; refusing to overwrite' };
+    }
 
     await audit({
       actorId: me.id,

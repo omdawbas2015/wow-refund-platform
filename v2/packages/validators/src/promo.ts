@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { nonEmptyString } from './common';
+import { nonEmptyString, emailSchema } from './common';
 
 export const createPromoConfigSchema = z.object({
   brandId: nonEmptyString,
@@ -30,7 +30,7 @@ export type UploadPromoCodesInput = z.infer<typeof uploadPromoCodesSchema>;
 
 export const allocatePromoSchema = z.object({
   configId: nonEmptyString,
-  customerEmail: z.string().trim().email(),
+  customerEmail: emailSchema,
   customerName: z.string().trim().max(120).optional().or(z.literal('')),
   caseId: nonEmptyString.optional(),
   reason: z.string().trim().max(500).optional().or(z.literal('')),
