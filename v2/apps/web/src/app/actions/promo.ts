@@ -20,6 +20,8 @@ const ALLOCATE_RECOVERY_ROLES = new Set(['ADMIN', 'MANAGER', 'AGENT', 'TEAM_LEAD
 const UPLOAD_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']);
 /** Who may read customers' prior promo history (fraud signal preview). */
 const HISTORY_ROLES = new Set(['ADMIN', 'MANAGER', 'AGENT', 'TEAM_LEAD']);
+/** Who may delete AVAILABLE codes, restore allocated codes, and export CSV. */
+const POOL_ADMIN_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']);
 
 /**
  * Window (days) used to detect repeat-customer fraud signals.
@@ -426,4 +428,206 @@ export async function loadCustomerPromoHistoryAction(
       createdAt: a.createdAt,
     })),
   };
+}
+
+/**
+ * Permanently delete a code. Only safe for codes in AVAILABLE status — we
+ * never delete codes that have already been allocated (would break audit
+ * history). Uses `deleteMany` with a status guard so a concurrent allocation
+ * can't slip through a TOCTOU gap.
+ */
+export async function deletePromoCodeAction(
+  codeId: string,
+): Promise<ActionResult<{ poolId: string }>> {
+  try {
+    const user = await requireSession();
+    if (!POOL_ADMIN_ROLES.has(user.role ?? '')) {
+      return { ok: false, error: 'You do not have permission to delete codes.' };
+    }
+    const existing = await prisma.promoCode.findUnique({
+      where: { id: codeId },
+      select: { configId: true, status: true },
+    });
+    if (!existing) return { ok: false, error: 'Code not found.' };
+    if (existing.status !== 'AVAILABLE') {
+      return { ok: false, error: 'Only AVAILABLE codes can be deleted.' };
+    }
+    const result = await prisma.promoCode.deleteMany({
+      where: { id: codeId, status: 'AVAILABLE' },
+    });
+    if (result.count === 0) {
+      return { ok: false, error: 'Code was just allocated — cannot delete.' };
+    }
+    revalidatePath('/promo');
+    revalidatePath(`/promo/pools/${existing.configId}`);
+    return { ok: true, data: { poolId: existing.configId } };
+  } catch (e) {
+    console.error('[deletePromoCodeAction]', e);
+    return { ok: false, error: 'Failed to delete code.' };
+  }
+}
+
+/**
+ * Restore an ALLOCATED code back to AVAILABLE. Use cases: an agent issued the
+ * wrong code, or a customer was mistakenly compensated twice. Deletes the
+ * linked PromoAllocation rows so the code is cleanly reusable and drops the
+ * audit claim — we keep an activity log entry on the side so the admin action
+ * is traceable.
+ *
+ * Refuses to restore codes that have already been used (USED status) to keep
+ * accounting clean.
+ */
+export async function restorePromoCodeAction(
+  codeId: string,
+): Promise<ActionResult<{ poolId: string }>> {
+  try {
+    const user = await requireSession();
+    if (!POOL_ADMIN_ROLES.has(user.role ?? '')) {
+      return { ok: false, error: 'You do not have permission to restore codes.' };
+    }
+    const poolId = await prisma.$transaction(async (tx) => {
+      const existing = await tx.promoCode.findUnique({
+        where: { id: codeId },
+        select: { id: true, configId: true, status: true },
+      });
+      if (!existing) throw new Error('NOT_FOUND');
+      if (existing.status !== 'ALLOCATED') {
+        throw new Error('NOT_ALLOCATED');
+      }
+      // Flip ALLOCATED → AVAILABLE with a status guard (TOCTOU safe).
+      const flip = await tx.promoCode.updateMany({
+        where: { id: codeId, status: 'ALLOCATED' },
+        data: { status: 'AVAILABLE' },
+      });
+      if (flip.count === 0) throw new Error('RACE');
+      // Drop the allocation rows so the code is cleanly reusable. The
+      // activity_log row below preserves the audit trail.
+      await tx.promoAllocation.deleteMany({ where: { codeId } });
+      await tx.activityLog.create({
+        data: {
+          actorId: user.id,
+          actorLabel: user.name,
+          kind: 'promo.code_restored',
+          message: `Restored promo code (id=${codeId}) to AVAILABLE`,
+        },
+      });
+      return existing.configId;
+    });
+    revalidatePath('/promo');
+    revalidatePath(`/promo/pools/${poolId}`);
+    return { ok: true, data: { poolId } };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '';
+    if (msg === 'NOT_FOUND') return { ok: false, error: 'Code not found.' };
+    if (msg === 'NOT_ALLOCATED') {
+      return { ok: false, error: 'Only ALLOCATED codes can be restored.' };
+    }
+    if (msg === 'RACE') return { ok: false, error: 'Code state changed; refresh and retry.' };
+    console.error('[restorePromoCodeAction]', e);
+    return { ok: false, error: 'Failed to restore code.' };
+  }
+}
+
+/**
+ * CSV export of promo allocations for a date range. Respects the same
+ * RBAC scope as `listPromoAllocationsAction` — ADMIN/MANAGER/OPERATIONS only
+ * for the admin-level full export (anyone else is rejected). Returns a UTF-8
+ * CSV string the client writes to disk via a Blob download.
+ */
+export async function exportPromoAllocationsCsvAction(input: {
+  fromDate?: string;
+  toDate?: string;
+  type?: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY' | 'ALL';
+}): Promise<ActionResult<{ csv: string; filename: string; rowCount: number }>> {
+  try {
+    const user = await requireSession();
+    if (!POOL_ADMIN_ROLES.has(user.role ?? '')) {
+      return { ok: false, error: 'You do not have permission to export.' };
+    }
+    const where: Prisma.PromoAllocationWhereInput = {};
+    if (input.fromDate || input.toDate) {
+      const createdAt: { gte?: Date; lte?: Date } = {};
+      if (input.fromDate) createdAt.gte = new Date(input.fromDate);
+      if (input.toDate) {
+        const end = new Date(input.toDate);
+        end.setHours(23, 59, 59, 999);
+        createdAt.lte = end;
+      }
+      where.createdAt = createdAt;
+    }
+    if (input.type === 'CUSTOMER_COMPENSATION' || input.type === 'SERVICE_RECOVERY') {
+      where.code = { config: { type: input.type } };
+    }
+    const rows = await prisma.promoAllocation.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 10000,
+      include: {
+        code: {
+          include: {
+            config: {
+              include: { brand: true, country: { include: { registry: true } } },
+            },
+          },
+        },
+        requestedBy: { select: { name: true, email: true } },
+        case: { select: { caseNumber: true, externalCaseNumber: true } },
+      },
+    });
+
+    const headers = [
+      'Allocated At',
+      'Type',
+      'Code',
+      'Value',
+      'Currency',
+      'Country',
+      'Brand',
+      'Customer Name',
+      'Customer Email',
+      'Case #',
+      'CRM Case #',
+      'Reason',
+      'Allocated By',
+      'Agent Email',
+      'Emailed At',
+    ];
+    const csvEscape = (v: unknown): string => {
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const lines = [headers.map(csvEscape).join(',')];
+    for (const a of rows) {
+      lines.push(
+        [
+          a.createdAt.toISOString(),
+          a.code.config.type === 'CUSTOMER_COMPENSATION' ? 'Compensation' : 'Service recovery',
+          a.code.code,
+          a.code.config.value,
+          a.code.config.currency,
+          a.code.config.country.registry?.nameEn ?? a.code.config.country.registryCode,
+          a.code.config.brand.name,
+          a.customerName ?? '',
+          a.customerEmail,
+          a.case?.caseNumber ?? '',
+          a.case?.externalCaseNumber ?? '',
+          a.reason ?? '',
+          a.requestedBy?.name ?? '',
+          a.requestedBy?.email ?? '',
+          a.emailedAt ? a.emailedAt.toISOString() : '',
+        ]
+          .map(csvEscape)
+          .join(','),
+      );
+    }
+    const csv = lines.join('\r\n');
+    const today = new Date().toISOString().slice(0, 10);
+    const filename = `promo-allocations-${today}.csv`;
+    return { ok: true, data: { csv, filename, rowCount: rows.length } };
+  } catch (e) {
+    console.error('[exportPromoAllocationsCsvAction]', e);
+    return { ok: false, error: 'Failed to export allocations.' };
+  }
 }

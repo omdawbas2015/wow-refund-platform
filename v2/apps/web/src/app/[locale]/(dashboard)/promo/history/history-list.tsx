@@ -14,16 +14,9 @@ import {
 } from '@/components/ui/select';
 import { Search, Gift, Shield, Mail, MailMinus, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatPromoValue } from '@/lib/promo/format';
 
 type Item = Awaited<ReturnType<typeof listPromoAllocationsAction>>['items'][number];
-
-function formatMoney(amount: number, currency: string) {
-  try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency}`;
-  }
-}
 
 function formatDateTime(d: Date | string) {
   const date = typeof d === 'string' ? new Date(d) : d;
@@ -181,7 +174,13 @@ function AllocationCard({ item }: { item: Item }) {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
           <span className="font-mono text-heading">{item.code}</span>
           <span className="text-muted-foreground">·</span>
-          <span className="text-heading font-medium">{formatMoney(item.value, item.currency)}</span>
+          <span className="text-heading font-medium">
+            {formatPromoValue(
+              item.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
+              item.value,
+              item.currency,
+            )}
+          </span>
           <span className="text-muted-foreground">·</span>
           <span className="text-muted-foreground">
             {item.brand} <span className="opacity-60">· {item.country}</span>
