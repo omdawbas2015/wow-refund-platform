@@ -36,6 +36,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       where: {
         status: 'REFUNDED',
         refundedAt: { gte: range.from, lte: range.to },
+        // Match the case counts above and the refunds report — totals must
+        // not include soft-deleted cases.
+        case: { deletedAt: null },
       },
       _sum: { amount: true },
     }),

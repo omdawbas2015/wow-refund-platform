@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Link } from '@/i18n/routing';
-import { Plus, FileText, Search } from 'lucide-react';
+import { Plus, FileText, Search, Download } from 'lucide-react';
 import { auth } from '@/auth';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { caseStatusVariant, caseStatusLabel } from '@/lib/cases/case-status-display';
@@ -99,12 +99,29 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
             Create, track, and manage customer refund cases.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/cases/new">
-            <Plus className="h-4 w-4" />
-            New case
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline">
+            <a
+              href={(() => {
+                const p = new URLSearchParams();
+                if (q) p.set('q', q);
+                if (status !== 'ALL') p.set('status', status);
+                const qs = p.toString();
+                return `/api/export/cases${qs ? `?${qs}` : ''}`;
+              })()}
+              download
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </a>
+          </Button>
+          <Button asChild>
+            <Link href="/cases/new">
+              <Plus className="h-4 w-4" />
+              New case
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

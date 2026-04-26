@@ -22,6 +22,9 @@ export default async function RefundsReportPage({ searchParams }: PageProps) {
     where: {
       status: 'REFUNDED',
       refundedAt: { gte: range.from, lte: range.to },
+      // Mirror the cases-list filter so totals here match cases counts and
+      // the .xlsx export (which also filters soft-deleted cases out).
+      case: { deletedAt: null },
     },
     select: {
       amount: true,
@@ -57,12 +60,23 @@ export default async function RefundsReportPage({ searchParams }: PageProps) {
       >
         ← Reports
       </Link>
-      <h1 className="mt-2 text-display-md font-normal tracking-tight text-heading">
-        Refunded amount by payment method
-      </h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Refunds completed between {range.fromIso} and {range.toIso}.
-      </p>
+      <div className="mt-2 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-display-md font-normal tracking-tight text-heading">
+            Refunded amount by payment method
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Refunds completed between {range.fromIso} and {range.toIso}.
+          </p>
+        </div>
+        <a
+          href={`/api/export/refunds?from=${range.fromIso}&to=${range.toIso}`}
+          download
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium hover:bg-surface-subtle"
+        >
+          Export .xlsx
+        </a>
+      </div>
 
       <Card className="mt-6">
         <CardHeader>
