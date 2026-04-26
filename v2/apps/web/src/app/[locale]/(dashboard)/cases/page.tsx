@@ -9,6 +9,7 @@ import { Plus, FileText, Search, Download } from 'lucide-react';
 import { auth } from '@/auth';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { caseStatusVariant, caseStatusLabel } from '@/lib/cases/case-status-display';
+import { SlaPill } from '@/components/cases/sla-pill';
 
 const STATUS_TABS: Array<{ key: 'ALL' | CaseStatus; label: string }> = [
   { key: 'ALL', label: 'All' },
@@ -26,8 +27,17 @@ const PAGE_SIZE = 25;
 interface SearchParams {
   q?: string;
   status?: string;
+  sla?: string;
   page?: string;
 }
+
+const SLA_TABS: Array<{ key: 'all' | 'breached' | 'warning' | 'on_track' | 'closed'; label: string }> = [
+  { key: 'all', label: 'Any SLA' },
+  { key: 'breached', label: 'Breached' },
+  { key: 'warning', label: 'At risk' },
+  { key: 'on_track', label: 'On track' },
+  { key: 'closed', label: 'Closed' },
+];
 
 export default async function CasesPage(props: { searchParams: Promise<SearchParams> }) {
   const sp = await props.searchParams;
@@ -38,11 +48,43 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
   const q = (sp.q ?? '').trim();
   const statusParam = (sp.status ?? '').toUpperCase();
   const status = STATUS_TABS.find((t) => t.key === statusParam)?.key ?? 'ALL';
+  const slaParam = (sp.sla ?? '').toLowerCase();
+  const sla = SLA_TABS.find((t) => t.key === slaParam)?.key ?? 'all';
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
+
+  // Translate SLA filter into a createdAt window + status constraint. The
+  // thresholds match `lib/cases/sla.ts`: warning at >=3d, breached at >=6d.
+  const now = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const TERMINAL: CaseStatus[] = ['REFUNDED', 'REJECTED', 'CANCELLED'];
+  const slaWhere = (() => {
+    if (sla === 'all') return {};
+    if (sla === 'closed') return { status: { in: TERMINAL } };
+    // For tier filters we exclude terminal statuses (those bypass SLA).
+    const notTerminal = { status: { notIn: TERMINAL } };
+    if (sla === 'breached') {
+      return { ...notTerminal, createdAt: { lte: new Date(now.getTime() - 6 * dayMs) } };
+    }
+    if (sla === 'warning') {
+      return {
+        ...notTerminal,
+        createdAt: {
+          lte: new Date(now.getTime() - 3 * dayMs),
+          gt: new Date(now.getTime() - 6 * dayMs),
+        },
+      };
+    }
+    // on_track
+    return {
+      ...notTerminal,
+      createdAt: { gt: new Date(now.getTime() - 3 * dayMs) },
+    };
+  })();
 
   const where = {
     deletedAt: null,
     ...(status !== 'ALL' ? { status: status as CaseStatus } : {}),
+    ...slaWhere,
     ...(q
       ? {
           OR: [
@@ -85,7 +127,17 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (status !== 'ALL') params.set('status', status);
+    if (sla !== 'all') params.set('sla', sla);
     if (p > 1) params.set('page', String(p));
+    const qs = params.toString();
+    return `/cases${qs ? `?${qs}` : ''}`;
+  }
+
+  function slaUrl(key: typeof SLA_TABS[number]['key']) {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (status !== 'ALL') params.set('status', status);
+    if (key !== 'all') params.set('sla', key);
     const qs = params.toString();
     return `/cases${qs ? `?${qs}` : ''}`;
   }
@@ -137,11 +189,32 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
             />
           </div>
           {status !== 'ALL' ? <input type="hidden" name="status" value={status} /> : null}
+          {sla !== 'all' ? <input type="hidden" name="sla" value={sla} /> : null}
           <Button type="submit" size="sm" variant="outline">
             Search
           </Button>
         </form>
       </Card>
+
+      {/* SLA tabs */}
+      <div className="mb-3 flex flex-wrap gap-1">
+        {SLA_TABS.map((tab) => {
+          const active = tab.key === sla;
+          return (
+            <Link
+              key={tab.key}
+              href={slaUrl(tab.key)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                active
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-surface-subtle text-muted-foreground hover:bg-surface-subtle/70'
+              }`}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </div>
 
       {/* Status tabs */}
       <div className="mb-4 flex flex-wrap gap-1">
@@ -149,6 +222,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
           const params = new URLSearchParams();
           if (q) params.set('q', q);
           if (tab.key !== 'ALL') params.set('status', tab.key);
+          if (sla !== 'all') params.set('sla', sla);
           const href = `/cases${params.toString() ? `?${params.toString()}` : ''}`;
           const active = tab.key === status;
           return (
@@ -188,6 +262,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
                   <th>Customer</th>
                   <th className="text-end">Amount</th>
                   <th>Status</th>
+                  <th>Age</th>
                   <th>Created</th>
                 </tr>
               </thead>
@@ -214,6 +289,9 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
                     </td>
                     <td className="px-4 py-2.5">
                       <Badge variant={caseStatusVariant(r.status)}>{caseStatusLabel(r.status)}</Badge>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <SlaPill status={r.status} createdAt={r.createdAt} />
                     </td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground tabular">
                       {formatDate(r.createdAt, localePrefix)}
