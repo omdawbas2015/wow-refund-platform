@@ -250,34 +250,65 @@ export async function allocatePromoAction(
     }
 
     // Pick the first AVAILABLE code; flip it to ALLOCATED and create the
-    // allocation in a single transaction so we never double-allocate.
-    const result = await prisma.$transaction(async (tx) => {
-      const code = await tx.promoCode.findFirst({
-        where: { configId, status: 'AVAILABLE' },
-        orderBy: { uploadedAt: 'asc' },
-      });
-      if (!code) return null;
+    // allocation in a single transaction so we never double-allocate. Two
+    // concurrent allocations may pick the same row at READ COMMITTED, in
+    // which case the loser's compare-and-set updateMany returns count=0 —
+    // we retry with the next row instead of returning a misleading
+    // "No available codes" error.
+    const MAX_RETRIES = 5;
+    type AllocOk = { code: string; allocationId: string; expiresAt: Date | null };
+    type AllocOutcome = { kind: 'ok'; value: AllocOk } | { kind: 'empty' } | { kind: 'contention' };
+    let outcome: AllocOutcome = { kind: 'empty' };
+    const seenLoserIds = new Set<string>();
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const stepOutcome = await prisma.$transaction(async (tx): Promise<AllocOutcome> => {
+        const code = await tx.promoCode.findFirst({
+          where: {
+            configId,
+            status: 'AVAILABLE',
+            ...(seenLoserIds.size > 0 ? { id: { notIn: [...seenLoserIds] } } : {}),
+          },
+          orderBy: { uploadedAt: 'asc' },
+        });
+        if (!code) return { kind: 'empty' };
 
-      const updated = await tx.promoCode.updateMany({
-        where: { id: code.id, status: 'AVAILABLE' },
-        data: { status: 'ALLOCATED' },
-      });
-      if (updated.count !== 1) return null;
+        const updated = await tx.promoCode.updateMany({
+          where: { id: code.id, status: 'AVAILABLE' },
+          data: { status: 'ALLOCATED' },
+        });
+        if (updated.count !== 1) {
+          seenLoserIds.add(code.id);
+          return { kind: 'contention' };
+        }
 
-      const allocation = await tx.promoAllocation.create({
-        data: {
-          codeId: code.id,
-          ...(caseId ? { caseId } : {}),
-          customerEmail,
-          customerName: customerName || null,
-          requestedById: me.id,
-          reason: reason || null,
-        },
+        const allocation = await tx.promoAllocation.create({
+          data: {
+            codeId: code.id,
+            ...(caseId ? { caseId } : {}),
+            customerEmail,
+            customerName: customerName || null,
+            requestedById: me.id,
+            reason: reason || null,
+          },
+        });
+        return {
+          kind: 'ok',
+          value: { code: code.code, allocationId: allocation.id, expiresAt: code.expiresAt },
+        };
       });
-      return { code: code.code, allocationId: allocation.id };
-    });
+      outcome = stepOutcome;
+      if (stepOutcome.kind !== 'contention') break;
+    }
 
-    if (!result) return { ok: false, error: 'No available codes in this config' };
+    if (outcome.kind === 'empty') {
+      return { ok: false, error: 'No available codes in this config' };
+    }
+    if (outcome.kind === 'contention') {
+      // Lost CAS races up to MAX_RETRIES; tell ops it's transient, not empty.
+      return { ok: false, error: 'High contention on this config; please retry' };
+    }
+    const result = outcome.value;
 
     if (config.type === 'CUSTOMER_COMPENSATION') {
       try {
@@ -291,7 +322,9 @@ export async function allocatePromoAction(
             promoCode: result.code,
             value: String(config.value),
             currency: config.currency,
-            expiresAt: '',
+            expiresAt: result.expiresAt
+              ? result.expiresAt.toISOString().slice(0, 10)
+              : '',
           },
           context: { type: 'PROMO', id: result.allocationId },
         });
