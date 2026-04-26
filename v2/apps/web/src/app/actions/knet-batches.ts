@@ -252,10 +252,17 @@ export async function ingestKnetArnsAction(
         });
         updated += 1;
       }
+      // Count remaining components that still need an ARN. Comparing only
+      // this round's `updated` against `totalComponents` would leave the
+      // batch stuck at AWAITING_ARNS forever when ARNs are ingested in
+      // multiple partial calls (e.g. finance replies in tranches).
+      const remaining = await tx.refundComponent.count({
+        where: { batchId, arn: null },
+      });
       await tx.knetBatch.update({
         where: { id: batchId },
         data: {
-          status: updated >= batch.totalComponents ? 'ARNS_RECEIVED' : 'AWAITING_ARNS',
+          status: remaining === 0 ? 'ARNS_RECEIVED' : 'AWAITING_ARNS',
           arnsReceived: { increment: updated },
           responseReceivedAt: now,
         },
@@ -317,7 +324,11 @@ export async function verifyKnetArnAction(formData: FormData): Promise<ActionRes
             refundedAt: now,
           }
         : {
+            // Clear the rejected ARN so it can't be mistaken for a valid
+            // refund reference downstream (export, audit, customer email).
+            // Matches the JSDoc contract on this action.
             status: 'FAILED',
+            arn: null,
             failureReason: 'ARN rejected by agent',
           },
     });
@@ -340,7 +351,12 @@ export async function verifyKnetArnAction(formData: FormData): Promise<ActionRes
           status: { notIn: ['REFUNDED', 'FAILED'] },
         },
       });
-      const verifiedDelta = approve ? 1 : 0;
+      // Both APPROVE → REFUNDED and REJECT → FAILED count as a "decision";
+      // the batch's `remaining` query treats both as terminal, so we must
+      // also bump verifiedComponents in both cases — otherwise the counter
+      // permanently undercounts and the batch detail page shows e.g.
+      // "3/5 verified" even after every component has been decided.
+      const verifiedDelta = 1;
       await prisma.knetBatch.update({
         where: { id: comp.batch.id },
         data: {

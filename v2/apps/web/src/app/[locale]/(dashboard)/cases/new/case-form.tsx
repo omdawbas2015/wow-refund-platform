@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -94,6 +94,19 @@ export function CaseForm(props: {
   const branches = country?.branches ?? [];
   const currency = country?.currency ?? defaultCurrency;
 
+  // Keep every component row in sync with the active country's currency so
+  // a user who switches country mid-form can't accidentally submit a case
+  // with mixed currencies (e.g. orderCurrency=AED but a component=KWD).
+  // Only newly added components used to inherit the new currency, leaving
+  // existing rows stale.
+  useEffect(() => {
+    setComponents((prev) =>
+      prev.every((c) => c.currency === currency)
+        ? prev
+        : prev.map((c) => ({ ...c, currency })),
+    );
+  }, [currency]);
+
   const totalComponents = components.reduce(
     (sum, c) => sum + (parseFloat(c.amount) || 0),
     0,
@@ -141,11 +154,18 @@ export function CaseForm(props: {
       toast.error('Each component needs a payment method and amount');
       return;
     }
-    const knetMissingAuth = components.some(
-      (c) => c.paymentMethodKey === 'KNET' && !c.authCode.trim(),
-    );
-    if (knetMissingAuth) {
-      toast.error('KNET components require an auth code');
+    // Auth-code requirement comes from the payment method's
+    // `requiresAuthCode` flag (admin-configurable) rather than a hardcoded
+    // `KNET` check. The auth-code input is rendered as required using the
+    // same flag — the validation has to match or admins can configure a
+    // method that the UI marks required but the form lets through.
+    const methodByKey = new Map(props.paymentMethods.map((m) => [m.key, m]));
+    const authMissing = components.some((c) => {
+      const m = methodByKey.get(c.paymentMethodKey);
+      return m?.requiresAuthCode && !c.authCode.trim();
+    });
+    if (authMissing) {
+      toast.error('Some components require an auth code');
       return;
     }
 

@@ -2,26 +2,25 @@ import { z } from 'zod';
 import { emailSchema, nonEmptyString, phoneSchema } from './common';
 
 /**
- * Component on a case at creation time. KNET requires authCode.
- * The paymentMethodKey is the immutable key (APPLE_PAY / CREDIT_CARD / KNET).
+ * Component on a case at creation time. The auth-code requirement is
+ * configurable per payment method (`paymentMethod.requiresAuthCode`) by
+ * admins, so it must be enforced server-side where the method records
+ * are loaded — not hardcoded against a single key in the schema. The
+ * server action `createCaseAction` performs that check after resolving
+ * `paymentMethodKey -> PaymentMethod`.
  */
-export const refundComponentInputSchema = z
-  .object({
-    paymentMethodKey: nonEmptyString,
-    amount: z.coerce.number().positive('Amount must be greater than zero'),
-    currency: nonEmptyString.length(3),
-    authCode: z.string().trim().optional(),
-    last4: z
-      .string()
-      .trim()
-      .regex(/^[0-9]{0,4}$/, 'Last 4 must be digits')
-      .optional()
-      .or(z.literal('')),
-  })
-  .refine(
-    (v) => v.paymentMethodKey !== 'KNET' || !!v.authCode?.trim(),
-    { message: 'KNET components require an auth code', path: ['authCode'] },
-  );
+export const refundComponentInputSchema = z.object({
+  paymentMethodKey: nonEmptyString,
+  amount: z.coerce.number().positive('Amount must be greater than zero'),
+  currency: nonEmptyString.length(3),
+  authCode: z.string().trim().optional(),
+  last4: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{0,4}$/, 'Last 4 must be digits')
+    .optional()
+    .or(z.literal('')),
+});
 export type RefundComponentInput = z.infer<typeof refundComponentInputSchema>;
 
 export const createRefundCaseSchema = z.object({

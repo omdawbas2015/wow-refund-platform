@@ -97,12 +97,27 @@ export async function createCaseAction(
     );
     const methods = await prisma.paymentMethod.findMany({
       where: { key: { in: paymentMethodKeys }, isActive: true },
-      select: { id: true, key: true },
+      select: { id: true, key: true, requiresAuthCode: true },
     });
-    const methodByKey = new Map(methods.map((m) => [m.key, m.id]));
+    const methodByKey = new Map(methods.map((m) => [m.key, m]));
     const missing = paymentMethodKeys.filter((k) => !methodByKey.has(k));
     if (missing.length > 0) {
       return { ok: false, error: `Unknown payment method(s): ${missing.join(', ')}` };
+    }
+    // Enforce the admin-configurable `requiresAuthCode` flag here rather
+    // than hardcoding a single payment-method key in the schema. The form
+    // already mirrors this rule via `requiresAuthCode` when rendering, so
+    // the two checks stay in lockstep regardless of which methods admins
+    // mark as auth-code-required.
+    const authMissing = data.components.find((c) => {
+      const m = methodByKey.get(c.paymentMethodKey);
+      return m?.requiresAuthCode && !c.authCode?.trim();
+    });
+    if (authMissing) {
+      return {
+        ok: false,
+        error: `${authMissing.paymentMethodKey} components require an auth code`,
+      };
     }
 
     const totalRefund = data.components.reduce((sum, c) => sum + c.amount, 0);
@@ -134,7 +149,7 @@ export async function createCaseAction(
         createdById: me.id,
         components: {
           create: data.components.map((c) => ({
-            paymentMethodId: methodByKey.get(c.paymentMethodKey)!,
+            paymentMethodId: methodByKey.get(c.paymentMethodKey)!.id,
             amount: c.amount,
             currency: c.currency,
             authCode: c.authCode || null,
