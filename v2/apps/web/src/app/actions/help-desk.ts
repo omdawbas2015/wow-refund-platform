@@ -130,14 +130,25 @@ export async function sendStoreMessageAction(
       return { ok: false, error: `Email dispatch failed: ${reason}` };
     }
 
-    await audit({
-      actorId: me.id,
-      actorEmail: me.email,
-      action: 'help_desk.store_message_sent',
-      entityType: 'STORE_MESSAGE',
-      entityId: log.id,
-      metadata: { templateKey: template.key, caseNumber, storeEmail },
-    });
+    // Email has already been dispatched (irreversible side effect). Never let
+    // a transient audit-write failure surface as `ok: false` — that would make
+    // the user retry and double-send. We log to the server but always return
+    // success here.
+    try {
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'help_desk.store_message_sent',
+        entityType: 'STORE_MESSAGE',
+        entityId: log.id,
+        metadata: { templateKey: template.key, caseNumber, storeEmail },
+      });
+    } catch (auditErr) {
+      console.error(
+        '[help-desk] audit write failed after successful store email dispatch',
+        auditErr,
+      );
+    }
 
     revalidatePath('/help-desk/stores');
     return { ok: true, data: { logId: log.id } };
