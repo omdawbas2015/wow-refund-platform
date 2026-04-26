@@ -400,19 +400,19 @@ function AllocationCard({ item }: { item: Item }) {
         </span>
       </div>
 
-      {/* Row 3: reason + delivery status */}
-      {(item.reason || true) && (
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pl-1">
-          {item.reason ? (
-            <p className="line-clamp-1 max-w-[70%] text-xs italic text-muted-foreground">
-              “{item.reason}”
-            </p>
-          ) : (
-            <span />
-          )}
-          <DeliveryPill item={item} />
-        </div>
-      )}
+      {/* Row 3: reason + delivery status. Always rendered so the pill has
+          a stable position; the reason side falls back to an empty span
+          when no note was recorded. */}
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pl-1">
+        {item.reason ? (
+          <p className="line-clamp-1 max-w-[70%] text-xs italic text-muted-foreground">
+            “{item.reason}”
+          </p>
+        ) : (
+          <span />
+        )}
+        <DeliveryPill item={item} />
+      </div>
     </li>
   );
 }
