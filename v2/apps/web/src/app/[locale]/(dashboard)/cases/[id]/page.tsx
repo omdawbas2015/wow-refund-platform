@@ -15,6 +15,7 @@ import { CaseActions } from './case-actions';
 import { ComponentsTable } from './components-table';
 import { NotesSection } from './notes-section';
 import { CaseTimeline } from './case-timeline';
+import { Link } from '@/i18n/routing';
 
 export default async function CaseDetailsPage(props: { params: Promise<{ id: string; locale: string }> }) {
   const { id } = await props.params;
@@ -166,7 +167,12 @@ export default async function CaseDetailsPage(props: { params: Promise<{ id: str
               </div>
               <div>
                 <div className="text-muted-foreground text-xs">Email</div>
-                <div className="break-all">{refundCase.customerEmail}</div>
+                <Link
+                  href={`/customers/${encodeURIComponent(refundCase.customerEmail.toLowerCase())}`}
+                  className="break-all text-primary hover:underline"
+                >
+                  {refundCase.customerEmail}
+                </Link>
               </div>
               {refundCase.customerPhone ? (
                 <div>
