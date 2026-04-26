@@ -1,0 +1,129 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "$connections": {
+      "defaultValue": {},
+      "type": "Object"
+    },
+    "$authentication": {
+      "defaultValue": {},
+      "type": "SecureObject"
+    }
+  },
+  "triggers": {
+    "manual": {
+      "type": "Request",
+      "kind": "Http",
+      "inputs": {
+        "method": "POST",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "templateKey": { "type": "string" },
+            "to": { "type": "string" },
+            "cc": { "type": ["string", "null"] },
+            "bcc": { "type": ["string", "null"] },
+            "subject": { "type": "string" },
+            "body": { "type": "string" },
+            "logId": { "type": "string" },
+            "contextType": { "type": ["string", "null"] },
+            "contextId": { "type": ["string", "null"] },
+            "variables": { "type": "object" }
+          },
+          "required": ["to", "subject", "body"]
+        }
+      }
+    }
+  },
+  "actions": {
+    "Initialize_expected_signature": {
+      "runAfter": {},
+      "type": "InitializeVariable",
+      "inputs": {
+        "variables": [
+          {
+            "name": "ExpectedSignature",
+            "type": "string",
+            "value": "<OUTBOUND_SIGNING_SECRET>"
+          }
+        ]
+      },
+      "description": "Replace <OUTBOUND_SIGNING_SECRET> with the same value set in the platform's POWER_AUTOMATE_SIGNING_SECRET env var. Prefer wiring this to a Power Automate environment variable for production."
+    },
+    "Verify_signature": {
+      "runAfter": {
+        "Initialize_expected_signature": ["Succeeded"]
+      },
+      "type": "If",
+      "expression": {
+        "and": [
+          {
+            "equals": [
+              "@{coalesce(triggerOutputs()?['headers']?['X-Wow-Signature'], triggerOutputs()?['headers']?['x-wow-signature'], '')}",
+              "@variables('ExpectedSignature')"
+            ]
+          }
+        ]
+      },
+      "actions": {
+        "Send_an_email_(V2)": {
+          "runAfter": {},
+          "type": "OpenApiConnection",
+          "inputs": {
+            "host": {
+              "connectionName": "shared_office365",
+              "operationId": "SendEmailV2",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365"
+            },
+            "parameters": {
+              "emailMessage/To": "@triggerBody()?['to']",
+              "emailMessage/Subject": "@triggerBody()?['subject']",
+              "emailMessage/Body": "<pre style=\"font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;\">@{triggerBody()?['body']}</pre>",
+              "emailMessage/Importance": "Normal",
+              "emailMessage/Cc": "@triggerBody()?['cc']",
+              "emailMessage/Bcc": "@triggerBody()?['bcc']"
+            }
+          }
+        },
+        "Return_200": {
+          "runAfter": {
+            "Send_an_email_(V2)": ["Succeeded"]
+          },
+          "type": "Response",
+          "kind": "Http",
+          "inputs": {
+            "statusCode": 200,
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "runId": "@{workflow().run.name}",
+              "logId": "@{triggerBody()?['logId']}",
+              "delivered": true
+            }
+          }
+        }
+      },
+      "else": {
+        "actions": {
+          "Return_401": {
+            "runAfter": {},
+            "type": "Response",
+            "kind": "Http",
+            "inputs": {
+              "statusCode": 401,
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "error": "Invalid X-Wow-Signature"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "outputs": {}
+}

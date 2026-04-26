@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "templateKey": { "type": "string" },
+    "to": { "type": "string" },
+    "cc": { "type": ["string", "null"] },
+    "bcc": { "type": ["string", "null"] },
+    "subject": { "type": "string" },
+    "body": { "type": "string" },
+    "logId": { "type": "string" },
+    "contextType": { "type": ["string", "null"] },
+    "contextId": { "type": ["string", "null"] },
+    "variables": { "type": "object" }
+  },
+  "required": ["to", "subject", "body"]
+}
