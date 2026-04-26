@@ -2,6 +2,8 @@ import { prisma } from '@wow/db';
 import { notFound, redirect } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Download } from 'lucide-react';
 import { auth } from '@/auth';
 import { formatDate, formatDateTime, formatCurrency } from '@/lib/utils';
 import { Link } from '@/i18n/routing';
@@ -69,6 +71,12 @@ export default async function KnetBatchDetailPage({ params }: PageProps) {
             {batch.sentAt ? <span>· sent {formatDateTime(batch.sentAt, localeFmt)}</span> : null}
           </div>
         </div>
+        <Button asChild variant="outline" size="sm">
+          <a href={`/api/export/knet-batch/${batch.id}`} download>
+            <Download className="me-2 h-4 w-4" />
+            Export .xlsx
+          </a>
+        </Button>
       </div>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-4">
