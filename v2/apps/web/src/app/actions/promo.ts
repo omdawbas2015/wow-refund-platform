@@ -240,6 +240,9 @@ async function getCustomerPromoHistoryRaw(email: string) {
             config: { include: { brand: true, country: { include: { registry: true } } } },
           },
         },
+        case: {
+          select: { caseNumber: true, externalCaseNumber: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: 10,
@@ -286,6 +289,12 @@ export async function listPromoAllocationsAction(input: {
     createdAt: Date;
   }>;
   total: number;
+  /**
+   * Per-type counts across the same q + date + RBAC filter (ignoring the
+   * type filter), so the UI can render tab badges that always reflect
+   * the true database-wide totals — not a slice of the first `take`.
+   */
+  counts: { compensation: number; recovery: number };
   scope: 'ALL' | 'COMPENSATION_PLUS_OWN_RECOVERY' | 'EMPTY';
 }> {
   const user = await requireSession();
@@ -295,7 +304,12 @@ export async function listPromoAllocationsAction(input: {
   const isFullView = new Set(['ADMIN', 'MANAGER', 'OPERATIONS', 'READ_ONLY']).has(roleKey);
   const isScopedView = new Set(['AGENT', 'TEAM_LEAD']).has(roleKey);
   if (!isFullView && !isScopedView) {
-    return { items: [], total: 0, scope: 'EMPTY' };
+    return {
+      items: [],
+      total: 0,
+      counts: { compensation: 0, recovery: 0 },
+      scope: 'EMPTY',
+    };
   }
 
   const q = input.q?.trim().toLowerCase() ?? '';
@@ -350,7 +364,12 @@ export async function listPromoAllocationsAction(input: {
         : [scoped];
   }
 
-  const [rows, total] = await Promise.all([
+  // Counts ignore the type filter so tab badges keep showing the true
+  // per-type totals even when the user has selected a single type tab.
+  const whereForCounts: Prisma.PromoAllocationWhereInput = { ...where };
+  delete (whereForCounts as { code?: unknown }).code;
+
+  const [rows, total, compCount, recCount] = await Promise.all([
     prisma.promoAllocation.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -362,6 +381,18 @@ export async function listPromoAllocationsAction(input: {
       },
     }),
     prisma.promoAllocation.count({ where }),
+    prisma.promoAllocation.count({
+      where: {
+        ...whereForCounts,
+        code: { config: { type: 'CUSTOMER_COMPENSATION' } },
+      },
+    }),
+    prisma.promoAllocation.count({
+      where: {
+        ...whereForCounts,
+        code: { config: { type: 'SERVICE_RECOVERY' } },
+      },
+    }),
   ]);
 
   return {
@@ -382,6 +413,7 @@ export async function listPromoAllocationsAction(input: {
       createdAt: a.createdAt,
     })),
     total,
+    counts: { compensation: compCount, recovery: recCount },
     scope: isFullView ? 'ALL' : 'COMPENSATION_PLUS_OWN_RECOVERY',
   };
 }
@@ -402,6 +434,8 @@ export async function loadCustomerPromoHistoryAction(
     currency: string;
     emailedAt: Date | null;
     createdAt: Date;
+    caseNumber: string | null;
+    reason: string | null;
   }>;
 }> {
   const user = await requireSession();
@@ -424,6 +458,84 @@ export async function loadCustomerPromoHistoryAction(
       type: a.code.config.type,
       value: a.code.config.value,
       currency: a.code.config.currency,
+      emailedAt: a.emailedAt,
+      createdAt: a.createdAt,
+      caseNumber:
+        a.case?.externalCaseNumber ?? a.case?.caseNumber ?? null,
+      reason: a.reason,
+    })),
+  };
+}
+
+/**
+ * Returns the *currently signed-in agent's* most recent allocations,
+ * regardless of role. Used by the "Recently allocated" ribbon under the
+ * allocate form so the agent can see the codes they just issued without
+ * leaving the page.
+ *
+ * - Always scoped to `requestedById = user.id` — never leaks another
+ *   agent's codes.
+ * - Defaults to today only (last 24h), capped at `limit` (default 8).
+ * - Includes both compensation and recovery in one list, ordered by
+ *   most recent first.
+ */
+export async function listMyRecentPromoAllocationsAction(
+  input?: { limit?: number; sinceHours?: number },
+): Promise<{
+  items: Array<{
+    id: string;
+    code: string;
+    type: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY';
+    brand: string;
+    country: string;
+    value: number;
+    currency: string;
+    customerEmail: string;
+    customerName: string | null;
+    caseNumber: string | null;
+    emailedAt: Date | null;
+    createdAt: Date;
+  }>;
+}> {
+  const user = await requireSession();
+  const limit = Math.min(Math.max(input?.limit ?? 8, 1), 25);
+  const sinceHours = Math.max(input?.sinceHours ?? 24, 1);
+  const since = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
+
+  const rows = await prisma.promoAllocation.findMany({
+    where: { requestedById: user.id, createdAt: { gte: since } },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    include: {
+      code: {
+        include: {
+          config: {
+            include: {
+              brand: true,
+              country: { include: { registry: true } },
+            },
+          },
+        },
+      },
+      case: { select: { caseNumber: true, externalCaseNumber: true } },
+    },
+  });
+
+  return {
+    items: rows.map((a) => ({
+      id: a.id,
+      code: a.code.code,
+      type: a.code.config.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
+      brand: a.code.config.brand.name,
+      country:
+        a.code.config.country.registry?.nameEn ??
+        a.code.config.country.registryCode,
+      value: a.code.config.value,
+      currency: a.code.config.currency,
+      customerEmail: a.customerEmail,
+      customerName: a.customerName,
+      caseNumber:
+        a.case?.externalCaseNumber ?? a.case?.caseNumber ?? null,
       emailedAt: a.emailedAt,
       createdAt: a.createdAt,
     })),
@@ -529,16 +641,115 @@ export async function restorePromoCodeAction(
 }
 
 /**
- * CSV export of promo allocations for a date range. Respects the same
- * RBAC scope as `listPromoAllocationsAction` — ADMIN/MANAGER/OPERATIONS only
- * for the admin-level full export (anyone else is rejected). Returns a UTF-8
- * CSV string the client writes to disk via a Blob download.
+ * Look up a refund case by its case number (the human-readable, country-
+ * prefixed identifier shown across the app, e.g. `KW-2025-00042`) or by
+ * the customer-facing CRM case number stored as `externalCaseNumber`.
+ *
+ * Used by the promo allocate form: when the agent enters a case number we
+ * resolve it to the underlying `RefundCase` and prefill customer fields
+ * (name / email / phone) plus the rejection-reason hint, so a recovery
+ * promo for an existing case is one auto-filled form away. The agent can
+ * still override any field manually before submitting.
+ *
+ * Returns `data: null` (success) when no case matches — the form treats
+ * that as "no autofill, but keep what the agent typed".
  */
-export async function exportPromoAllocationsCsvAction(input: {
+export async function lookupCaseByNumberAction(
+  caseNumber: string,
+): Promise<
+  ActionResult<{
+    id: string;
+    caseNumber: string;
+    externalCaseNumber: string | null;
+    customerName: string;
+    customerEmail: string;
+    customerPhone: string | null;
+    brandId: string;
+    brandName: string;
+    countryId: string;
+    countryName: string;
+    status: string;
+    rootCauseLabel: string | null;
+  } | null>
+> {
+  try {
+    const user = await requireSession();
+    // Same role gate as the allocate form / promo-history actions: this
+    // returns customer PII (name / email / phone) so we must refuse it
+    // for roles that can't already see that data through the allocate UI.
+    if (!HISTORY_ROLES.has(user.role ?? '')) {
+      return { ok: true, data: null };
+    }
+    const trimmed = caseNumber.trim();
+    if (!trimmed || trimmed.length < 3) return { ok: true, data: null };
+
+    // Match either the internal caseNumber or the CRM-side externalCaseNumber.
+    // caseNumber is canonicalized to upper-case in seeds/admin tooling so we
+    // compare both raw and upper-case to catch agents typing in either case.
+    const upper = trimmed.toUpperCase();
+    const c = await prisma.refundCase.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [
+          { caseNumber: upper },
+          { caseNumber: trimmed },
+          { externalCaseNumber: trimmed },
+          { externalCaseNumber: upper },
+        ],
+      },
+      include: {
+        brand: { select: { id: true, name: true } },
+        country: {
+          select: {
+            id: true,
+            registryCode: true,
+            registry: { select: { nameEn: true } },
+          },
+        },
+        rootCause: { select: { label: true } },
+      },
+    });
+    if (!c) return { ok: true, data: null };
+    return {
+      ok: true,
+      data: {
+        id: c.id,
+        caseNumber: c.caseNumber,
+        externalCaseNumber: c.externalCaseNumber,
+        customerName: c.customerName,
+        customerEmail: c.customerEmail,
+        customerPhone: c.customerPhone,
+        brandId: c.brand.id,
+        brandName: c.brand.name,
+        countryId: c.country.id,
+        countryName: c.country.registry?.nameEn ?? c.country.registryCode,
+        status: c.status,
+        rootCauseLabel: c.rootCause?.label ?? null,
+      },
+    };
+  } catch (e) {
+    console.error('[lookupCaseByNumberAction]', e);
+    return { ok: false, error: 'Failed to look up case.' };
+  }
+}
+
+/**
+ * Excel (.xlsx) export of promo allocations for a date range. Respects the
+ * same RBAC scope as `listPromoAllocationsAction` — ADMIN/MANAGER/OPERATIONS
+ * only. Returns a base64-encoded workbook the client decodes into a Blob and
+ * triggers a save dialog with.
+ *
+ * We use ExcelJS so the workbook ships with proper column widths, a styled
+ * header row, frozen header pane, and an autofilter — opening the file in
+ * Excel/Numbers gives a usable report instead of a raw text dump.
+ */
+export async function exportPromoAllocationsXlsxAction(input: {
   fromDate?: string;
   toDate?: string;
   type?: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY' | 'ALL';
-}): Promise<ActionResult<{ csv: string; filename: string; rowCount: number }>> {
+}): Promise<
+  ActionResult<{ base64: string; filename: string; rowCount: number }>
+> {
   try {
     const user = await requireSession();
     if (!POOL_ADMIN_ROLES.has(user.role ?? '')) {
@@ -575,59 +786,85 @@ export async function exportPromoAllocationsCsvAction(input: {
       },
     });
 
-    const headers = [
-      'Allocated At',
-      'Type',
-      'Code',
-      'Value',
-      'Currency',
-      'Country',
-      'Brand',
-      'Customer Name',
-      'Customer Email',
-      'Case #',
-      'CRM Case #',
-      'Reason',
-      'Allocated By',
-      'Agent Email',
-      'Emailed At',
+    // Lazy import: ExcelJS is a heavyweight dep (~600KB) and only this
+    // server action ever needs it, so we keep it out of the cold-start path
+    // for the common UI-rendering routes.
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'WOW Refund Platform';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Promo allocations', {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+    ws.columns = [
+      { header: 'Allocated At', key: 'allocatedAt', width: 22 },
+      { header: 'Type', key: 'type', width: 18 },
+      { header: 'Code', key: 'code', width: 26 },
+      { header: 'Value', key: 'value', width: 12 },
+      { header: 'Currency', key: 'currency', width: 10 },
+      { header: 'Country', key: 'country', width: 16 },
+      { header: 'Brand', key: 'brand', width: 22 },
+      { header: 'Customer Name', key: 'customerName', width: 22 },
+      { header: 'Customer Email', key: 'customerEmail', width: 28 },
+      { header: 'Case #', key: 'caseNumber', width: 16 },
+      { header: 'CRM Case #', key: 'externalCaseNumber', width: 18 },
+      { header: 'Reason', key: 'reason', width: 30 },
+      { header: 'Allocated By', key: 'allocatedBy', width: 22 },
+      { header: 'Agent Email', key: 'agentEmail', width: 26 },
+      { header: 'Emailed At', key: 'emailedAt', width: 22 },
     ];
-    const csvEscape = (v: unknown): string => {
-      if (v === null || v === undefined) return '';
-      const s = String(v);
-      if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-      return s;
+
+    // Style the header row: bold white on dark blue, frozen + filterable.
+    const header = ws.getRow(1);
+    header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    header.alignment = { vertical: 'middle', horizontal: 'left' };
+    header.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1F2937' }, // slate-800 — matches app heading color
     };
-    const lines = [headers.map(csvEscape).join(',')];
+    header.height = 22;
+    ws.autoFilter = { from: 'A1', to: 'O1' };
+
     for (const a of rows) {
-      lines.push(
-        [
-          a.createdAt.toISOString(),
-          a.code.config.type === 'CUSTOMER_COMPENSATION' ? 'Compensation' : 'Service recovery',
-          a.code.code,
-          a.code.config.value,
-          a.code.config.currency,
+      const isRecovery = a.code.config.type === 'SERVICE_RECOVERY';
+      ws.addRow({
+        allocatedAt: a.createdAt,
+        type: isRecovery ? 'Service recovery' : 'Compensation',
+        code: a.code.code,
+        // Recovery values are semantically "100% off", not currency.
+        // Store as a label so the spreadsheet doesn't mislead the reader.
+        value: isRecovery ? '100% off' : a.code.config.value,
+        currency: isRecovery ? '' : a.code.config.currency,
+        country:
           a.code.config.country.registry?.nameEn ?? a.code.config.country.registryCode,
-          a.code.config.brand.name,
-          a.customerName ?? '',
-          a.customerEmail,
-          a.case?.caseNumber ?? '',
-          a.case?.externalCaseNumber ?? '',
-          a.reason ?? '',
-          a.requestedBy?.name ?? '',
-          a.requestedBy?.email ?? '',
-          a.emailedAt ? a.emailedAt.toISOString() : '',
-        ]
-          .map(csvEscape)
-          .join(','),
-      );
+        brand: a.code.config.brand.name,
+        customerName: a.customerName ?? '',
+        customerEmail: a.customerEmail,
+        caseNumber: a.case?.caseNumber ?? '',
+        externalCaseNumber: a.case?.externalCaseNumber ?? '',
+        reason: a.reason ?? '',
+        allocatedBy: a.requestedBy?.name ?? '',
+        agentEmail: a.requestedBy?.email ?? '',
+        emailedAt: a.emailedAt ?? '',
+      });
     }
-    const csv = lines.join('\r\n');
+
+    // Format date columns as a real Excel date type so users can pivot
+    // / sort properly instead of getting ISO strings.
+    const dateFmt = 'yyyy-mm-dd hh:mm';
+    ws.getColumn('allocatedAt').numFmt = dateFmt;
+    ws.getColumn('emailedAt').numFmt = dateFmt;
+    // Numeric cells where applicable (compensation rows only).
+    ws.getColumn('value').numFmt = '#,##0.000;-#,##0.000';
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
     const today = new Date().toISOString().slice(0, 10);
-    const filename = `promo-allocations-${today}.csv`;
-    return { ok: true, data: { csv, filename, rowCount: rows.length } };
+    const filename = `promo-allocations-${today}.xlsx`;
+    return { ok: true, data: { base64, filename, rowCount: rows.length } };
   } catch (e) {
-    console.error('[exportPromoAllocationsCsvAction]', e);
+    console.error('[exportPromoAllocationsXlsxAction]', e);
     return { ok: false, error: 'Failed to export allocations.' };
   }
 }

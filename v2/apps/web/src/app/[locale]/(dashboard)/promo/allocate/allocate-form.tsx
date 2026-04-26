@@ -1,8 +1,32 @@
 'use client';
 
+/**
+ * Promo allocation form — agent-facing flow for issuing a customer
+ * compensation code or a service-recovery code against a refund case.
+ *
+ * Design priorities:
+ *   1. Case number is the most important input in the entire system, so it
+ *      lives at the very top. Typing it triggers a debounced server lookup
+ *      that resolves the underlying RefundCase and prefills the customer
+ *      fields (name / email / phone) plus a reason hint. Every prefilled
+ *      field stays editable so the agent can override before submitting if
+ *      the case data is wrong or incomplete.
+ *   2. Service-recovery never asks the agent to pick a tier — there's
+ *      always exactly one pool per brand × country at 100% off.
+ *   3. The post-allocation success state lives in a centered Dialog popup
+ *      so it's clearly distinct from the form itself, surfaces the issued
+ *      code prominently, and shows whether the code was emailed (compensation)
+ *      or kept internal (recovery).
+ */
+
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { allocatePromoAction, loadCustomerPromoHistoryAction } from '@/app/actions/promo';
+import {
+  allocatePromoAction,
+  listMyRecentPromoAllocationsAction,
+  loadCustomerPromoHistoryAction,
+  lookupCaseByNumberAction,
+} from '@/app/actions/promo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +38,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { AlertTriangle, Check, History, Gift, Shield, Mail, Copy, Sparkles } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  AlertTriangle,
+  Check,
+  History,
+  Gift,
+  Shield,
+  Mail,
+  Copy,
+  FileSearch,
+  Loader2,
+  X,
+  Clock,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatPromoValue } from '@/lib/promo/format';
 
@@ -41,6 +85,8 @@ type HistoryEntry = {
   currency: string;
   emailedAt: Date | string | null;
   createdAt: Date | string;
+  caseNumber: string | null;
+  reason: string | null;
 };
 
 type LookupState = {
@@ -50,6 +96,28 @@ type LookupState = {
   totalCount: number;
   history: HistoryEntry[];
 };
+
+type CaseMatch = {
+  id: string;
+  caseNumber: string;
+  externalCaseNumber: string | null;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string | null;
+  brandId: string;
+  brandName: string;
+  countryId: string;
+  countryName: string;
+  status: string;
+  rootCauseLabel: string | null;
+};
+
+type CaseLookupState =
+  | { state: 'idle' }
+  | { state: 'loading'; query: string }
+  | { state: 'found'; query: string; match: CaseMatch }
+  | { state: 'not_found'; query: string }
+  | { state: 'error'; query: string };
 
 function formatDateTime(d: Date | string) {
   const date = typeof d === 'string' ? new Date(d) : d;
@@ -71,20 +139,35 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
   const [brandId, setBrandId] = useState('');
   const [poolId, setPoolId] = useState('');
 
+  const [caseQuery, setCaseQuery] = useState('');
+  const [caseLookup, setCaseLookup] = useState<CaseLookupState>({ state: 'idle' });
+  const caseLookupGenRef = useRef(0);
+
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [reason, setReason] = useState('');
   const [fraudAck, setFraudAck] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   // Capture the type at allocation time — the selector is still interactive
-  // while the success card is visible, so reading the live `type` state would
-  // flip the "emailed" vs "internal only" copy if the user clicked the other
-  // card after a successful allocation.
+  // while the success dialog is visible, so reading the live `type` state
+  // would flip the "emailed" vs "internal only" copy if the user clicked the
+  // other card after a successful allocation.
   const [success, setSuccess] = useState<
-    | { code: string; type: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY' }
+    | {
+        code: string;
+        type: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY';
+        customerEmail: string;
+        customerName: string | null;
+        caseNumber: string | null;
+      }
     | null
   >(null);
+  // Bumped after every successful allocation so the "Recently allocated"
+  // ribbon below the form can refresh itself without us prop-drilling
+  // the latest entry through SuccessDialog state.
+  const [recentTick, setRecentTick] = useState(0);
   const [lookup, setLookup] = useState<LookupState>({
     loading: false,
     email: null,
@@ -92,8 +175,6 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
     totalCount: 0,
     history: [],
   });
-  // Monotonic counter so a stale in-flight history request (e.g. from a
-  // previous email) can never overwrite the current customer's data.
   const lookupGenRef = useRef(0);
 
   const countries = useMemo(() => {
@@ -137,38 +218,88 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
   }, [matchingPools, poolId]);
 
   // Service-recovery has exactly one pool per brand×country (always 100% off),
-  // so it's never useful to ask the user to pick a tier. Auto-select the only
-  // matching pool the moment brand+country are set; the explicit pool grid is
-  // hidden in that case.
+  // so it's never useful to ask the user to pick a tier.
   useEffect(() => {
     if (type === 'SERVICE_RECOVERY' && matchingPools.length === 1 && !poolId) {
       setPoolId(matchingPools[0]!.id);
     }
   }, [type, matchingPools, poolId]);
 
-  // Debounced history lookup when the email changes. Uses a generation
-  // counter so stale in-flight responses for a previous email can never
-  // overwrite the current lookup state.
+  // Debounced case-number lookup. Resolves to a RefundCase, then prefills
+  // customer fields. We only OVERWRITE fields the agent left empty (or that
+  // still match the previous case's values) so a manual edit is never
+  // silently wiped by a stale lookup.
+  const lastAutoFilledRef = useRef<{
+    email: string;
+    name: string;
+    phone: string;
+    reason: string;
+  } | null>(null);
+  useEffect(() => {
+    const trimmed = caseQuery.trim();
+    if (trimmed.length < 3) {
+      caseLookupGenRef.current += 1;
+      setCaseLookup({ state: 'idle' });
+      return;
+    }
+    const gen = ++caseLookupGenRef.current;
+    setCaseLookup({ state: 'loading', query: trimmed });
+    const handle = setTimeout(async () => {
+      const res = await lookupCaseByNumberAction(trimmed);
+      if (caseLookupGenRef.current !== gen) return;
+      if (!res.ok) {
+        setCaseLookup({ state: 'error', query: trimmed });
+        return;
+      }
+      if (!res.data) {
+        setCaseLookup({ state: 'not_found', query: trimmed });
+        return;
+      }
+      const m = res.data;
+      setCaseLookup({ state: 'found', query: trimmed, match: m });
+
+      // Autofill: only overwrite a field if it's empty OR was filled by a
+      // previous auto-fill (so the agent's manual edits are sticky).
+      const prev = lastAutoFilledRef.current;
+      setCustomerEmail((cur) => (!cur || cur === prev?.email ? m.customerEmail : cur));
+      setCustomerName((cur) => (!cur || cur === prev?.name ? m.customerName : cur));
+      setCustomerPhone((cur) =>
+        !cur || cur === prev?.phone ? (m.customerPhone ?? '') : cur,
+      );
+      const suggestedReason = m.rootCauseLabel ?? '';
+      setReason((cur) =>
+        !cur || cur === prev?.reason ? suggestedReason : cur,
+      );
+      // Auto-set country/brand to the case's so the pool list narrows down.
+      setCountryId((cur) => (cur === '' ? m.countryId : cur));
+      setBrandId((cur) => (cur === '' ? m.brandId : cur));
+
+      lastAutoFilledRef.current = {
+        email: m.customerEmail,
+        name: m.customerName,
+        phone: m.customerPhone ?? '',
+        reason: suggestedReason,
+      };
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [caseQuery]);
+
+  // Debounced fraud-history lookup whenever the customer email changes.
   useEffect(() => {
     const trimmed = customerEmail.trim().toLowerCase();
     if (!trimmed || !trimmed.includes('@')) {
       lookupGenRef.current += 1;
       setLookup({ loading: false, email: null, recentCount: 0, totalCount: 0, history: [] });
-      setFraudAck(false);
       return;
     }
     if (lookup.email === trimmed) return;
 
     const gen = ++lookupGenRef.current;
-    // Any change of email invalidates a previous acknowledgment + any
-    // stale history data. Clear fully rather than spreading so the panel
-    // can't briefly show the previous customer's fraud flags.
     setFraudAck(false);
     setLookup({ loading: true, email: null, recentCount: 0, totalCount: 0, history: [] });
     const handle = setTimeout(async () => {
       try {
         const res = await loadCustomerPromoHistoryAction(trimmed);
-        // Discard the response if the user typed another email in the meantime.
         if (lookupGenRef.current !== gen) return;
         setLookup({
           loading: false,
@@ -187,6 +318,8 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
 
   const selectedPool = matchingPools.find((p) => p.id === poolId);
   const needsAck = lookup.recentCount > 0;
+  const resolvedCaseId =
+    caseLookup.state === 'found' ? caseLookup.match.id : undefined;
   const canSubmit =
     !!poolId &&
     !!customerEmail.trim() &&
@@ -204,6 +337,7 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
         poolId,
         customerEmail: customerEmail.trim(),
         customerName: customerName.trim() || undefined,
+        caseId: resolvedCaseId,
         reason: reason.trim() || undefined,
         fraudSignalAcknowledged: fraudAck,
       });
@@ -211,310 +345,683 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
         setError(result.error);
         return;
       }
-      setSuccess({ code: result.data!.code, type });
-      // Reset transient form state but keep pool + type for quick repeats
+      const caseNumber =
+        caseLookup.state === 'found'
+          ? caseLookup.match.caseNumber
+          : caseQuery.trim() || null;
+      setSuccess({
+        code: result.data!.code,
+        type,
+        customerEmail: customerEmail.trim(),
+        customerName: customerName.trim() || null,
+        caseNumber,
+      });
+      setRecentTick((n) => n + 1);
+      // Reset transient state but keep type/country/brand so the agent can
+      // quickly issue another for the same brand-country with one click.
+      setCaseQuery('');
+      setCaseLookup({ state: 'idle' });
       setCustomerEmail('');
       setCustomerName('');
+      setCustomerPhone('');
       setReason('');
       setFraudAck(false);
       setLookup({ loading: false, email: null, recentCount: 0, totalCount: 0, history: [] });
+      lastAutoFilledRef.current = null;
       router.refresh();
     });
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5 rounded-lg border border-border bg-card p-5">
-      {/* Type toggle — visually distinct cards */}
-      <div className="space-y-2">
-        <Label>Promo type</Label>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <TypeCard
-            active={type === 'CUSTOMER_COMPENSATION'}
-            onClick={() => setType('CUSTOMER_COMPENSATION')}
-            Icon={Gift}
-            label="Customer compensation"
-            hint="Fixed value · emailed to customer"
-            tone="blue"
-          />
-          <TypeCard
-            active={type === 'SERVICE_RECOVERY'}
-            onClick={() => setType('SERVICE_RECOVERY')}
-            Icon={Shield}
-            label="Service recovery"
-            hint="Internal use only · never emailed"
-            tone="emerald"
-          />
-        </div>
-      </div>
+    <>
+      <form onSubmit={onSubmit} className="space-y-5 rounded-lg border border-border bg-card p-5">
+        {/* Case number is the single most important field — it's the link
+            between this allocation and the originating refund case, and
+            typing it auto-fills everything else. So it sits at the very
+            top, in its own visually distinct panel. */}
+        <CaseLookupPanel
+          query={caseQuery}
+          onQueryChange={setCaseQuery}
+          state={caseLookup}
+          onClear={() => {
+            setCaseQuery('');
+            setCaseLookup({ state: 'idle' });
+            lastAutoFilledRef.current = null;
+          }}
+        />
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="country">Country</Label>
-          <Select value={countryId} onValueChange={setCountryId}>
-            <SelectTrigger id="country">
-              <SelectValue placeholder="Select country" />
-            </SelectTrigger>
-            <SelectContent>
-              {countries.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  <span className="mr-2" aria-hidden>
-                    {c.flag || '🌐'}
-                  </span>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="brand">Brand</Label>
-          <Select value={brandId} onValueChange={setBrandId} disabled={!countryId}>
-            <SelectTrigger id="brand">
-              <SelectValue placeholder={countryId ? 'Select brand' : 'Pick a country first'} />
-            </SelectTrigger>
-            <SelectContent>
-              {brandsForCountry.map((b) => (
-                <SelectItem key={b.id} value={b.id}>
-                  {b.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Pool selection. Service-recovery is always 100% off and has a single
-          pool per brand×country, so we render an auto-selected confirmation
-          row instead of an unnecessary tier picker. */}
-      {brandId && type === 'CUSTOMER_COMPENSATION' && (
+        {/* Type toggle */}
         <div className="space-y-2">
-          <Label>
-            Pool <span className="text-muted-foreground">(value · stock)</span>
-          </Label>
-          {matchingPools.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No pools configured for this combination.
-            </p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {matchingPools.map((p) => {
-                const out = p.available === 0;
-                const low = p.available <= 3 && !out;
-                const selected = p.id === poolId;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    disabled={out}
-                    onClick={() => setPoolId(p.id)}
-                    className={cn(
-                      'flex items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition',
-                      selected
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-foreground/20',
-                      out && 'cursor-not-allowed opacity-50',
-                    )}
-                  >
-                    <span className="font-mono text-heading">
-                      {formatPromoValue(p.type, p.value, p.currency)}
+          <Label>Promo type</Label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TypeCard
+              active={type === 'CUSTOMER_COMPENSATION'}
+              onClick={() => setType('CUSTOMER_COMPENSATION')}
+              Icon={Gift}
+              label="Customer compensation"
+              hint="Fixed value · emailed to customer"
+              tone="blue"
+            />
+            <TypeCard
+              active={type === 'SERVICE_RECOVERY'}
+              onClick={() => setType('SERVICE_RECOVERY')}
+              Icon={Shield}
+              label="Service recovery"
+              hint="Internal use only · never emailed"
+              tone="emerald"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="country">Country</Label>
+            <Select value={countryId} onValueChange={setCountryId}>
+              <SelectTrigger id="country">
+                <SelectValue placeholder="Select country" />
+              </SelectTrigger>
+              <SelectContent>
+                {countries.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    <span className="mr-2" aria-hidden>
+                      {c.flag || '🌐'}
                     </span>
-                    <span
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="brand">Brand</Label>
+            <Select value={brandId} onValueChange={setBrandId} disabled={!countryId}>
+              <SelectTrigger id="brand">
+                <SelectValue placeholder={countryId ? 'Select brand' : 'Pick a country first'} />
+              </SelectTrigger>
+              <SelectContent>
+                {brandsForCountry.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Pool selection. Service-recovery is always 100% off and has a single
+            pool per brand×country, so we render an auto-selected confirmation
+            row instead of an unnecessary tier picker. */}
+        {brandId && type === 'CUSTOMER_COMPENSATION' && (
+          <div className="space-y-2">
+            <Label>Promo value</Label>
+            {matchingPools.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No pools configured for this combination.
+              </p>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-3">
+                {matchingPools.map((p) => {
+                  const out = p.available === 0;
+                  const low = p.available <= 3 && !out;
+                  const selected = p.id === poolId;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={out}
+                      onClick={() => setPoolId(p.id)}
                       className={cn(
-                        'text-xs tabular-nums',
-                        out
-                          ? 'text-red-600 dark:text-red-400'
-                          : low
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-muted-foreground',
+                        'group relative flex flex-col items-start gap-1 rounded-lg border px-3 py-2.5 text-left transition',
+                        selected
+                          ? 'border-blue-500 bg-blue-500/5 ring-2 ring-blue-500/20'
+                          : 'border-border bg-background hover:border-foreground/20',
+                        out && 'cursor-not-allowed opacity-50',
                       )}
                     >
-                      {out ? 'Out of stock' : low ? `Low · ${p.available}` : `${p.available} left`}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-      {brandId && type === 'SERVICE_RECOVERY' && matchingPools.length > 0 && (
-        <div
-          className={cn(
-            'flex items-center justify-between rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm',
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-heading">100% off recovery code</span>
-            <span className="text-xs text-muted-foreground">· internal use only</span>
-          </div>
-          <span
-            className={cn(
-              'text-xs tabular-nums',
-              matchingPools[0]!.available === 0
-                ? 'text-red-600 dark:text-red-400'
-                : matchingPools[0]!.available <= 3
-                  ? 'text-amber-600 dark:text-amber-400'
-                  : 'text-muted-foreground',
+                      <span className="font-mono text-base font-semibold tabular-nums text-heading">
+                        {formatPromoValue(p.type, p.value, p.currency)}
+                      </span>
+                      <span
+                        className={cn(
+                          'text-[11px] font-medium tabular-nums',
+                          out
+                            ? 'text-red-600 dark:text-red-400'
+                            : low
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-muted-foreground',
+                        )}
+                      >
+                        {out
+                          ? 'Out of stock'
+                          : low
+                            ? `Low · ${p.available} left`
+                            : `${p.available} available`}
+                      </span>
+                      {selected && (
+                        <Check className="absolute right-2 top-2 h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             )}
-          >
-            {matchingPools[0]!.available === 0
-              ? 'Out of stock'
-              : `${matchingPools[0]!.available} left`}
-          </span>
-        </div>
-      )}
-      {brandId && type === 'SERVICE_RECOVERY' && matchingPools.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No service-recovery pool configured for this brand and country.
-        </p>
-      )}
+          </div>
+        )}
+        {brandId && type === 'SERVICE_RECOVERY' && matchingPools.length > 0 && (
+          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 px-4 py-3">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <div className="flex items-center gap-2">
+                <Shield className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="font-medium text-heading">100% off recovery code</span>
+                <span className="text-xs text-muted-foreground">· internal use only</span>
+              </div>
+              <span
+                className={cn(
+                  'rounded px-2 py-0.5 text-xs tabular-nums',
+                  matchingPools[0]!.available === 0
+                    ? 'bg-red-500/10 text-red-600 dark:text-red-400'
+                    : matchingPools[0]!.available <= 3
+                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                      : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                )}
+              >
+                {matchingPools[0]!.available === 0
+                  ? 'Out of stock'
+                  : `${matchingPools[0]!.available} available`}
+              </span>
+            </div>
+          </div>
+        )}
+        {brandId && type === 'SERVICE_RECOVERY' && matchingPools.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No service-recovery pool configured for this brand and country.
+          </p>
+        )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Customer email</Label>
-          <Input
-            id="email"
-            type="email"
-            required
-            value={customerEmail}
-            onChange={(e) => setCustomerEmail(e.target.value)}
-            placeholder="customer@example.com"
+        {/* Customer details — auto-filled from the case lookup when one
+            resolves, but every field stays editable. */}
+        <div className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <Label>Customer details</Label>
+            {caseLookup.state === 'found' && (
+              <span className="text-xs text-muted-foreground">
+                Auto-filled from case ·{' '}
+                <button
+                  type="button"
+                  className="text-primary underline-offset-2 hover:underline"
+                  onClick={() => {
+                    setCustomerEmail('');
+                    setCustomerName('');
+                    setCustomerPhone('');
+                    setReason('');
+                    lastAutoFilledRef.current = null;
+                  }}
+                >
+                  reset
+                </button>
+              </span>
+            )}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="text-xs text-muted-foreground">
+                Customer email
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                required
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                placeholder="customer@example.com"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="name" className="text-xs text-muted-foreground">
+                Customer name
+              </Label>
+              <Input
+                id="name"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Ahmed Al-Sabah"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="phone" className="text-xs text-muted-foreground">
+                Customer phone
+              </Label>
+              <Input
+                id="phone"
+                type="tel"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                placeholder="+965 9999 9999"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reason" className="text-xs text-muted-foreground">
+                Reason / complaint
+              </Label>
+              <Input
+                id="reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. Delayed order goodwill"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Fraud signal panel */}
+        {(lookup.loading || (lookup.email && lookup.totalCount > 0)) && (
+          <FraudPanel
+            lookup={lookup}
+            acknowledged={fraudAck}
+            onAcknowledge={setFraudAck}
+            needsAck={needsAck}
           />
+        )}
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Could not allocate</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+          <p className="text-xs text-muted-foreground">
+            {selectedPool
+              ? `Pool selected · ${selectedPool.available} code(s) available`
+              : 'Pick a pool to continue'}
+          </p>
+          <Button type="submit" disabled={!canSubmit} size="lg">
+            {type === 'SERVICE_RECOVERY' ? (
+              <Shield className="mr-2 h-4 w-4" />
+            ) : (
+              <Gift className="mr-2 h-4 w-4" />
+            )}
+            {isPending
+              ? 'Allocating…'
+              : type === 'SERVICE_RECOVERY'
+                ? 'Issue recovery code'
+                : 'Allocate promo'}
+          </Button>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="name">
-            Customer name <span className="text-muted-foreground">(optional)</span>
-          </Label>
-          <Input
-            id="name"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Ahmed Al-Sabah"
-          />
-        </div>
-      </div>
+      </form>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="reason">
-          Reason / notes <span className="text-muted-foreground">(optional)</span>
-        </Label>
-        <Input
-          id="reason"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="e.g. Delayed order goodwill"
-        />
-      </div>
+      {/* "Recently allocated" ribbon — shows the agent's own recent
+          allocations (last 24h) as a personal reference so they don't have
+          to bounce to /promo/history after every issue. Refreshes whenever
+          recentTick bumps (i.e. after a successful allocation). */}
+      <MyRecentAllocations refreshKey={recentTick} />
 
-      {/* Fraud signal panel */}
-      {(lookup.loading || (lookup.email && lookup.totalCount > 0)) && (
-        <FraudPanel
-          lookup={lookup}
-          acknowledged={fraudAck}
-          onAcknowledge={setFraudAck}
-          needsAck={needsAck}
-        />
-      )}
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Could not allocate</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      {success && <SuccessCard code={success.code} type={success.type} />}
-
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          {selectedPool
-            ? `Selected pool · ${selectedPool.available} code(s) available`
-            : 'Pick a pool to continue'}
-        </p>
-        <Button type="submit" disabled={!canSubmit}>
-          <Gift className="mr-2 h-4 w-4" />
-          {isPending ? 'Allocating…' : 'Allocate promo'}
-        </Button>
-      </div>
-    </form>
+      {/* Success popup — distinct from the form so it's unmissable. */}
+      <SuccessDialog
+        success={success}
+        onClose={() => setSuccess(null)}
+      />
+    </>
   );
 }
 
-function SuccessCard({
-  code,
-  type,
+/**
+ * Top-of-form case-number lookup panel. When a match resolves, shows a
+ * compact summary card with the case's customer + status so the agent can
+ * confirm at a glance they're allocating against the right case.
+ */
+function CaseLookupPanel({
+  query,
+  onQueryChange,
+  state,
+  onClear,
 }: {
-  code: string;
-  type: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY';
+  query: string;
+  onQueryChange: (v: string) => void;
+  state: CaseLookupState;
+  onClear: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  const isRecovery = type === 'SERVICE_RECOVERY';
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard API unavailable (insecure context / denied) — silently skip;
-      // the code is still plainly visible on screen for manual copy.
-    }
-  }
+  const accent =
+    state.state === 'found'
+      ? 'before:bg-emerald-500'
+      : state.state === 'error'
+        ? 'before:bg-red-500'
+        : 'before:bg-blue-500';
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-xl border p-5',
-        isRecovery
-          ? 'border-emerald-500/40 bg-gradient-to-br from-emerald-500/5 to-emerald-500/10'
-          : 'border-blue-500/40 bg-gradient-to-br from-blue-500/5 to-blue-500/10',
+        'relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-blue-500/[0.04] via-card to-card p-4 shadow-sm sm:p-5',
+        "before:absolute before:inset-y-0 before:left-0 before:w-1 before:content-['']",
+        accent,
       )}
     >
-      <div className="flex items-start gap-4">
-        <div
-          className={cn(
-            'flex h-12 w-12 flex-none items-center justify-center rounded-full',
-            isRecovery ? 'bg-emerald-500 text-white' : 'bg-blue-500 text-white',
-          )}
-        >
-          <Sparkles className="h-6 w-6" />
+      <div className="flex items-start gap-3">
+        <div className="hidden h-9 w-9 flex-none items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 sm:flex">
+          <FileSearch className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1 space-y-3">
-          <div>
-            <p className="text-sm font-semibold text-heading">
-              {isRecovery ? 'Service-recovery code issued' : 'Customer promo allocated'}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {isRecovery ? (
-                <span className="inline-flex items-center gap-1">
-                  <Shield className="h-3 w-3" /> Internal only — not emailed to the customer.
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1">
-                  <Mail className="h-3 w-3" /> Queued for email delivery to the customer.
-                </span>
-              )}
-            </p>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <Label
+                htmlFor="case-number"
+                className="text-sm font-semibold text-heading"
+              >
+                Case number
+              </Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Auto-fills customer name, email, phone, and complaint reason.
+              </p>
+            </div>
+            <InlineLookupStatus state={state} />
           </div>
-          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
-            <span className="flex-1 select-all font-mono text-base tracking-wider text-heading">
-              {code}
-            </span>
-            <Button type="button" size="sm" variant="ghost" onClick={copy}>
-              {copied ? (
-                <>
-                  <Check className="mr-1.5 h-4 w-4" /> Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="mr-1.5 h-4 w-4" /> Copy
-                </>
-              )}
-            </Button>
+          <div className="relative">
+            <Input
+              id="case-number"
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+              placeholder="e.g. KW-2025-00042 or CRM-12345"
+              className="h-11 pr-10 font-mono text-base tracking-wide"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {query && state.state !== 'loading' && (
+              <button
+                type="button"
+                onClick={onClear}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-heading"
+                aria-label="Clear case number"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
+          {state.state === 'found' && <CaseFoundCard match={state.match} />}
+          {state.state === 'error' && (
+            <p className="text-xs text-red-600 dark:text-red-400">
+              Couldn't look up that case — try again in a moment.
+            </p>
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Tiny chip on the right of the panel header that mirrors the lookup state.
+ * Replaces the bulky 'not found' message block — a chip is enough signal,
+ * and the customer fields below are obviously empty if there's no match.
+ */
+function InlineLookupStatus({ state }: { state: CaseLookupState }) {
+  if (state.state === 'idle') return null;
+  if (state.state === 'loading')
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Searching…
+      </span>
+    );
+  if (state.state === 'found')
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+        <Check className="h-3 w-3" />
+        Match found
+      </span>
+    );
+  if (state.state === 'not_found')
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+        No match
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400">
+      <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+      Lookup failed
+    </span>
+  );
+}
+
+/** Compact "found case" summary card shown beneath the case-number input. */
+function CaseFoundCard({ match }: { match: CaseMatch }) {
+  return (
+    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] p-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="font-mono text-sm font-semibold text-heading">
+          {match.caseNumber}
+        </span>
+        {match.externalCaseNumber && (
+          <span className="text-xs text-muted-foreground">
+            CRM <span className="font-mono">{match.externalCaseNumber}</span>
+          </span>
+        )}
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {match.status.replace(/_/g, ' ')}
+        </span>
+      </div>
+      <div className="mt-1.5 text-sm font-medium text-heading">
+        {match.customerName}
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+        <span>{match.customerEmail}</span>
+        {match.customerPhone && (
+          <>
+            <span aria-hidden>·</span>
+            <span>{match.customerPhone}</span>
+          </>
+        )}
+        <span aria-hidden>·</span>
+        <span>
+          {match.brandName} · {match.countryName}
+        </span>
+        {match.rootCauseLabel && (
+          <>
+            <span aria-hidden>·</span>
+            <span className="italic">“{match.rootCauseLabel}”</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Centered popup shown after a successful allocation. Highlights:
+ *   - The issued code in a large mono block with a copy button
+ *   - Whether the code was emailed to the customer (compensation) or kept
+ *     internal (service recovery)
+ *   - The linked case # and customer if present
+ */
+function SuccessDialog({
+  success,
+  onClose,
+}: {
+  success:
+    | {
+        code: string;
+        type: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY';
+        customerEmail: string;
+        customerName: string | null;
+        caseNumber: string | null;
+      }
+    | null;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!success) setCopied(false);
+  }, [success]);
+
+  if (!success) return null;
+
+  const isRecovery = success.type === 'SERVICE_RECOVERY';
+
+  async function copy() {
+    if (!success) return;
+    try {
+      await navigator.clipboard.writeText(success.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable in insecure contexts — code is still visible */
+    }
+  }
+
+  // Operations-desk styling per DESIGN.md: restrained accents, no
+  // decorative gradients/sheen/halos. A single 1px accent stripe at the
+  // top of the dialog is the only colour cue. Motion is limited to the
+  // Dialog's built-in fade/slide-in.
+  const accentStripe = isRecovery ? 'bg-emerald-500' : 'bg-blue-500';
+  const accentText = isRecovery
+    ? 'text-emerald-700 dark:text-emerald-300'
+    : 'text-blue-700 dark:text-blue-300';
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg overflow-hidden p-0">
+        {/* 2px solid accent stripe — the only colour identifier */}
+        <span aria-hidden className={cn('block h-[2px] w-full', accentStripe)} />
+
+        <div className="space-y-5 px-6 pb-5 pt-5">
+          {/* Header row: small icon + short title + status line */}
+          <DialogHeader className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  'inline-flex h-7 w-7 items-center justify-center rounded-md',
+                  isRecovery
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+                )}
+              >
+                {isRecovery ? (
+                  <Shield className="h-4 w-4" />
+                ) : (
+                  <Gift className="h-4 w-4" />
+                )}
+              </span>
+              <DialogTitle className="text-base font-semibold text-heading">
+                {isRecovery ? 'Recovery code issued' : 'Promo allocated'}
+              </DialogTitle>
+              <span
+                className={cn(
+                  'ms-auto rounded-full px-2 py-0.5 text-[11px] font-medium',
+                  isRecovery
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-blue-500/10 text-blue-700 dark:text-blue-300',
+                )}
+              >
+                {isRecovery
+                  ? 'Service recovery · 100% off'
+                  : 'Customer compensation'}
+              </span>
+            </div>
+            <DialogDescription className="text-sm text-muted-foreground">
+              {isRecovery ? (
+                <span className={accentText}>
+                  Internal only — share this code manually with the customer.
+                </span>
+              ) : (
+                <span>
+                  <Mail className="me-1 inline h-3.5 w-3.5 align-[-2px]" />
+                  Queued for email delivery to{' '}
+                  <span className="font-medium text-heading">
+                    {success.customerEmail}
+                  </span>
+                  .
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Code block — single border, plain surface, mono code, copy
+              action on the right. No gradients, no thick borders. */}
+          <div>
+            <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Promo code
+            </Label>
+            <div className="flex items-stretch gap-0 overflow-hidden rounded-md border border-border bg-surface-subtle/60">
+              <span className="flex-1 select-all px-3 py-2.5 font-mono text-base font-semibold tracking-wide text-heading">
+                {success.code}
+              </span>
+              <button
+                type="button"
+                onClick={copy}
+                className={cn(
+                  'flex w-[112px] items-center justify-center gap-1.5 border-l border-border text-xs font-medium transition-colors',
+                  copied
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                    : 'text-heading hover:bg-surface-subtle',
+                )}
+                aria-label="Copy promo code"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-3.5 w-3.5" /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" /> Copy code
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Context — definition list, restrained type, no chips. */}
+          <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
+            {success.caseNumber && (
+              <>
+                <dt className="text-xs text-muted-foreground">Case</dt>
+                <dd className="font-mono text-sm text-heading">
+                  {success.caseNumber}
+                </dd>
+              </>
+            )}
+            <dt className="text-xs text-muted-foreground">Customer</dt>
+            <dd className="min-w-0 truncate text-sm text-heading">
+              {success.customerName ? (
+                <>
+                  {success.customerName}{' '}
+                  <span className="text-muted-foreground">
+                    · {success.customerEmail}
+                  </span>
+                </>
+              ) : (
+                success.customerEmail
+              )}
+            </dd>
+            <dt className="text-xs text-muted-foreground">Delivery</dt>
+            <dd className="text-sm">
+              {isRecovery ? (
+                <span className="text-muted-foreground">
+                  Not emailed (internal only)
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
+                  <Mail className="h-3.5 w-3.5" /> Email queued for delivery
+                </span>
+              )}
+            </dd>
+          </dl>
+        </div>
+
+        <DialogFooter className="border-t border-border bg-surface-subtle/30 px-6 py-3">
+          <Button variant="ghost" onClick={onClose} size="sm">
+            Close
+          </Button>
+          <Button onClick={onClose} size="sm">
+            Allocate another
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -533,7 +1040,6 @@ function TypeCard({
   Icon: React.ComponentType<{ className?: string }>;
   tone: 'blue' | 'emerald';
 }) {
-  // Build tone classes at module-eval time so Tailwind JIT keeps them.
   const toneActive =
     tone === 'blue'
       ? 'border-blue-500/60 bg-blue-500/10 ring-1 ring-blue-500/20'
@@ -543,7 +1049,9 @@ function TypeCard({
       ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30'
       : 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30';
   const toneIconIdle =
-    tone === 'blue' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
+    tone === 'blue'
+      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+      : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
   return (
     <button
       type="button"
@@ -571,7 +1079,9 @@ function TypeCard({
         <Check
           className={cn(
             'ml-auto h-4 w-4 flex-none',
-            tone === 'blue' ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400',
+            tone === 'blue'
+              ? 'text-blue-600 dark:text-blue-400'
+              : 'text-emerald-600 dark:text-emerald-400',
           )}
         />
       )}
@@ -579,6 +1089,16 @@ function TypeCard({
   );
 }
 
+/**
+ * Fraud / repeat-customer panel. Three visual states:
+ *   - "clean":     no history at all  → muted, low-key, just confirms.
+ *   - "informational": old history but nothing recent → calm, no ack needed.
+ *   - "warning":   ≥ 1 promo in the last 90 days → amber accent, ack required.
+ *
+ * Each history row collapses inline reveals the original allocation reason
+ * + linked case number on click — the agent can audit prior promos without
+ * leaving the form.
+ */
 function FraudPanel({
   lookup,
   acknowledged,
@@ -590,62 +1110,366 @@ function FraudPanel({
   onAcknowledge: (v: boolean) => void;
   needsAck: boolean;
 }) {
+  const tone: 'clean' | 'info' | 'warn' = needsAck
+    ? 'warn'
+    : lookup.totalCount > 0
+      ? 'info'
+      : 'clean';
+
+  const containerClass = cn(
+    'overflow-hidden rounded-xl border shadow-sm transition-colors',
+    tone === 'warn' && 'border-amber-500/40 bg-amber-500/[0.05]',
+    tone === 'info' && 'border-border bg-card',
+    tone === 'clean' && 'border-border bg-card',
+  );
+
+  const headerIcon = tone === 'warn' ? AlertTriangle : History;
+  const headerIconClass = cn(
+    'h-4 w-4',
+    tone === 'warn'
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-muted-foreground',
+  );
+
+  const headerTitle =
+    tone === 'warn'
+      ? `${lookup.recentCount} recent promo${lookup.recentCount === 1 ? '' : 's'} for this customer`
+      : tone === 'info'
+        ? 'Customer has prior promo history'
+        : 'No prior promos for this customer';
+
+  const headerSubtitle = lookup.loading
+    ? 'Looking up customer history…'
+    : tone === 'warn'
+      ? `${lookup.recentCount} in the last 90 days · ${lookup.totalCount} ever. Review before continuing.`
+      : tone === 'info'
+        ? `${lookup.totalCount} total · 0 in the last 90 days.`
+        : "First time we're sending a promo to this email.";
+
+  const HeaderIcon = headerIcon;
+
   return (
-    <div
-      className={cn(
-        'rounded-md border p-3 text-sm',
-        needsAck
-          ? 'border-amber-500/40 bg-amber-500/5'
-          : 'border-border bg-muted/30',
-      )}
-    >
-      <div className="flex items-center gap-2 text-heading">
-        <History className="h-4 w-4" />
-        <span className="font-medium">Promo history for this customer</span>
-        {lookup.loading && <span className="text-xs text-muted-foreground">loading…</span>}
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {lookup.totalCount === 0
-          ? 'No previous promos.'
-          : `${lookup.totalCount} total promo(s) ever · ${lookup.recentCount} in the last 90 days.`}
-      </p>
-      {lookup.history.length > 0 && (
-        <ul className="mt-3 space-y-1.5">
-          {lookup.history.map((h) => (
-            <li
-              key={h.id}
-              className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
-            >
-              <span>
-                <span className="text-heading">{h.brand}</span> · {h.country} ·{' '}
-                {formatPromoValue(
-                  h.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
-                  h.value,
-                  h.currency,
-                )}
-                <span className="ml-1 text-[10px] uppercase tracking-wide">
-                  {h.type === 'CUSTOMER_COMPENSATION' ? 'compensation' : 'recovery'}
-                </span>
-              </span>
-              <span className="font-mono tabular-nums">{formatDateTime(h.createdAt)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {needsAck && (
-        <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-heading">
-          <input
-            type="checkbox"
-            checked={acknowledged}
-            onChange={(e) => onAcknowledge(e.target.checked)}
-            className="mt-0.5"
-          />
-          <span>
-            I reviewed this customer's recent promo history and confirm this allocation is
-            warranted.
+    <div className={containerClass}>
+      <div className="flex items-start gap-3 p-4">
+        <div
+          className={cn(
+            'flex h-8 w-8 flex-none items-center justify-center rounded-full',
+            tone === 'warn'
+              ? 'bg-amber-500/15'
+              : tone === 'info'
+                ? 'bg-muted'
+                : 'bg-emerald-500/10',
+          )}
+        >
+          {tone === 'clean' ? (
+            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+          ) : (
+            <HeaderIcon className={headerIconClass} />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-heading">{headerTitle}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{headerSubtitle}</p>
+        </div>
+        {lookup.recentCount > 0 && (
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-amber-700 dark:text-amber-300">
+            {lookup.recentCount}/90d
           </span>
-        </label>
+        )}
+      </div>
+
+      {lookup.history.length > 0 && (
+        <div className="border-t border-border/60 bg-background/40">
+          <ul className="divide-y divide-border/60">
+            {lookup.history.map((h) => (
+              <FraudHistoryRow key={h.id} entry={h} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {needsAck && (
+        <div className="border-t border-amber-500/30 bg-amber-500/[0.04] p-4">
+          <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(e) => onAcknowledge(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-amber-500/40 text-amber-600 focus:ring-amber-500/40"
+            />
+            <span className="text-heading">
+              I reviewed this customer's recent promo history and confirm this
+              allocation is warranted.
+            </span>
+          </label>
+        </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Single row inside FraudPanel. Click the row to toggle a small inline
+ * panel showing the allocation's case # and original reason — the two
+ * fields an agent needs to decide if a repeat promo is legitimate.
+ */
+function FraudHistoryRow({ entry }: { entry: HistoryEntry }) {
+  const [open, setOpen] = useState(false);
+  const isComp = entry.type === 'CUSTOMER_COMPENSATION';
+  const expandable = !!(entry.reason || entry.caseNumber);
+  const recent =
+    Date.now() - new Date(entry.createdAt).getTime() <
+    90 * 24 * 60 * 60 * 1000;
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => expandable && setOpen((v) => !v)}
+        disabled={!expandable}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors',
+          expandable && 'hover:bg-muted/40',
+          !expandable && 'cursor-default',
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            'h-2 w-2 flex-none rounded-full',
+            recent
+              ? 'bg-amber-500'
+              : isComp
+                ? 'bg-blue-500/60'
+                : 'bg-emerald-500/60',
+          )}
+        />
+        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-sm text-heading">{entry.brand}</span>
+          <span className="text-xs text-muted-foreground">· {entry.country}</span>
+          <span
+            className={cn(
+              'rounded px-1.5 py-0.5 text-[11px] font-medium',
+              isComp
+                ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+            )}
+          >
+            {formatPromoValue(
+              entry.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
+              entry.value,
+              entry.currency,
+            )}
+          </span>
+          {entry.caseNumber && (
+            <span className="font-mono text-[11px] text-muted-foreground">
+              #{entry.caseNumber}
+            </span>
+          )}
+        </span>
+        <span className="hidden flex-none text-[11px] tabular-nums text-muted-foreground sm:inline">
+          {formatDateTime(entry.createdAt)}
+        </span>
+        {expandable && (
+          <span
+            className={cn(
+              'ms-2 flex-none text-muted-foreground transition-transform',
+              open && 'rotate-90',
+            )}
+            aria-hidden
+          >
+            ›
+          </span>
+        )}
+      </button>
+      {open && expandable && (
+        <div className="border-t border-border/60 bg-muted/20 px-4 py-2.5 text-xs">
+          {entry.caseNumber && (
+            <p className="mb-1 text-muted-foreground">
+              Case:{' '}
+              <span className="font-mono text-heading">{entry.caseNumber}</span>
+            </p>
+          )}
+          {entry.reason ? (
+            <p className="italic text-heading">“{entry.reason}”</p>
+          ) : (
+            <p className="text-muted-foreground">
+              No reason was recorded for this allocation.
+            </p>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+type RecentItem = Awaited<
+  ReturnType<typeof listMyRecentPromoAllocationsAction>
+>['items'][number];
+
+function formatRelativeShort(d: Date | string): string {
+  const date = typeof d === 'string' ? new Date(d) : d;
+  const ms = Date.now() - date.getTime();
+  const m = Math.floor(ms / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const days = Math.floor(h / 24);
+  return `${days}d ago`;
+}
+
+/**
+ * "Recently allocated" ribbon shown directly under the allocate form.
+ *
+ * Lists the *current agent's* allocations from the last 24h (max 8) so
+ * they can copy a code they just issued, or scan what they've already
+ * sent today without leaving the page. Refreshes whenever
+ * `refreshKey` changes (the form bumps it after every successful
+ * allocate).
+ */
+function MyRecentAllocations({ refreshKey }: { refreshKey: number }) {
+  const [items, setItems] = useState<RecentItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const genRef = useRef(0);
+
+  useEffect(() => {
+    const gen = ++genRef.current;
+    setError(null);
+    listMyRecentPromoAllocationsAction({ limit: 8, sinceHours: 24 })
+      .then((res) => {
+        if (genRef.current !== gen) return;
+        setItems(res.items);
+      })
+      .catch(() => {
+        if (genRef.current !== gen) return;
+        setError("Couldn't load your recent allocations.");
+      });
+  }, [refreshKey]);
+
+  // While the very first request is loading, render a low-key placeholder
+  // so the area doesn't pop into existence later. Once we know the user
+  // has nothing in the last 24h, hide entirely — this is a reference
+  // ribbon, not a section that demands attention.
+  if (items === null) {
+    return (
+      <div className="mt-6 rounded-xl border border-dashed border-border bg-card/40 px-4 py-3 text-xs text-muted-foreground">
+        <Loader2 className="mr-2 inline h-3 w-3 animate-spin" />
+        Loading your recent allocations…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="mt-6 rounded-xl border border-dashed border-border bg-card/40 px-4 py-3 text-xs text-muted-foreground">
+        {error}
+      </div>
+    );
+  }
+  if (items.length === 0) return null;
+
+  return (
+    <section className="mt-8">
+      <header className="mb-3 flex items-center gap-2 px-1">
+        <Clock className="h-4 w-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold text-heading">
+          Recently allocated by you
+        </h3>
+        <span className="text-xs text-muted-foreground">· last 24 hours</span>
+        <span className="ms-auto rounded-full bg-muted px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+          {items.length}
+        </span>
+      </header>
+      <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+        {items.map((it) => (
+          <RecentRow key={it.id} item={it} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function RecentRow({ item }: { item: RecentItem }) {
+  const [copied, setCopied] = useState(false);
+  const isRecovery = item.type === 'SERVICE_RECOVERY';
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(item.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard unavailable — code text is still selectable */
+    }
+  }
+
+  return (
+    <li className="group relative flex flex-wrap items-center gap-3 px-4 py-3">
+      <span
+        aria-hidden
+        className={cn(
+          'absolute inset-y-0 left-0 w-0.5',
+          isRecovery ? 'bg-emerald-500/70' : 'bg-blue-500/70',
+        )}
+      />
+      <div
+        className={cn(
+          'flex h-8 w-8 flex-none items-center justify-center rounded-md',
+          isRecovery
+            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+            : 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+        )}
+      >
+        {isRecovery ? (
+          <Shield className="h-4 w-4" />
+        ) : (
+          <Gift className="h-4 w-4" />
+        )}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+        <span className="select-all font-mono text-sm font-semibold tracking-wide text-heading">
+          {item.code}
+        </span>
+        <span
+          className={cn(
+            'rounded px-1.5 py-0.5 text-[11px] font-medium',
+            isRecovery
+              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+              : 'bg-blue-500/10 text-blue-700 dark:text-blue-300',
+          )}
+        >
+          {formatPromoValue(item.type, item.value, item.currency)}
+        </span>
+        <span className="text-xs text-heading">{item.brand}</span>
+        <span className="text-xs text-muted-foreground">· {item.country}</span>
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+        <span className="truncate" title={item.customerEmail}>
+          {item.customerName ?? item.customerEmail}
+        </span>
+        {item.caseNumber && (
+          <span className="font-mono text-[11px]">#{item.caseNumber}</span>
+        )}
+        <span className="tabular-nums" title={formatDateTime(item.createdAt)}>
+          {formatRelativeShort(item.createdAt)}
+        </span>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={copy}
+        className="ms-auto h-7 px-2 text-xs"
+      >
+        {copied ? (
+          <>
+            <Check className="mr-1 h-3 w-3" /> Copied
+          </>
+        ) : (
+          <>
+            <Copy className="mr-1 h-3 w-3" /> Copy
+          </>
+        )}
+      </Button>
+    </li>
   );
 }
