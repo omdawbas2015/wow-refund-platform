@@ -176,7 +176,13 @@ export async function sendStoreMessageAction(
       );
     }
 
-    revalidatePath('/help-desk/stores');
+    // revalidatePath is best-effort. If it throws, the email is already sent
+    // and the log row is already updated — never let it surface as ok:false.
+    try {
+      revalidatePath('/help-desk/stores');
+    } catch (revErr) {
+      console.error('[help-desk] revalidatePath failed after successful send', revErr);
+    }
     return { ok: true, data: { logId: log.id } };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
