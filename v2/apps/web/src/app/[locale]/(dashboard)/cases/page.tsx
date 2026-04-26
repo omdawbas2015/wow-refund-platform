@@ -163,11 +163,10 @@ export default async function CasesPage({
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-display-md font-normal tracking-tight text-heading">Refund Cases</h1>
-          <p className="mt-2 text-body">Create, track, and manage customer refund cases.</p>
-        </div>
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <h1 className="text-display-md font-normal tracking-tight text-heading">
+          Refund cases
+        </h1>
         <Button asChild>
           <Link href={`/${locale}/cases/new`}>
             <Plus className="h-4 w-4" />
