@@ -79,6 +79,83 @@ export async function approveUserAction(formData: FormData): Promise<ActionResul
   }
 }
 
+export async function suspendUserAction(formData: FormData): Promise<ActionResult> {
+  try {
+    const admin = await requireAdmin();
+    const userId = String(formData.get('userId') ?? '');
+    if (!userId) return { ok: false, error: 'Missing userId' };
+    if (userId === admin.id) {
+      return { ok: false, error: 'You cannot suspend your own account' };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, status: true, deletedAt: true },
+    });
+    if (!user) return { ok: false, error: 'User not found' };
+    if (user.deletedAt) return { ok: false, error: 'User is archived' };
+    if (user.status !== 'ACTIVE') {
+      return { ok: false, error: `Only ACTIVE users can be suspended (currently ${user.status})` };
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { status: 'SUSPENDED' },
+    });
+    await audit({
+      actorId: admin.id,
+      actorEmail: admin.email,
+      action: 'user.suspended',
+      entityType: 'USER',
+      entityId: userId,
+      before: { status: 'ACTIVE' },
+      after: { status: 'SUSPENDED' },
+    });
+
+    revalidatePath('/admin/users');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function reactivateUserAction(formData: FormData): Promise<ActionResult> {
+  try {
+    const admin = await requireAdmin();
+    const userId = String(formData.get('userId') ?? '');
+    if (!userId) return { ok: false, error: 'Missing userId' };
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, status: true, deletedAt: true },
+    });
+    if (!user) return { ok: false, error: 'User not found' };
+    if (user.deletedAt) return { ok: false, error: 'User is archived; cannot reactivate' };
+    if (user.status !== 'SUSPENDED') {
+      return { ok: false, error: `Only SUSPENDED users can be reactivated (currently ${user.status})` };
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { status: 'ACTIVE' },
+    });
+    await audit({
+      actorId: admin.id,
+      actorEmail: admin.email,
+      action: 'user.reactivated',
+      entityType: 'USER',
+      entityId: userId,
+      before: { status: 'SUSPENDED' },
+      after: { status: 'ACTIVE' },
+    });
+
+    revalidatePath('/admin/users');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function rejectUserAction(formData: FormData): Promise<ActionResult> {
   try {
     const admin = await requireAdmin();
