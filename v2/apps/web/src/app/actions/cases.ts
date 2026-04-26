@@ -619,3 +619,171 @@ export async function lookupCustomerAction(
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+interface BulkResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  errors: Array<{ caseId: string; caseNumber: string; error: string }>;
+}
+
+const MAX_BULK = 100;
+
+/**
+ * Submit a batch of DRAFT cases to PENDING_APPROVAL. Cases not in DRAFT are
+ * counted as failed but do not abort the rest of the batch — the operator
+ * sees a per-row error breakdown in the toast/page response.
+ *
+ * Each transition is wrapped in its own try/catch so a single bad row can't
+ * roll back the others. Audit rows are written per case so the per-case
+ * timeline still reflects who/when, regardless of which entry point fired
+ * the transition.
+ */
+export async function bulkSubmitCasesAction(
+  formData: FormData,
+): Promise<ActionResult<BulkResult>> {
+  try {
+    const me = await requireUser();
+    const raw = formData.get('caseIds');
+    if (typeof raw !== 'string' || !raw) return { ok: false, error: 'No cases selected' };
+    const caseIds = Array.from(new Set(raw.split(',').map((s) => s.trim()).filter(Boolean))).slice(
+      0,
+      MAX_BULK,
+    );
+    if (caseIds.length === 0) return { ok: false, error: 'No cases selected' };
+
+    const cases = await prisma.refundCase.findMany({
+      where: { id: { in: caseIds }, deletedAt: null },
+      select: { id: true, caseNumber: true, status: true },
+    });
+
+    const result: BulkResult = {
+      total: caseIds.length,
+      succeeded: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    for (const c of cases) {
+      try {
+        assertCaseTransition(c.status, 'PENDING_APPROVAL');
+        await prisma.refundCase.update({
+          where: { id: c.id },
+          data: { status: 'PENDING_APPROVAL' },
+        });
+        await writeAudit({
+          actorId: me.id,
+          actorEmail: me.email,
+          action: 'case.submitted',
+          entityType: 'CASE',
+          entityId: c.id,
+          before: { status: c.status },
+          after: { status: 'PENDING_APPROVAL', via: 'bulk' },
+        });
+        result.succeeded += 1;
+      } catch (rowErr) {
+        result.failed += 1;
+        result.errors.push({
+          caseId: c.id,
+          caseNumber: c.caseNumber,
+          error: rowErr instanceof Error ? rowErr.message : String(rowErr),
+        });
+      }
+    }
+
+    // Cases that vanished between selection and execution.
+    const found = new Set(cases.map((c) => c.id));
+    for (const id of caseIds) {
+      if (!found.has(id)) {
+        result.failed += 1;
+        result.errors.push({ caseId: id, caseNumber: id, error: 'Case not found' });
+      }
+    }
+
+    revalidatePath('/cases');
+    return { ok: true, data: result };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Bulk cancel — same per-row resilience as bulkSubmit. Cancellation is
+ * permitted from non-terminal statuses, so this is mainly used to clean
+ * up stale drafts or revoke pending approvals before they're acted on.
+ */
+export async function bulkCancelCasesAction(
+  formData: FormData,
+): Promise<ActionResult<BulkResult>> {
+  try {
+    const me = await requireUser();
+    const raw = formData.get('caseIds');
+    const reason = (formData.get('reason') ?? '').toString().trim();
+    if (!reason) return { ok: false, error: 'Reason is required' };
+    if (typeof raw !== 'string' || !raw) return { ok: false, error: 'No cases selected' };
+    const caseIds = Array.from(new Set(raw.split(',').map((s) => s.trim()).filter(Boolean))).slice(
+      0,
+      MAX_BULK,
+    );
+    if (caseIds.length === 0) return { ok: false, error: 'No cases selected' };
+
+    const isPrivileged = me.role === 'ADMIN' || me.role === 'COUNTRY_MANAGER';
+
+    const cases = await prisma.refundCase.findMany({
+      where: { id: { in: caseIds }, deletedAt: null },
+      select: { id: true, caseNumber: true, status: true, createdById: true },
+    });
+
+    const result: BulkResult = {
+      total: caseIds.length,
+      succeeded: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    for (const c of cases) {
+      try {
+        // Privileged users can cancel anyone's case; creators can cancel their
+        // own. Mirrors the per-case action's authorization rules.
+        if (!isPrivileged && c.createdById !== me.id) {
+          throw new Error('Not authorized to cancel this case');
+        }
+        assertCaseTransition(c.status, 'CANCELLED');
+        await prisma.refundCase.update({
+          where: { id: c.id },
+          data: { status: 'CANCELLED', cancelledReason: reason },
+        });
+        await writeAudit({
+          actorId: me.id,
+          actorEmail: me.email,
+          action: 'case.cancelled',
+          entityType: 'CASE',
+          entityId: c.id,
+          before: { status: c.status },
+          after: { status: 'CANCELLED', reason, via: 'bulk' },
+        });
+        result.succeeded += 1;
+      } catch (rowErr) {
+        result.failed += 1;
+        result.errors.push({
+          caseId: c.id,
+          caseNumber: c.caseNumber,
+          error: rowErr instanceof Error ? rowErr.message : String(rowErr),
+        });
+      }
+    }
+
+    const found = new Set(cases.map((c) => c.id));
+    for (const id of caseIds) {
+      if (!found.has(id)) {
+        result.failed += 1;
+        result.errors.push({ caseId: id, caseNumber: id, error: 'Case not found' });
+      }
+    }
+
+    revalidatePath('/cases');
+    return { ok: true, data: result };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

@@ -11,6 +11,7 @@ import { auth } from '@/auth';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { caseStatusVariant, caseStatusLabel } from '@/lib/cases/case-status-display';
 import { SlaPill } from '@/components/cases/sla-pill';
+import { BulkActionsBar, BulkSelectAll, BulkRowCheckbox } from './bulk-actions';
 
 const STATUS_TABS: Array<{ key: 'ALL' | CaseStatus; label: string }> = [
   { key: 'ALL', label: 'All' },
@@ -223,6 +224,13 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
         })}
       </div>
 
+      {/* Bulk action bar — only renders when there are rows. */}
+      {rows.length > 0 ? (
+        <BulkActionsBar
+          cases={rows.map((r) => ({ id: r.id, caseNumber: r.caseNumber, status: r.status }))}
+        />
+      ) : null}
+
       {/* Table */}
       <Card className="overflow-hidden p-0">
         {rows.length === 0 ? (
@@ -237,6 +245,9 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
             <table className="w-full text-sm">
               <thead className="bg-surface-subtle text-muted-foreground">
                 <tr className="text-start [&>th]:px-4 [&>th]:py-2.5 [&>th]:text-start [&>th]:text-xs [&>th]:font-medium [&>th]:uppercase">
+                  <th className="w-8">
+                    <BulkSelectAll />
+                  </th>
                   <th>Case</th>
                   <th>Country</th>
                   <th>Brand</th>
@@ -251,6 +262,9 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
               <tbody className="divide-y divide-border">
                 {rows.map((r) => (
                   <tr key={r.id} className="hover:bg-surface-subtle/50">
+                    <td className="px-4 py-2.5">
+                      <BulkRowCheckbox caseId={r.id} />
+                    </td>
                     <td className="px-4 py-2.5">
                       <Link href={`/cases/${r.id}`} className="font-medium text-primary hover:underline">
                         {r.caseNumber}
