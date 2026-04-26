@@ -145,7 +145,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
         <div className="mt-4 flex items-center justify-end gap-2 text-sm">
           {page > 1 ? (
             <Link
-              href={`/reports/emails?page=${page - 1}&status=${status}&key=${key}`}
+              href={`/reports/emails?page=${page - 1}&status=${encodeURIComponent(status)}&key=${encodeURIComponent(key)}`}
               className="rounded-md border border-border px-2 py-1 hover:bg-surface-subtle"
             >
               ← Prev
@@ -156,7 +156,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
           </span>
           {page < pages ? (
             <Link
-              href={`/reports/emails?page=${page + 1}&status=${status}&key=${key}`}
+              href={`/reports/emails?page=${page + 1}&status=${encodeURIComponent(status)}&key=${encodeURIComponent(key)}`}
               className="rounded-md border border-border px-2 py-1 hover:bg-surface-subtle"
             >
               Next →

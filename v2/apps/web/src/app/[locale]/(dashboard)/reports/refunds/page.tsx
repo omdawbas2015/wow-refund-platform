@@ -36,18 +36,28 @@ export default async function RefundsReportPage({ searchParams }: PageProps) {
     },
   });
 
-  // Aggregate by payment method.
-  const byMethod = new Map<string, { count: number; amount: number; currency: string }>();
+  // Aggregate by (payment method, currency). Components in different
+  // currencies must NEVER be summed together; we render one row per pair.
+  const byMethodCurrency = new Map<
+    string,
+    { method: string; currency: string; count: number; amount: number }
+  >();
   for (const r of refunded) {
-    const key = r.paymentMethod.label;
-    const acc = byMethod.get(key) ?? { count: 0, amount: 0, currency: r.currency };
+    const method = r.paymentMethod.label;
+    const key = `${method}::${r.currency}`;
+    const acc = byMethodCurrency.get(key) ?? {
+      method,
+      currency: r.currency,
+      count: 0,
+      amount: 0,
+    };
     acc.count += 1;
     acc.amount += r.amount;
-    byMethod.set(key, acc);
+    byMethodCurrency.set(key, acc);
   }
-  const methodRows = [...byMethod.entries()]
-    .map(([method, agg]) => ({ method, ...agg }))
-    .sort((a, b) => b.amount - a.amount);
+  const methodRows = [...byMethodCurrency.values()].sort((a, b) =>
+    a.method === b.method ? a.currency.localeCompare(b.currency) : b.amount - a.amount,
+  );
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
