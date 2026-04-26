@@ -39,3 +39,18 @@ export async function nextKnetBatchNumber(now: Date = new Date()): Promise<strin
   const lastSeq = last ? parseInt(last.batchNumber.slice(prefix.length), 10) || 0 : 0;
   return `${prefix}${String(lastSeq + 1).padStart(4, '0')}`;
 }
+
+/**
+ * Aura batches are global (one queue), e.g. AURA-2026-0001.
+ */
+export async function nextAuraBatchNumber(now: Date = new Date()): Promise<string> {
+  const year = now.getUTCFullYear();
+  const prefix = `AURA-${year}-`;
+  const last = await prisma.auraBatch.findFirst({
+    where: { batchNumber: { startsWith: prefix } },
+    orderBy: { batchNumber: 'desc' },
+    select: { batchNumber: true },
+  });
+  const lastSeq = last ? parseInt(last.batchNumber.slice(prefix.length), 10) || 0 : 0;
+  return `${prefix}${String(lastSeq + 1).padStart(4, '0')}`;
+}
