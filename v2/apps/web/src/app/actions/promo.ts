@@ -289,6 +289,12 @@ export async function listPromoAllocationsAction(input: {
     createdAt: Date;
   }>;
   total: number;
+  /**
+   * Per-type counts across the same q + date + RBAC filter (ignoring the
+   * type filter), so the UI can render tab badges that always reflect
+   * the true database-wide totals — not a slice of the first `take`.
+   */
+  counts: { compensation: number; recovery: number };
   scope: 'ALL' | 'COMPENSATION_PLUS_OWN_RECOVERY' | 'EMPTY';
 }> {
   const user = await requireSession();
@@ -298,7 +304,12 @@ export async function listPromoAllocationsAction(input: {
   const isFullView = new Set(['ADMIN', 'MANAGER', 'OPERATIONS', 'READ_ONLY']).has(roleKey);
   const isScopedView = new Set(['AGENT', 'TEAM_LEAD']).has(roleKey);
   if (!isFullView && !isScopedView) {
-    return { items: [], total: 0, scope: 'EMPTY' };
+    return {
+      items: [],
+      total: 0,
+      counts: { compensation: 0, recovery: 0 },
+      scope: 'EMPTY',
+    };
   }
 
   const q = input.q?.trim().toLowerCase() ?? '';
@@ -353,7 +364,12 @@ export async function listPromoAllocationsAction(input: {
         : [scoped];
   }
 
-  const [rows, total] = await Promise.all([
+  // Counts ignore the type filter so tab badges keep showing the true
+  // per-type totals even when the user has selected a single type tab.
+  const whereForCounts: Prisma.PromoAllocationWhereInput = { ...where };
+  delete (whereForCounts as { code?: unknown }).code;
+
+  const [rows, total, compCount, recCount] = await Promise.all([
     prisma.promoAllocation.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -365,6 +381,18 @@ export async function listPromoAllocationsAction(input: {
       },
     }),
     prisma.promoAllocation.count({ where }),
+    prisma.promoAllocation.count({
+      where: {
+        ...whereForCounts,
+        code: { config: { type: 'CUSTOMER_COMPENSATION' } },
+      },
+    }),
+    prisma.promoAllocation.count({
+      where: {
+        ...whereForCounts,
+        code: { config: { type: 'SERVICE_RECOVERY' } },
+      },
+    }),
   ]);
 
   return {
@@ -385,6 +413,7 @@ export async function listPromoAllocationsAction(input: {
       createdAt: a.createdAt,
     })),
     total,
+    counts: { compensation: compCount, recovery: recCount },
     scope: isFullView ? 'ALL' : 'COMPENSATION_PLUS_OWN_RECOVERY',
   };
 }

@@ -58,41 +58,47 @@ export function PromoHistoryList() {
 
   const [items, setItems] = useState<Item[] | null>(null);
   const [total, setTotal] = useState(0);
+  const [serverCounts, setServerCounts] = useState<{
+    compensation: number;
+    recovery: number;
+  }>({ compensation: 0, recovery: 0 });
   const [pending, startTransition] = useTransition();
   const genRef = useRef(0);
 
-  // Debounced fetch whenever any filter changes. Always pull "ALL" from the
-  // server — the type tabs filter the results client-side so we can still
-  // show counts per type (e.g. "Compensation 24 · Recovery 6") even when one
-  // tab is active.
+  // Debounced fetch whenever any filter changes.
+  //
+  // Type filtering happens server-side (so the take=50 cap doesn't hide
+  // a whole type bucket), while per-type tab counts come back in the same
+  // payload via `counts.compensation` / `counts.recovery` — those counts
+  // ignore the type filter so the tabs always reflect the true totals
+  // for the current q + date range.
   useEffect(() => {
     const gen = ++genRef.current;
     const handle = setTimeout(() => {
       startTransition(async () => {
         const res = await listPromoAllocationsAction({
           q: q || undefined,
-          type: 'ALL',
+          type,
           fromDate: range.from ?? undefined,
           toDate: range.to ?? undefined,
         });
         if (genRef.current !== gen) return;
         setItems(res.items);
         setTotal(res.total);
+        setServerCounts(res.counts);
       });
     }, 250);
     return () => clearTimeout(handle);
-  }, [q, range]);
+  }, [q, type, range]);
 
-  const counts = useMemo(() => {
-    if (!items) return { all: 0, comp: 0, rec: 0 };
-    let comp = 0;
-    let rec = 0;
-    for (const it of items) {
-      if (it.type === 'CUSTOMER_COMPENSATION') comp += 1;
-      else rec += 1;
-    }
-    return { all: items.length, comp, rec };
-  }, [items]);
+  const counts = useMemo(
+    () => ({
+      all: serverCounts.compensation + serverCounts.recovery,
+      comp: serverCounts.compensation,
+      rec: serverCounts.recovery,
+    }),
+    [serverCounts],
+  );
 
   const compensation = useMemo(
     () => items?.filter((it) => it.type === 'CUSTOMER_COMPENSATION') ?? [],

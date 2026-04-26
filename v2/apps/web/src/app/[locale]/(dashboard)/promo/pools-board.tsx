@@ -294,8 +294,10 @@ function CountrySection({ group, locale }: { group: CountryGroup; locale: string
     (s, b) => s + b.pools.reduce((sb, p) => sb + p.available, 0),
     0,
   );
+  // Match BrandStockChip's "Low" definition exactly (>0 && <=3) so the
+  // header badge can't say "low" while a card on the row reads "Out".
   const lowBrands = group.brands.filter((b) =>
-    b.pools.some((p) => p.available <= 3),
+    b.pools.some((p) => p.available > 0 && p.available <= 3),
   ).length;
 
   return (
