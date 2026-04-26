@@ -1,0 +1,158 @@
+'use client';
+
+import { useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form-field';
+import { formatCurrency } from '@/lib/utils';
+import { createKnetBatchAction } from '@/app/actions/knet-batches';
+
+interface ComponentRow {
+  id: string;
+  authCode: string | null;
+  amount: number;
+  currency: string;
+  caseNumber: string;
+  customerName: string;
+  orderNumber: string;
+  countryCode: string;
+}
+
+export function KnetBatchPicker(props: { components: ComponentRow[] }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [recipientEmails, setRecipientEmails] = useState('');
+  const [selected, setSelected] = useState<Record<string, true>>({});
+
+  const selectedIds = Object.keys(selected);
+  const total = useMemo(
+    () => props.components.filter((c) => selected[c.id]).reduce((s, c) => s + c.amount, 0),
+    [props.components, selected],
+  );
+  const currency = props.components.find((c) => selected[c.id])?.currency ?? '';
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = { ...prev };
+      if (next[id]) delete next[id];
+      else next[id] = true;
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelected(Object.fromEntries(props.components.map((c) => [c.id, true as const])));
+  }
+  function clear() {
+    setSelected({});
+  }
+
+  function submit() {
+    if (selectedIds.length === 0) {
+      toast.error('Select at least one component');
+      return;
+    }
+    startTransition(async () => {
+      const result = await createKnetBatchAction({
+        componentIds: selectedIds,
+        recipientEmails: recipientEmails || undefined,
+      });
+      if (result.ok) {
+        toast.success(`Batch ${result.data.batchNumber} created`);
+        router.push(`/operations/knet/${result.data.batchId}`);
+        router.refresh();
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField
+          label="Recipients (override)"
+          id="recipientEmails"
+          hint="Comma-separated; defaults to FINANCE_TEAM_EMAIL env var"
+        >
+          <Input
+            id="recipientEmails"
+            placeholder="finance@example.com"
+            value={recipientEmails}
+            onChange={(e) => setRecipientEmails(e.target.value)}
+          />
+        </FormField>
+        <div className="flex items-end justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={selectAll} disabled={props.components.length === 0}>
+            Select all
+          </Button>
+          <Button size="sm" variant="ghost" onClick={clear} disabled={selectedIds.length === 0}>
+            Clear
+          </Button>
+        </div>
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        {props.components.length} eligible component(s) · {selectedIds.length} selected · total{' '}
+        {currency ? formatCurrency(total, currency, 'en-US', 3) : `${total.toFixed(3)}`}
+      </div>
+
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-subtle text-muted-foreground">
+            <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-start [&>th]:text-xs [&>th]:font-medium [&>th]:uppercase">
+              <th></th>
+              <th>Country</th>
+              <th>Case</th>
+              <th>Customer</th>
+              <th>Order</th>
+              <th>Auth</th>
+              <th className="text-end">Amount</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {props.components.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  No KNET components are awaiting a batch right now.
+                </td>
+              </tr>
+            ) : (
+              props.components.map((c) => (
+                <tr key={c.id} className={selected[c.id] ? 'bg-primary/5' : ''}>
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={!!selected[c.id]}
+                      onChange={() => toggle(c.id)}
+                      aria-label={`Select component ${c.caseNumber}`}
+                    />
+                  </td>
+                  <td className="px-3 py-2 tabular">{c.countryCode}</td>
+                  <td className="px-3 py-2 font-medium">{c.caseNumber}</td>
+                  <td className="px-3 py-2">{c.customerName}</td>
+                  <td className="px-3 py-2 tabular">{c.orderNumber}</td>
+                  <td className="px-3 py-2 tabular">{c.authCode ?? '—'}</td>
+                  <td className="px-3 py-2 text-end tabular">
+                    {formatCurrency(c.amount, c.currency, 'en-US', 3)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => router.back()} disabled={pending}>
+          Cancel
+        </Button>
+        <Button onClick={submit} disabled={pending || selectedIds.length === 0}>
+          {pending ? 'Creating…' : `Create batch (${selectedIds.length})`}
+        </Button>
+      </div>
+    </div>
+  );
+}
