@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { allocatePromoAction, loadCustomerPromoHistoryAction } from '@/app/actions/promo';
 import { Button } from '@/components/ui/button';
@@ -92,6 +92,9 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
     totalCount: 0,
     history: [],
   });
+  // Monotonic counter so a stale in-flight history request (e.g. from a
+  // previous email) can never overwrite the current customer's data.
+  const lookupGenRef = useRef(0);
 
   const countries = useMemo(() => {
     const map = new Map<string, { id: string; name: string; flag: string }>();
@@ -133,23 +136,30 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
     }
   }, [matchingPools, poolId]);
 
-  // Debounced history lookup when the email changes.
+  // Debounced history lookup when the email changes. Uses a generation
+  // counter so stale in-flight responses for a previous email can never
+  // overwrite the current lookup state.
   useEffect(() => {
     const trimmed = customerEmail.trim().toLowerCase();
     if (!trimmed || !trimmed.includes('@')) {
+      lookupGenRef.current += 1;
       setLookup({ loading: false, email: null, recentCount: 0, totalCount: 0, history: [] });
       setFraudAck(false);
       return;
     }
     if (lookup.email === trimmed) return;
 
-    // Any change of email invalidates a previous acknowledgment — the agent
-    // must review the new customer's history before proceeding.
+    const gen = ++lookupGenRef.current;
+    // Any change of email invalidates a previous acknowledgment + any
+    // stale history data. Clear fully rather than spreading so the panel
+    // can't briefly show the previous customer's fraud flags.
     setFraudAck(false);
-    setLookup((s) => ({ ...s, loading: true }));
+    setLookup({ loading: true, email: null, recentCount: 0, totalCount: 0, history: [] });
     const handle = setTimeout(async () => {
       try {
         const res = await loadCustomerPromoHistoryAction(trimmed);
+        // Discard the response if the user typed another email in the meantime.
+        if (lookupGenRef.current !== gen) return;
         setLookup({
           loading: false,
           email: trimmed,
@@ -157,8 +167,8 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
           totalCount: res.totalCount,
           history: res.history,
         });
-        if (res.recentCount === 0) setFraudAck(false);
       } catch {
+        if (lookupGenRef.current !== gen) return;
         setLookup((s) => ({ ...s, loading: false }));
       }
     }, 350);
