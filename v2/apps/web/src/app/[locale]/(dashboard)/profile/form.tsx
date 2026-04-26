@@ -15,15 +15,38 @@ export interface ProfileInitial {
   preferredLocale: string;
   preferredCurrency: string;
   preferredTheme: string;
+  mutedKinds: string[];
 }
 
-export function ProfileForm({ initial }: { initial: ProfileInitial }) {
+interface MutableKind {
+  kind: string;
+  label: string;
+  description: string;
+}
+
+export function ProfileForm({
+  initial,
+  mutableKinds,
+}: {
+  initial: ProfileInitial;
+  mutableKinds: MutableKind[];
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [values, setValues] = useState<ProfileInitial>(initial);
+  const [muted, setMuted] = useState<Set<string>>(new Set(initial.mutedKinds));
 
   function set<K extends keyof ProfileInitial>(key: K, v: string) {
     setValues((prev) => ({ ...prev, [key]: v }));
+  }
+
+  function toggleMute(kind: string) {
+    setMuted((prev) => {
+      const next = new Set(prev);
+      if (next.has(kind)) next.delete(kind);
+      else next.add(kind);
+      return next;
+    });
   }
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -35,6 +58,9 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
     fd.set('preferredLocale', values.preferredLocale);
     fd.set('preferredCurrency', values.preferredCurrency);
     fd.set('preferredTheme', values.preferredTheme);
+    // Send a `mute:<KIND>=on` entry per muted kind. Unchecked kinds are
+    // simply absent — the server treats absence as 'not muted'.
+    for (const kind of muted) fd.set(`mute:${kind}`, 'on');
 
     startTransition(async () => {
       const result = await updateProfileAction(fd);
@@ -118,6 +144,38 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
           <option value="dark">Dark</option>
           <option value="system">System</option>
         </select>
+      </div>
+
+      <div className="sm:col-span-2 mt-2 border-t border-border/60 pt-4">
+        <h3 className="text-sm font-medium">Mute notifications</h3>
+        <p className="text-xs text-muted-foreground">
+          Skip these kinds in your inbox. Audit and email logs are unaffected.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {mutableKinds.map((m) => {
+            const checked = muted.has(m.kind);
+            const id = `mute-${m.kind}`;
+            return (
+              <label
+                key={m.kind}
+                htmlFor={id}
+                className="flex cursor-pointer items-start gap-3 rounded-md border border-border/60 bg-surface/40 p-3 text-sm hover:border-border"
+              >
+                <input
+                  id={id}
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-primary"
+                  checked={checked}
+                  onChange={() => toggleMute(m.kind)}
+                />
+                <div className="flex-1">
+                  <div className="font-medium">{m.label}</div>
+                  <div className="text-xs text-muted-foreground">{m.description}</div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
       </div>
 
       <div className="sm:col-span-2 flex justify-end">

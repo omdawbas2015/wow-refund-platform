@@ -1,5 +1,6 @@
 import { prisma, type CaseStatus } from '@wow/db';
 import { pickSlaRule, classifyByHours, hoursBetween } from './sla-rules';
+import { dispatchNotifications } from '@/lib/notifications/dispatch';
 
 const TERMINAL: CaseStatus[] = ['REFUNDED', 'REJECTED', 'CANCELLED'];
 
@@ -114,18 +115,16 @@ export async function runSlaBreachSweep(
       }.`;
     }
 
-    await prisma.notification.createMany({
-      data: recipientIds.map((userId) => ({
-        userId,
-        type: notifType as 'SLA_BREACHED' | 'SLA_WARNING',
-        title,
-        body,
-        href: `/cases/${c.id}`,
-        contextType: 'CASE',
-        contextId: c.id,
-      })),
+    const dispatched = await dispatchNotifications({
+      userIds: recipientIds,
+      type: notifType as 'SLA_BREACHED' | 'SLA_WARNING',
+      title,
+      body,
+      href: `/cases/${c.id}`,
+      contextType: 'CASE',
+      contextId: c.id,
     });
-    notificationsCreated += recipientIds.length;
+    notificationsCreated += dispatched.created;
   }
 
   await prisma.auditLog.create({

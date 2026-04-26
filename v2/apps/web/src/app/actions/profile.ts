@@ -3,6 +3,12 @@
 import { prisma } from '@wow/db';
 import { auth } from '@/auth';
 import { revalidatePath } from 'next/cache';
+import {
+  MUTABLE_NOTIFICATION_KINDS,
+  parseMutedKinds,
+  serializeMutedKinds,
+  type NotificationKind,
+} from '@/lib/notifications/dispatch';
 
 type ActionResult<T = void> =
   | (T extends void ? { ok: true } : { ok: true; data: T })
@@ -10,6 +16,9 @@ type ActionResult<T = void> =
 
 const LOCALES = new Set(['en', 'ar']);
 const THEMES = new Set(['light', 'dark', 'system']);
+const MUTABLE_KINDS = new Set<NotificationKind>(
+  MUTABLE_NOTIFICATION_KINDS.map((k) => k.kind),
+);
 
 interface UpdateProfileInput {
   name: string;
@@ -18,9 +27,11 @@ interface UpdateProfileInput {
   preferredLocale: string;
   preferredCurrency?: string;
   preferredTheme: string;
+  mutedNotificationKinds: string;
 }
 
-function normalize(input: Record<string, FormDataEntryValue>): UpdateProfileInput | null {
+function normalize(formData: FormData): UpdateProfileInput | null {
+  const input = Object.fromEntries(formData.entries());
   const name = String(input['name'] ?? '').trim();
   if (!name || name.length > 120) return null;
   const nameAr = String(input['nameAr'] ?? '').trim();
@@ -34,6 +45,17 @@ function normalize(input: Record<string, FormDataEntryValue>): UpdateProfileInpu
   const preferredTheme = String(input['preferredTheme'] ?? '').trim();
   if (!THEMES.has(preferredTheme)) return null;
 
+  // Form sends each muted kind as `mute:<KIND>=on`. Iterating once over
+  // formData lets us pick those out without trusting the client to
+  // submit only known kinds.
+  const muted: NotificationKind[] = [];
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith('mute:')) continue;
+    if (value !== 'on' && value !== 'true' && value !== '1') continue;
+    const kind = key.slice('mute:'.length) as NotificationKind;
+    if (MUTABLE_KINDS.has(kind)) muted.push(kind);
+  }
+
   return {
     name,
     nameAr: nameAr || undefined,
@@ -41,20 +63,20 @@ function normalize(input: Record<string, FormDataEntryValue>): UpdateProfileInpu
     preferredLocale,
     preferredCurrency: preferredCurrency || undefined,
     preferredTheme,
+    mutedNotificationKinds: serializeMutedKinds(muted),
   };
 }
 
 /**
  * Self-service profile update. The signed-in user can modify their own
  * `name`, `nameAr`, `phone`, and display preferences (locale, currency,
- * theme). Email, role, country assignments, and deputy relationships are
- * intentionally NOT settable here — those go through admin tools so the
- * audit trail stays clean.
+ * theme), plus per-kind notification mutes. Email, role, country
+ * assignments, and deputy relationships are intentionally NOT settable
+ * here — those go through admin tools so the audit trail stays clean.
  *
  * Logs the diff to AuditLog under entity type `USER`, action
- * `user.profile.updated`. The `before` blob is whatever changed; if
- * nothing changed we still return `{ ok: true }` and skip the audit row
- * to avoid noise.
+ * `user.profile.updated`. If nothing changed we still return
+ * `{ ok: true }` and skip the audit row to avoid noise.
  */
 export async function updateProfileAction(formData: FormData): Promise<ActionResult> {
   try {
@@ -62,7 +84,7 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
     if (!session?.user?.id) return { ok: false, error: 'UNAUTHENTICATED' };
     const meId = session.user.id;
 
-    const data = normalize(Object.fromEntries(formData.entries()));
+    const data = normalize(formData);
     if (!data) return { ok: false, error: 'Invalid input' };
 
     const current = await prisma.user.findUnique({
@@ -74,6 +96,7 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
         preferredLocale: true,
         preferredCurrency: true,
         preferredTheme: true,
+        mutedNotificationKinds: true,
       },
     });
     if (!current) return { ok: false, error: 'User not found' };
@@ -85,12 +108,9 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
       preferredLocale: data.preferredLocale,
       preferredCurrency: data.preferredCurrency ?? null,
       preferredTheme: data.preferredTheme,
+      mutedNotificationKinds: data.mutedNotificationKinds,
     };
 
-    // Build a changed-fields diff for the audit log. We only persist + audit
-    // if at least one tracked field actually changed; this keeps the audit
-    // log signal-rich and avoids spamming when a user opens the form and
-    // saves it unchanged.
     const changed: Record<string, { from: unknown; to: unknown }> = {};
     (Object.keys(next) as (keyof typeof next)[]).forEach((k) => {
       const before = current[k] ?? null;
@@ -113,12 +133,10 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
       }),
     ]);
 
-    // Locale-prefixed paths revalidate from the layout — re-rendering the
-    // profile page is enough to show the saved values, and the topbar /
-    // dashboard pull session info on next navigation.
     revalidatePath('/profile');
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+

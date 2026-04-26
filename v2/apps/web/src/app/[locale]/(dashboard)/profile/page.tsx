@@ -9,6 +9,10 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { ProfileForm } from './form';
+import {
+  MUTABLE_NOTIFICATION_KINDS,
+  parseMutedKinds,
+} from '@/lib/notifications/dispatch';
 
 /**
  * Self-service profile page. Lets the signed-in user update display fields
@@ -30,6 +34,7 @@ export default async function ProfilePage() {
       preferredLocale: true,
       preferredCurrency: true,
       preferredTheme: true,
+      mutedNotificationKinds: true,
       role: { select: { key: true, name: true } },
       primaryCountryId: true,
       lastLoginAt: true,
@@ -64,7 +69,9 @@ export default async function ProfilePage() {
                 preferredLocale: me.preferredLocale,
                 preferredCurrency: me.preferredCurrency ?? '',
                 preferredTheme: me.preferredTheme,
+                mutedKinds: Array.from(parseMutedKinds(me.mutedNotificationKinds)),
               }}
+              mutableKinds={MUTABLE_NOTIFICATION_KINDS}
             />
           </CardContent>
         </Card>
