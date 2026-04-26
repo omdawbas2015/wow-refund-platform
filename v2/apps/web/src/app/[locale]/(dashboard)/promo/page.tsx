@@ -4,17 +4,15 @@ import { prisma } from '@wow/db';
 import { auth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Gift, Plus, AlertTriangle } from 'lucide-react';
+import { Gift, Plus, AlertTriangle, History } from 'lucide-react';
 import { formatMoney, relativeTime } from '@/lib/format';
 
-const PROMO_VIEW_ROLES = new Set([
-  'ADMIN',
-  'MANAGER',
-  'OPERATIONS',
-  'TEAM_LEAD',
-  'AGENT',
-  'READ_ONLY',
-]);
+/**
+ * Who gets the pool-management dashboard. Agents / team leads / read-only
+ * users are bounced to the allocate page (or history for read-only) since
+ * the pool inventory view isn't useful to them day-to-day.
+ */
+const POOL_MANAGEMENT_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']);
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +42,15 @@ export default async function PromoPage({
   const { locale } = await params;
   const session = await auth();
   if (!session?.user) redirect(`/${locale}/login`);
-  if (!PROMO_VIEW_ROLES.has(session.user.role ?? '')) redirect(`/${locale}`);
+  const role = session.user.role ?? '';
+  // Agents / team leads → allocate directly. Read-only → history only.
+  if (role === 'AGENT' || role === 'TEAM_LEAD') {
+    redirect(`/${locale}/promo/allocate`);
+  }
+  if (role === 'READ_ONLY') {
+    redirect(`/${locale}/promo/history`);
+  }
+  if (!POOL_MANAGEMENT_ROLES.has(role)) redirect(`/${locale}`);
 
   const now = new Date();
   const [pools, stockCounts, staleAvailableCounts, recentAllocations] = await Promise.all([
@@ -150,14 +156,22 @@ export default async function PromoPage({
             Customer compensation and service recovery pools, organized by country and brand.
           </p>
         </div>
-        {canAllocate && (
-          <Button asChild>
-            <Link href={`/${locale}/promo/allocate`}>
-              <Plus className="mr-2 h-4 w-4" />
-              Allocate promo
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href={`/${locale}/promo/history`}>
+              <History className="mr-2 h-4 w-4" />
+              History
             </Link>
           </Button>
-        )}
+          {canAllocate && (
+            <Button asChild>
+              <Link href={`/${locale}/promo/allocate`}>
+                <Plus className="mr-2 h-4 w-4" />
+                Allocate promo
+              </Link>
+            </Button>
+          )}
+        </div>
       </header>
 
       <section className="grid gap-3 sm:grid-cols-3">

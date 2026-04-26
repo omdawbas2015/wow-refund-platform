@@ -394,6 +394,12 @@ model RefundCase {
   id              String     @id @default(cuid())
   caseNumber      String     @unique // REF-KW-2026-000123 (auto-generated per country/year)
 
+  /// External CRM/helpdesk ticket reference the agent types manually when
+  /// creating the refund. Required from new UI submissions (enforced in the
+  /// validator) but nullable at the DB layer so legacy seeded cases remain
+  /// importable. Indexed for fast lookup from ticket searches.
+  externalCaseNumber String?
+
   // Context
   countryId       String
   country         Country    @relation(fields: [countryId], references: [id])
@@ -476,6 +482,7 @@ model RefundCase {
   @@index([assignedToId])
   @@index([customerEmail])
   @@index([orderNumber])
+  @@index([externalCaseNumber])
   @@index([createdAt])
   @@index([deletedAt])
   @@map("refund_case")

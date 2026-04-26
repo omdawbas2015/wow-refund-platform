@@ -149,6 +149,7 @@ export async function createCaseAction(
           const newCase = await tx.refundCase.create({
             data: {
               caseNumber,
+              externalCaseNumber: data.externalCaseNumber,
               countryId: data.countryId,
               branchId: data.branchId || null,
               brandId: data.brandId,
