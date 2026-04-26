@@ -42,7 +42,13 @@ export function BrandsEditor(props: { brands: Row[] }) {
       });
       if (result.ok) {
         toast.success('Saved');
-        if (!row.id) setDraft(null);
+        if (!row.id) {
+          // Newly created — append to local state so it stays visible after
+          // router.refresh() (which does NOT re-seed useState).
+          const newRow: Row = { ...row, id: result.data.id };
+          setRows((prev) => [...prev, newRow]);
+          setDraft(null);
+        }
         router.refresh();
       } else {
         toast.error(result.error);

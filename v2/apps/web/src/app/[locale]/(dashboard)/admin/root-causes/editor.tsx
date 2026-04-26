@@ -53,7 +53,11 @@ export function RootCausesEditor(props: { rootCauses: Row[] }) {
       });
       if (result.ok) {
         toast.success('Saved');
-        if (!row.id) setDraft(null);
+        if (!row.id) {
+          const newRow: Row = { ...row, id: result.data.id };
+          setRows((prev) => [...prev, newRow]);
+          setDraft(null);
+        }
         router.refresh();
       } else {
         toast.error(result.error);

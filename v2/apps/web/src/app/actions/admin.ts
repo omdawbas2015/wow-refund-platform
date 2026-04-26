@@ -222,8 +222,10 @@ export async function upsertBrandAction(input: UpsertBrandInput): Promise<Action
       revalidatePath('/admin/brands');
       return { ok: true, data: { id: updated.id } };
     } else {
-      const dup = await prisma.brand.findUnique({ where: { name } });
-      if (dup) return { ok: false, error: 'A brand with this name already exists' };
+      const dupName = await prisma.brand.findUnique({ where: { name } });
+      if (dupName) return { ok: false, error: 'A brand with this name already exists' };
+      const dupSlug = await prisma.brand.findUnique({ where: { slug } });
+      if (dupSlug) return { ok: false, error: 'A brand with this slug already exists' };
       const created = await prisma.brand.create({ data });
       await audit({
         actorId: me.id,
