@@ -17,8 +17,11 @@
     "countries": "الدول",
     "brands": "العلامات التجارية",
     "paymentMethods": "طرق الدفع",
+    "rootCauses": "أسباب جذرية",
+    "storeTemplates": "قوالب المتاجر",
     "emailTemplates": "قوالب الإيميل",
     "auditLog": "سجل التدقيق",
+    "emailLog": "سجل الإيميل",
     "settings": "الإعدادات",
     "logout": "تسجيل الخروج"
   },

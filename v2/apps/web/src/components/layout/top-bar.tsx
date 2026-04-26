@@ -3,21 +3,35 @@
 import { signOut } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { useRouter, usePathname } from 'next/navigation';
+import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
-import { LogOut, Globe, Moon, Sun } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { LogOut, Globe, Moon, Sun, Search, Keyboard, User } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { NotificationBell } from './notification-bell';
 
 interface TopBarProps {
   userName: string;
   userEmail: string;
   currentLocale: string;
+  darkModeEnabled?: boolean;
 }
 
-export function TopBar({ userName, userEmail, currentLocale }: TopBarProps) {
+export function TopBar({ userName, userEmail, currentLocale, darkModeEnabled = true }: TopBarProps) {
   const t = useTranslations('nav');
   const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
+  const [searchQ, setSearchQ] = useState('');
+
+  function onSearch(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const q = searchQ.trim();
+    if (!q) return;
+    // Locale prefix is auto-added by the i18n routing; pushing to a plain
+    // path keeps client-side navigation snappy.
+    router.push(`/${currentLocale}/search?q=${encodeURIComponent(q)}`);
+  }
 
   function toggleLocale() {
     const next = currentLocale === 'en' ? 'ar' : 'en';
@@ -35,24 +49,57 @@ export function TopBar({ userName, userEmail, currentLocale }: TopBarProps) {
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-surface px-4">
-      <div className="text-sm text-muted-foreground">
+      <button
+        type="button"
+        onClick={() => router.push(`/${currentLocale}/profile`)}
+        className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+        aria-label="Open profile"
+        title="Open profile"
+      >
+        <User className="h-4 w-4" />
         <span className="font-medium text-foreground">{userName}</span>
-        <span className="mx-2">·</span>
-        <span>{userEmail}</span>
-      </div>
+        <span className="hidden sm:inline mx-1">·</span>
+        <span className="hidden sm:inline">{userEmail}</span>
+      </button>
       <div className="flex items-center gap-2">
+        <form onSubmit={onSearch} className="relative hidden md:block">
+          <Search className="pointer-events-none absolute start-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            placeholder="Search…"
+            aria-label="Global search"
+            className="h-8 w-56 ps-8"
+          />
+        </form>
+        <NotificationBell />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            const ev = new KeyboardEvent('keydown', { key: '?' });
+            window.dispatchEvent(ev);
+          }}
+          aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts (press ?)"
+        >
+          <Keyboard className="h-4 w-4" />
+        </Button>
         <Button variant="ghost" size="sm" onClick={toggleLocale} aria-label="Toggle language">
           <Globe className="h-4 w-4" />
           <span className="ms-1 uppercase">{currentLocale === 'en' ? 'AR' : 'EN'}</span>
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          aria-label="Toggle theme"
-        >
-          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </Button>
+        {darkModeEnabled ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"

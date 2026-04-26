@@ -17,6 +17,9 @@ import {
   Settings,
   CreditCard,
   Mail,
+  Tag,
+  AlertTriangle,
+  History,
 } from 'lucide-react';
 
 interface NavSection {
@@ -50,7 +53,11 @@ export function Sidebar({ role }: { role: string | null }) {
     },
     {
       label: t('reports'),
-      items: [{ label: t('reports'), href: '/reports', icon: BarChart3 }],
+      items: [
+        { label: t('reports'), href: '/reports', icon: BarChart3 },
+        { label: t('auditLog'), href: '/reports/audit', icon: History, adminOnly: true },
+        { label: t('emailLog'), href: '/reports/emails', icon: Mail, adminOnly: true },
+      ],
     },
     {
       label: t('admin'),
@@ -58,7 +65,10 @@ export function Sidebar({ role }: { role: string | null }) {
         { label: t('users'), href: '/admin/users', icon: Users, adminOnly: true },
         { label: t('pendingApprovals'), href: '/admin/pending-approvals', icon: ClipboardList, adminOnly: true },
         { label: t('countries'), href: '/admin/countries', icon: Globe, adminOnly: true },
+        { label: t('brands'), href: '/admin/brands', icon: Tag, adminOnly: true },
         { label: t('paymentMethods'), href: '/admin/payment-methods', icon: CreditCard, adminOnly: true },
+        { label: t('rootCauses'), href: '/admin/root-causes', icon: AlertTriangle, adminOnly: true },
+        { label: t('storeTemplates'), href: '/admin/store-templates', icon: Store, adminOnly: true },
         { label: t('emailTemplates'), href: '/admin/email-templates', icon: Mail, adminOnly: true },
         { label: t('settings'), href: '/admin/settings', icon: Settings, adminOnly: true },
       ],
