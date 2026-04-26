@@ -5,9 +5,29 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link } from '@/i18n/routing';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
+import { ResendButton } from './resend-button';
 
 interface PageProps {
-  searchParams: Promise<{ status?: string; key?: string; page?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    key?: string;
+    to?: string;
+    from?: string;
+    until?: string;
+    page?: string;
+  }>;
+}
+
+function parseDate(raw: string | undefined, opts?: { endOfDay?: boolean }): Date | undefined {
+  if (!raw) return undefined;
+  const s = raw.trim();
+  if (!s) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(`${s}T${opts?.endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
 const PAGE_SIZE = 50;
@@ -20,12 +40,34 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const status = sp.status ?? '';
   const key = sp.key ?? '';
+  const to = sp.to ?? '';
+  const from = sp.from ?? '';
+  const until = sp.until ?? '';
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
 
+  const fromDate = parseDate(from);
+  const untilDate = parseDate(until, { endOfDay: true });
+
   const where = {
-    ...(status ? { status: status as 'PENDING' | 'SENT' | 'FAILED' } : {}),
+    ...(status ? { status: status as 'PENDING' | 'SENT' | 'FAILED' | 'BOUNCED' } : {}),
     ...(key ? { templateKey: key } : {}),
+    ...(to ? { to: { contains: to } } : {}),
+    ...(fromDate || untilDate
+      ? {
+          createdAt: {
+            ...(fromDate ? { gte: fromDate } : {}),
+            ...(untilDate ? { lte: untilDate } : {}),
+          },
+        }
+      : {}),
   };
+
+  const filterQs = new URLSearchParams();
+  if (status) filterQs.set('status', status);
+  if (key) filterQs.set('key', key);
+  if (to) filterQs.set('to', to);
+  if (from) filterQs.set('from', from);
+  if (until) filterQs.set('until', until);
 
   const [logs, total, distinctKeys] = await Promise.all([
     prisma.emailLog.findMany({
@@ -82,12 +124,46 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
             ))}
           </select>
         </label>
+        <label className="flex flex-col gap-1 text-xs uppercase text-muted-foreground">
+          Recipient
+          <input
+            type="text"
+            name="to"
+            defaultValue={to}
+            placeholder="email substring"
+            className="h-9 w-56 rounded-md border border-border bg-background px-2 text-sm"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs uppercase text-muted-foreground">
+          From
+          <input
+            type="date"
+            name="from"
+            defaultValue={from}
+            className="h-9 w-40 rounded-md border border-border bg-background px-2 text-sm"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs uppercase text-muted-foreground">
+          Until
+          <input
+            type="date"
+            name="until"
+            defaultValue={until}
+            className="h-9 w-40 rounded-md border border-border bg-background px-2 text-sm"
+          />
+        </label>
         <button
           type="submit"
           className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           Filter
         </button>
+        <a
+          href={`/api/export/emails${filterQs.size > 0 ? `?${filterQs.toString()}` : ''}`}
+          className="h-9 rounded-md border border-border bg-background px-3 text-sm font-medium leading-9 hover:bg-surface-subtle"
+        >
+          Export Excel
+        </a>
       </form>
 
       <Card>
@@ -105,6 +181,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
                 <th>Template</th>
                 <th>To</th>
                 <th>Subject</th>
+                <th className="!text-end">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -127,11 +204,16 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
                   <td className="px-4 py-2 font-mono text-xs">{l.templateKey}</td>
                   <td className="px-4 py-2 text-xs">{l.to}</td>
                   <td className="px-4 py-2 max-w-md truncate text-xs">{l.subject}</td>
+                  <td className="px-4 py-2 text-end">
+                    {l.status === 'FAILED' ? (
+                      <ResendButton logId={l.id} reason={l.failureReason} />
+                    ) : null}
+                  </td>
                 </tr>
               ))}
               {logs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-sm text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted-foreground">
                     No emails match.
                   </td>
                 </tr>
@@ -145,7 +227,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
         <div className="mt-4 flex items-center justify-end gap-2 text-sm">
           {page > 1 ? (
             <Link
-              href={`/reports/emails?page=${page - 1}&status=${status}&key=${key}`}
+              href={`/reports/emails?${new URLSearchParams({ ...Object.fromEntries(filterQs), page: String(page - 1) }).toString()}`}
               className="rounded-md border border-border px-2 py-1 hover:bg-surface-subtle"
             >
               ← Prev
@@ -156,7 +238,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
           </span>
           {page < pages ? (
             <Link
-              href={`/reports/emails?page=${page + 1}&status=${status}&key=${key}`}
+              href={`/reports/emails?${new URLSearchParams({ ...Object.fromEntries(filterQs), page: String(page + 1) }).toString()}`}
               className="rounded-md border border-border px-2 py-1 hover:bg-surface-subtle"
             >
               Next →
