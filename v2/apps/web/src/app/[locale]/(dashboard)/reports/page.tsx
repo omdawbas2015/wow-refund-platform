@@ -3,7 +3,7 @@ import { prisma } from '@wow/db';
 import { auth } from '@/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link } from '@/i18n/routing';
-import { ChevronRight, BarChart3, Wallet, History, Mail, Globe } from 'lucide-react';
+import { ChevronRight, BarChart3, Wallet, History, Mail, Globe, Timer } from 'lucide-react';
 import { parseRange, eachDayInRange } from '@/lib/reports/range';
 import { DailyVolumeChart } from './charts';
 
@@ -142,6 +142,12 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           icon={Globe}
           title="By country"
           desc="Volume and amount per market"
+        />
+        <ReportCard
+          href="/reports/sla"
+          icon={Timer}
+          title="SLA"
+          desc="Open cases against active SLA rules"
         />
       </div>
     </div>
