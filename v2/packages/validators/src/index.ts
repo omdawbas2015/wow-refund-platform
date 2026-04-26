@@ -5,3 +5,4 @@ export * from './case';
 export * from './batch';
 export * from './admin';
 export * from './promo';
+export * from './help-desk';
