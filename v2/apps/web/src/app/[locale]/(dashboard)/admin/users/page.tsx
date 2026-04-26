@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { prisma } from '@wow/db';
+import { Link } from '@/i18n/routing';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
@@ -41,8 +42,15 @@ export default async function UsersPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {users.map((user) => (
-                <tr key={user.id}>
-                  <td className="p-3 font-medium">{user.name}</td>
+                <tr key={user.id} className="hover:bg-surface-subtle/40">
+                  <td className="p-3 font-medium">
+                    <Link
+                      href={`/admin/users/${user.id}`}
+                      className="text-primary hover:underline"
+                    >
+                      {user.name}
+                    </Link>
+                  </td>
                   <td className="p-3 text-muted-foreground">{user.email}</td>
                   <td className="p-3">{user.role?.name ?? <span className="text-muted-foreground">—</span>}</td>
                   <td className="p-3">
