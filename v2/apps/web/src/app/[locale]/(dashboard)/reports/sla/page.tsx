@@ -123,9 +123,17 @@ export default async function SlaReportPage() {
             fall back to a 6-day breach threshold (warning at 3 days).
           </p>
         </div>
-        {session.user.role === 'ADMIN' || session.user.role === 'OPS_LEAD' ? (
-          <ScanSlaBreachesButton />
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/api/export/sla?tier=breached"
+            className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm hover:bg-surface-subtle"
+          >
+            Export Excel
+          </a>
+          {session.user.role === 'ADMIN' || session.user.role === 'OPS_LEAD' ? (
+            <ScanSlaBreachesButton />
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">

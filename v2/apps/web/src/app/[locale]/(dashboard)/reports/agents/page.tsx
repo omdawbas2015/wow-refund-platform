@@ -135,7 +135,8 @@ export default async function AgentsReportPage({ searchParams }: PageProps) {
         across cases this agent created that reached REFUNDED in-range.
       </p>
 
-      <form className="my-6 flex items-end gap-3" method="get">
+      <div className="my-6 flex flex-wrap items-end justify-between gap-3">
+      <form className="flex items-end gap-3" method="get">
         <label className="flex flex-col gap-1 text-xs uppercase text-muted-foreground">
           From
           <input
@@ -161,6 +162,13 @@ export default async function AgentsReportPage({ searchParams }: PageProps) {
           Apply
         </button>
       </form>
+        <a
+          href={`/api/export/agents?from=${range.fromIso}&to=${range.toIso}`}
+          className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm hover:bg-surface-subtle"
+        >
+          Export Excel
+        </a>
+      </div>
 
       <Card>
         <CardHeader>
