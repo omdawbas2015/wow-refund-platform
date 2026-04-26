@@ -197,6 +197,7 @@ export async function sendAuraBatchAction(
 
     // dispatchEmail returns `{ delivered: false, error }` on production webhook
     // failure rather than throwing, so we must inspect the return value.
+    let dispatched = false;
     try {
       const result = await dispatchEmail({
         templateKey: 'AURA_BATCH_SENT',
@@ -212,33 +213,44 @@ export async function sendAuraBatchAction(
           error: `Email dispatch failed: ${result.error ?? 'Unknown dispatch error'}`,
         };
       }
+      dispatched = true;
     } catch (emailErr) {
       const reason = emailErr instanceof Error ? emailErr.message : String(emailErr);
       return { ok: false, error: `Email dispatch failed: ${reason}` };
     }
 
-    await prisma.auraBatch.update({
-      where: { id: batch.id },
-      data: { status: 'SENT', sentAt: new Date() },
-    });
-
-    // Email is dispatched and the batch row is already flipped to SENT — both
-    // are irreversible. A transient audit failure must NOT surface as `ok:
-    // false`, since the user would retry and re-trigger the email.
-    try {
-      await audit({
-        actorId: me.id,
-        actorEmail: me.email,
-        action: 'aura_batch.sent',
-        entityId: batch.id,
-        before: { status: batch.status },
-        after: { status: 'SENT' },
-      });
-    } catch (auditErr) {
-      console.error(
-        '[aura-batch] audit write failed after successful send',
-        auditErr,
-      );
+    // Email has been dispatched (irreversible side effect). Both the batch
+    // status flip and the audit write must be wrapped so a transient DB
+    // failure here cannot resurface as `ok: false` — the user would retry
+    // and double-send the Aura team. We log loudly so operators can
+    // reconcile the inconsistent state (email out, status still DRAFT).
+    if (dispatched) {
+      try {
+        await prisma.auraBatch.update({
+          where: { id: batch.id },
+          data: { status: 'SENT', sentAt: new Date() },
+        });
+      } catch (statusErr) {
+        console.error(
+          '[aura-batch] CRITICAL: email sent but batch status update failed; manual reconciliation needed',
+          { batchId: batch.id, err: statusErr },
+        );
+      }
+      try {
+        await audit({
+          actorId: me.id,
+          actorEmail: me.email,
+          action: 'aura_batch.sent',
+          entityId: batch.id,
+          before: { status: batch.status },
+          after: { status: 'SENT' },
+        });
+      } catch (auditErr) {
+        console.error(
+          '[aura-batch] audit write failed after successful send',
+          auditErr,
+        );
+      }
     }
 
     revalidatePath('/operations');
