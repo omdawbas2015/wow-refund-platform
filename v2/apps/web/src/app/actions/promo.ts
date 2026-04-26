@@ -529,16 +529,109 @@ export async function restorePromoCodeAction(
 }
 
 /**
- * CSV export of promo allocations for a date range. Respects the same
- * RBAC scope as `listPromoAllocationsAction` — ADMIN/MANAGER/OPERATIONS only
- * for the admin-level full export (anyone else is rejected). Returns a UTF-8
- * CSV string the client writes to disk via a Blob download.
+ * Look up a refund case by its case number (the human-readable, country-
+ * prefixed identifier shown across the app, e.g. `KW-2025-00042`) or by
+ * the customer-facing CRM case number stored as `externalCaseNumber`.
+ *
+ * Used by the promo allocate form: when the agent enters a case number we
+ * resolve it to the underlying `RefundCase` and prefill customer fields
+ * (name / email / phone) plus the rejection-reason hint, so a recovery
+ * promo for an existing case is one auto-filled form away. The agent can
+ * still override any field manually before submitting.
+ *
+ * Returns `data: null` (success) when no case matches — the form treats
+ * that as "no autofill, but keep what the agent typed".
  */
-export async function exportPromoAllocationsCsvAction(input: {
+export async function lookupCaseByNumberAction(
+  caseNumber: string,
+): Promise<
+  ActionResult<{
+    id: string;
+    caseNumber: string;
+    externalCaseNumber: string | null;
+    customerName: string;
+    customerEmail: string;
+    customerPhone: string | null;
+    brandId: string;
+    brandName: string;
+    countryId: string;
+    countryName: string;
+    status: string;
+    rootCauseLabel: string | null;
+  } | null>
+> {
+  try {
+    await requireSession();
+    const trimmed = caseNumber.trim();
+    if (!trimmed || trimmed.length < 3) return { ok: true, data: null };
+
+    // Match either the internal caseNumber or the CRM-side externalCaseNumber.
+    // caseNumber is canonicalized to upper-case in seeds/admin tooling so we
+    // compare both raw and upper-case to catch agents typing in either case.
+    const upper = trimmed.toUpperCase();
+    const c = await prisma.refundCase.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [
+          { caseNumber: upper },
+          { caseNumber: trimmed },
+          { externalCaseNumber: trimmed },
+          { externalCaseNumber: upper },
+        ],
+      },
+      include: {
+        brand: { select: { id: true, name: true } },
+        country: {
+          select: {
+            id: true,
+            registryCode: true,
+            registry: { select: { nameEn: true } },
+          },
+        },
+        rootCause: { select: { label: true } },
+      },
+    });
+    if (!c) return { ok: true, data: null };
+    return {
+      ok: true,
+      data: {
+        id: c.id,
+        caseNumber: c.caseNumber,
+        externalCaseNumber: c.externalCaseNumber,
+        customerName: c.customerName,
+        customerEmail: c.customerEmail,
+        customerPhone: c.customerPhone,
+        brandId: c.brand.id,
+        brandName: c.brand.name,
+        countryId: c.country.id,
+        countryName: c.country.registry?.nameEn ?? c.country.registryCode,
+        status: c.status,
+        rootCauseLabel: c.rootCause?.label ?? null,
+      },
+    };
+  } catch (e) {
+    console.error('[lookupCaseByNumberAction]', e);
+    return { ok: false, error: 'Failed to look up case.' };
+  }
+}
+
+/**
+ * Excel (.xlsx) export of promo allocations for a date range. Respects the
+ * same RBAC scope as `listPromoAllocationsAction` — ADMIN/MANAGER/OPERATIONS
+ * only. Returns a base64-encoded workbook the client decodes into a Blob and
+ * triggers a save dialog with.
+ *
+ * We use ExcelJS so the workbook ships with proper column widths, a styled
+ * header row, frozen header pane, and an autofilter — opening the file in
+ * Excel/Numbers gives a usable report instead of a raw text dump.
+ */
+export async function exportPromoAllocationsXlsxAction(input: {
   fromDate?: string;
   toDate?: string;
   type?: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY' | 'ALL';
-}): Promise<ActionResult<{ csv: string; filename: string; rowCount: number }>> {
+}): Promise<
+  ActionResult<{ base64: string; filename: string; rowCount: number }>
+> {
   try {
     const user = await requireSession();
     if (!POOL_ADMIN_ROLES.has(user.role ?? '')) {
@@ -575,59 +668,85 @@ export async function exportPromoAllocationsCsvAction(input: {
       },
     });
 
-    const headers = [
-      'Allocated At',
-      'Type',
-      'Code',
-      'Value',
-      'Currency',
-      'Country',
-      'Brand',
-      'Customer Name',
-      'Customer Email',
-      'Case #',
-      'CRM Case #',
-      'Reason',
-      'Allocated By',
-      'Agent Email',
-      'Emailed At',
+    // Lazy import: ExcelJS is a heavyweight dep (~600KB) and only this
+    // server action ever needs it, so we keep it out of the cold-start path
+    // for the common UI-rendering routes.
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'WOW Refund Platform';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Promo allocations', {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+    ws.columns = [
+      { header: 'Allocated At', key: 'allocatedAt', width: 22 },
+      { header: 'Type', key: 'type', width: 18 },
+      { header: 'Code', key: 'code', width: 26 },
+      { header: 'Value', key: 'value', width: 12 },
+      { header: 'Currency', key: 'currency', width: 10 },
+      { header: 'Country', key: 'country', width: 16 },
+      { header: 'Brand', key: 'brand', width: 22 },
+      { header: 'Customer Name', key: 'customerName', width: 22 },
+      { header: 'Customer Email', key: 'customerEmail', width: 28 },
+      { header: 'Case #', key: 'caseNumber', width: 16 },
+      { header: 'CRM Case #', key: 'externalCaseNumber', width: 18 },
+      { header: 'Reason', key: 'reason', width: 30 },
+      { header: 'Allocated By', key: 'allocatedBy', width: 22 },
+      { header: 'Agent Email', key: 'agentEmail', width: 26 },
+      { header: 'Emailed At', key: 'emailedAt', width: 22 },
     ];
-    const csvEscape = (v: unknown): string => {
-      if (v === null || v === undefined) return '';
-      const s = String(v);
-      if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-      return s;
+
+    // Style the header row: bold white on dark blue, frozen + filterable.
+    const header = ws.getRow(1);
+    header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    header.alignment = { vertical: 'middle', horizontal: 'left' };
+    header.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1F2937' }, // slate-800 — matches app heading color
     };
-    const lines = [headers.map(csvEscape).join(',')];
+    header.height = 22;
+    ws.autoFilter = { from: 'A1', to: 'O1' };
+
     for (const a of rows) {
-      lines.push(
-        [
-          a.createdAt.toISOString(),
-          a.code.config.type === 'CUSTOMER_COMPENSATION' ? 'Compensation' : 'Service recovery',
-          a.code.code,
-          a.code.config.value,
-          a.code.config.currency,
+      const isRecovery = a.code.config.type === 'SERVICE_RECOVERY';
+      ws.addRow({
+        allocatedAt: a.createdAt,
+        type: isRecovery ? 'Service recovery' : 'Compensation',
+        code: a.code.code,
+        // Recovery values are semantically "100% off", not currency.
+        // Store as a label so the spreadsheet doesn't mislead the reader.
+        value: isRecovery ? '100% off' : a.code.config.value,
+        currency: isRecovery ? '' : a.code.config.currency,
+        country:
           a.code.config.country.registry?.nameEn ?? a.code.config.country.registryCode,
-          a.code.config.brand.name,
-          a.customerName ?? '',
-          a.customerEmail,
-          a.case?.caseNumber ?? '',
-          a.case?.externalCaseNumber ?? '',
-          a.reason ?? '',
-          a.requestedBy?.name ?? '',
-          a.requestedBy?.email ?? '',
-          a.emailedAt ? a.emailedAt.toISOString() : '',
-        ]
-          .map(csvEscape)
-          .join(','),
-      );
+        brand: a.code.config.brand.name,
+        customerName: a.customerName ?? '',
+        customerEmail: a.customerEmail,
+        caseNumber: a.case?.caseNumber ?? '',
+        externalCaseNumber: a.case?.externalCaseNumber ?? '',
+        reason: a.reason ?? '',
+        allocatedBy: a.requestedBy?.name ?? '',
+        agentEmail: a.requestedBy?.email ?? '',
+        emailedAt: a.emailedAt ?? '',
+      });
     }
-    const csv = lines.join('\r\n');
+
+    // Format date columns as a real Excel date type so users can pivot
+    // / sort properly instead of getting ISO strings.
+    const dateFmt = 'yyyy-mm-dd hh:mm';
+    ws.getColumn('allocatedAt').numFmt = dateFmt;
+    ws.getColumn('emailedAt').numFmt = dateFmt;
+    // Numeric cells where applicable (compensation rows only).
+    ws.getColumn('value').numFmt = '#,##0.000;-#,##0.000';
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
     const today = new Date().toISOString().slice(0, 10);
-    const filename = `promo-allocations-${today}.csv`;
-    return { ok: true, data: { csv, filename, rowCount: rows.length } };
+    const filename = `promo-allocations-${today}.xlsx`;
+    return { ok: true, data: { base64, filename, rowCount: rows.length } };
   } catch (e) {
-    console.error('[exportPromoAllocationsCsvAction]', e);
+    console.error('[exportPromoAllocationsXlsxAction]', e);
     return { ok: false, error: 'Failed to export allocations.' };
   }
 }

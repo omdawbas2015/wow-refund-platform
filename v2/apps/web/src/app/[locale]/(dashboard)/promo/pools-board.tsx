@@ -255,16 +255,18 @@ function BrandSection({
   const lowCount = group.items.filter((p) => p.available <= 3).length;
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border bg-surface-subtle/40 px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold text-heading">{group.brandName}</span>
+      <div className="flex items-center justify-between border-b border-border bg-surface-subtle/40 px-5 py-3">
+        <div className="flex items-baseline gap-3">
+          <span className="text-base font-semibold tracking-tight text-heading">
+            {group.brandName}
+          </span>
           <span className="text-xs text-muted-foreground">
             {group.items.length} pool{group.items.length === 1 ? '' : 's'}
           </span>
         </div>
         <div className="flex items-center gap-3 text-xs">
           <span className="text-muted-foreground">
-            <span className="font-medium text-heading tabular-nums">
+            <span className="font-semibold text-heading tabular-nums">
               {totalAvailable.toLocaleString()}
             </span>{' '}
             available
@@ -277,11 +279,11 @@ function BrandSection({
           )}
         </div>
       </div>
-      <div className="divide-y divide-border">
+      <ul className="divide-y divide-border/60">
         {group.items.map((p) => (
           <PoolRow key={p.configId} pool={p} locale={locale} />
         ))}
-      </div>
+      </ul>
     </div>
   );
 }
@@ -293,65 +295,68 @@ function PoolRow({ pool, locale }: { pool: PoolSummary; locale: string }) {
   const stockPct = pool.total === 0 ? 0 : Math.min(100, (pool.available / pool.total) * 100);
 
   return (
-    <Link
-      href={`/${locale}/promo/pools/${pool.configId}`}
-      className="grid grid-cols-12 items-center gap-3 px-4 py-3 text-sm transition hover:bg-surface-subtle/30"
-    >
-      {/* Country */}
-      <div className="col-span-12 flex items-center gap-2 sm:col-span-3">
-        <span className="text-base" aria-hidden>
-          {pool.countryFlag || '🌐'}
-        </span>
-        <span className="truncate text-heading">{pool.countryName}</span>
-      </div>
-
-      {/* Type */}
-      <div className="col-span-4 sm:col-span-2">
-        <TypeChip type={pool.type} />
-      </div>
-
-      {/* Value */}
-      <div className="col-span-4 font-mono text-heading sm:col-span-2">
-        {formatPromoValue(pool.type, pool.value, pool.currency)}
-      </div>
-
-      {/* Stock bar */}
-      <div className="col-span-4 sm:col-span-3">
-        <div className="flex items-baseline justify-between text-xs">
-          <span className="text-muted-foreground">Available</span>
-          <span className="font-mono tabular-nums text-heading">
-            {pool.available} / {pool.total || '—'}
+    <li>
+      <Link
+        href={`/${locale}/promo/pools/${pool.configId}`}
+        className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3 text-sm transition hover:bg-surface-subtle/40 sm:flex-nowrap"
+      >
+        {/* Country (flag + name) */}
+        <div className="flex w-full items-center gap-2 sm:w-44">
+          <span className="text-base leading-none" aria-hidden>
+            {pool.countryFlag || '🌐'}
           </span>
+          <span className="truncate text-heading">{pool.countryName}</span>
         </div>
-        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className={cn(
-              'h-full rounded-full transition-all',
-              out ? 'bg-red-500' : low ? 'bg-amber-500' : 'bg-emerald-500',
-            )}
-            style={{ width: `${Math.max(2, stockPct)}%` }}
-          />
-        </div>
-      </div>
 
-      {/* Status pill */}
-      <div className="col-span-12 flex items-center justify-end gap-2 sm:col-span-2">
-        {out ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400">
-            Out
-          </span>
-        ) : low ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-            Low · {pool.available}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            {pool.allocated} allocated
-            {isRecovery ? '' : pool.used ? ` · ${pool.used} used` : ''}
-          </span>
-        )}
-      </div>
-    </Link>
+        {/* Type chip */}
+        <div className="flex-none">
+          <TypeChip type={pool.type} />
+        </div>
+
+        {/* Value */}
+        <div className="flex-none font-mono text-base font-semibold tabular-nums text-heading sm:w-32">
+          {formatPromoValue(pool.type, pool.value, pool.currency)}
+        </div>
+
+        {/* Stock bar (sparkline-style) */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between text-xs">
+            <span className="text-muted-foreground">Available</span>
+            <span className="font-mono tabular-nums text-heading">
+              {pool.available}
+              <span className="text-muted-foreground"> / {pool.total || '—'}</span>
+            </span>
+          </div>
+          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted/70">
+            <div
+              className={cn(
+                'h-full rounded-full transition-all',
+                out ? 'bg-red-500/80' : low ? 'bg-amber-500/80' : 'bg-emerald-500/80',
+              )}
+              style={{ width: `${Math.max(2, stockPct)}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Status pill */}
+        <div className="flex w-full flex-none items-center justify-end gap-2 sm:w-44">
+          {out ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400">
+              Out of stock
+            </span>
+          ) : low ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+              Low · {pool.available} left
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {pool.allocated} allocated
+              {isRecovery ? '' : pool.used ? ` · ${pool.used} used` : ''}
+            </span>
+          )}
+        </div>
+      </Link>
+    </li>
   );
 }
 

@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -12,21 +11,25 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Download, Loader2, FileSpreadsheet } from 'lucide-react';
-import { exportPromoAllocationsCsvAction } from '@/app/actions/promo';
+import { Download, Loader2, FileSpreadsheet, Check } from 'lucide-react';
+import { exportPromoAllocationsXlsxAction } from '@/app/actions/promo';
+import {
+  DateRangePicker,
+  type DateRangeValue,
+} from '@/components/ui/date-range-picker';
 
 /**
- * Admin-only CSV export button. Opens a small inline panel with a date
- * range + type filter, runs the server action, and triggers a client-side
- * Blob download with the returned CSV text.
+ * Admin-only Excel export button. Opens a small inline panel with a single
+ * date-range popover + type filter, runs the server action, and triggers a
+ * client-side Blob download of the .xlsx workbook.
  *
- * Kept as an inline disclosure (not a modal) to stay consistent with the
- * existing no-modal UI pattern in this app.
+ * The two separate From / To inputs the previous version had are replaced
+ * with one calendar popover that handles both ends of the range, plus
+ * preset shortcuts (Today / Last 7 days / Month to date / etc.).
  */
 export function PromoExportButton() {
   const [open, setOpen] = useState(false);
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [range, setRange] = useState<DateRangeValue>({ from: null, to: null });
   const [type, setType] = useState<'ALL' | 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY'>('ALL');
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -36,16 +39,24 @@ export function PromoExportButton() {
     setError(null);
     setLastCount(null);
     startTransition(async () => {
-      const res = await exportPromoAllocationsCsvAction({
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
+      const res = await exportPromoAllocationsXlsxAction({
+        fromDate: range.from ?? undefined,
+        toDate: range.to ?? undefined,
         type,
       });
       if (!res.ok) {
         setError(res.error);
         return;
       }
-      const blob = new Blob([res.data!.csv], { type: 'text/csv;charset=utf-8;' });
+      // ExcelJS workbook arrives as base64 → decode into a Blob and trigger
+      // a save dialog. Done client-side so we never round-trip the binary
+      // payload through Next's server-action JSON channel as raw bytes.
+      const bin = atob(res.data!.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -61,8 +72,8 @@ export function PromoExportButton() {
   if (!open) {
     return (
       <Button variant="outline" onClick={() => setOpen(true)}>
-        <Download className="mr-2 h-4 w-4" />
-        Export CSV
+        <FileSpreadsheet className="mr-2 h-4 w-4" />
+        Export Excel
       </Button>
     );
   }
@@ -70,18 +81,12 @@ export function PromoExportButton() {
   return (
     <div className="w-full space-y-3 rounded-lg border border-border bg-card p-4 sm:w-auto sm:min-w-[420px]">
       <div className="flex items-center gap-2 text-sm font-medium text-heading">
-        <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-        Export allocations
+        <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+        Export allocations to Excel
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label htmlFor="ex-from" className="text-xs">From</Label>
-          <Input id="ex-from" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="ex-to" className="text-xs">To</Label>
-          <Input id="ex-to" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-        </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Date range</Label>
+        <DateRangePicker value={range} onChange={setRange} placeholder="All time" />
       </div>
       <div className="space-y-1">
         <Label htmlFor="ex-type" className="text-xs">Type</Label>
@@ -102,8 +107,8 @@ export function PromoExportButton() {
         </Alert>
       )}
       {lastCount !== null && (
-        <p className="text-xs text-emerald-600 dark:text-emerald-400">
-          Exported {lastCount} allocation{lastCount === 1 ? '' : 's'}.
+        <p className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+          <Check className="h-3 w-3" /> Exported {lastCount} allocation{lastCount === 1 ? '' : 's'}.
         </p>
       )}
       <div className="flex items-center justify-end gap-2">
@@ -117,7 +122,7 @@ export function PromoExportButton() {
             </>
           ) : (
             <>
-              <Download className="mr-2 h-4 w-4" /> Download CSV
+              <Download className="mr-2 h-4 w-4" /> Download .xlsx
             </>
           )}
         </Button>
