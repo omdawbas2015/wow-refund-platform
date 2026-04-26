@@ -1,0 +1,7 @@
+{
+  "fromEmail": "noise@example.com",
+  "toEmail": "refund-ops@example.com",
+  "subject": "Out of office: re your message",
+  "rawBody": "I'm out of office until Monday and will reply when I'm back.",
+  "powerAutomateRunId": "08585312000000000000000000000004"
+}

@@ -1,0 +1,7 @@
+{
+  "fromEmail": "manager.kuwait@example.com",
+  "toEmail": "refund-ops@example.com",
+  "subject": "Re: Approval batch APB-KW-2026-0001 — 3 cases for review",
+  "rawBody": "Hi,\n\nDecisions below:\n\nApproved: REF-KW-2026-000001, REF-KW-2026-000002\nRejected: REF-KW-2026-000004 — out of policy\n\nThanks,\nManager",
+  "powerAutomateRunId": "08585312000000000000000000000001"
+}

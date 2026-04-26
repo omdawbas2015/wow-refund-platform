@@ -1,0 +1,16 @@
+{
+  "templateKey": "approval_batch_request",
+  "to": "manager.kuwait@example.com",
+  "cc": "ops@example.com",
+  "bcc": null,
+  "subject": "Approval batch APB-KW-2026-0001 — 3 cases for review",
+  "body": "Hi team,\n\nPlease review the following refund cases and reply with your decision per case (Approved / Rejected). You can reply with case numbers or simply 'approved all' to bulk-approve.\n\n 1. REF-KW-2026-000001  Sara Al-Fahad  /  Order SBX-KW-22195  /  Chipotle      /  Apple Pay   /  12.500 KWD\n 2. REF-KW-2026-000002  Omar Khan      /  Order SBX-KW-22196  /  Starbucks     /  KNET        /   8.750 KWD\n 3. REF-KW-2026-000004  Yousef Al-Mutairi  /  Order SBX-KW-22198  /  Chipotle  /  Mastercard  /  14.000 KWD\n\nTotal: 35.250 KWD across 3 cases.\n\nTo decide individually:\n  Approved: 1, 2\n  Rejected: 3 — out of policy\n\nRefund Operations\nWOW Refund Platform",
+  "logId": "ckl3z1z9z00012n6h6w7v6kqv",
+  "contextType": "BATCH",
+  "contextId": "ckl3z1z9z00022n6hb1f2vyye",
+  "variables": {
+    "batchNumber": "APB-KW-2026-0001",
+    "caseCount": 3,
+    "totalAmount": "35.250 KWD"
+  }
+}

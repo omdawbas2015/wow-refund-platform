@@ -1,0 +1,7 @@
+{
+  "fromEmail": "finance.kuwait@example.com",
+  "toEmail": "refund-ops@example.com",
+  "subject": "Re: KNET batch KNET-2026-0001 — ARNs requested",
+  "rawBody": "Hi team,\n\nARNs below:\n\nREF-KW-2026-000001  ARN 12345678901234567890\nREF-KW-2026-000002  ARN 12345678901234567891\nREF-KW-2026-000004  ARN 12345678901234567892\n\nFinance",
+  "powerAutomateRunId": "08585312000000000000000000000002"
+}

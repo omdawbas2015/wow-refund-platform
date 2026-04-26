@@ -1,0 +1,92 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "$connections": {
+      "defaultValue": {},
+      "type": "Object"
+    },
+    "$authentication": {
+      "defaultValue": {},
+      "type": "SecureObject"
+    }
+  },
+  "triggers": {
+    "When_a_new_email_arrives_(V3)": {
+      "type": "OpenApiConnectionNotification",
+      "inputs": {
+        "host": {
+          "connectionName": "shared_office365",
+          "operationId": "OnNewEmailV3",
+          "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365"
+        },
+        "parameters": {
+          "folderPath": "Inbox",
+          "importance": "Any",
+          "fetchOnlyWithAttachment": false,
+          "includeAttachments": false
+        },
+        "subscribe": {
+          "method": "post",
+          "uri": "@listCallbackUrl()"
+        }
+      },
+      "description": "Trigger fires for every new mail in the refund-ops mailbox Inbox."
+    }
+  },
+  "actions": {
+    "Subject_lower": {
+      "runAfter": {},
+      "type": "Compose",
+      "inputs": "@toLower(triggerOutputs()?['body/subject'])"
+    },
+    "Has_batch_id": {
+      "runAfter": {
+        "Subject_lower": ["Succeeded"]
+      },
+      "type": "If",
+      "expression": {
+        "or": [
+          { "contains": ["@outputs('Subject_lower')", "apb-"] },
+          { "contains": ["@outputs('Subject_lower')", "knet-"] },
+          { "contains": ["@outputs('Subject_lower')", "aura-"] }
+        ]
+      },
+      "actions": {
+        "POST_to_webhook": {
+          "runAfter": {},
+          "type": "Http",
+          "inputs": {
+            "method": "POST",
+            "uri": "<APP_BASE_URL>/api/webhooks/power-automate",
+            "headers": {
+              "Content-Type": "application/json",
+              "x-wow-signature": "<INBOUND_SECRET>"
+            },
+            "body": {
+              "fromEmail": "@{triggerOutputs()?['body/from']}",
+              "toEmail": "@{triggerOutputs()?['body/to']}",
+              "subject": "@{triggerOutputs()?['body/subject']}",
+              "rawBody": "@{coalesce(triggerOutputs()?['body/body'], triggerOutputs()?['body/bodyPreview'], '')}",
+              "powerAutomateRunId": "@{workflow().run.name}"
+            }
+          },
+          "description": "Replace <APP_BASE_URL> with your platform URL (e.g. https://refund.example.com) and <INBOUND_SECRET> with POWER_AUTOMATE_INBOUND_SECRET."
+        }
+      },
+      "else": {
+        "actions": {
+          "Terminate_skipped": {
+            "runAfter": {},
+            "type": "Terminate",
+            "inputs": {
+              "runStatus": "Succeeded"
+            },
+            "description": "Email is unrelated to a refund batch — drop it without notifying the platform."
+          }
+        }
+      }
+    }
+  },
+  "outputs": {}
+}
