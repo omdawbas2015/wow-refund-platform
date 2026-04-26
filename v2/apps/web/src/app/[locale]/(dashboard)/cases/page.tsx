@@ -201,7 +201,13 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
 
       {/* Filters */}
       <Card className="mb-4 p-3">
-        <form className="flex flex-wrap items-center gap-3" action="/cases" method="get">
+        {/*
+          No `action` attribute on purpose: the form posts back to the
+          current URL, which already carries the [locale] prefix. Hard-
+          coding `action="/cases"` would drop the prefix and bounce an
+          Arabic user back to /en/cases via the i18n middleware.
+         */}
+        <form className="flex flex-wrap items-center gap-3" method="get">
           <div className="relative flex-1 min-w-[220px]">
             <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input

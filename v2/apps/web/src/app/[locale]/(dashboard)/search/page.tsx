@@ -377,7 +377,7 @@ function Wrapper({ q, children }: { q: string; children: React.ReactNode }) {
         </h1>
       </div>
 
-      <form className="mb-6 flex gap-2" action="/search">
+      <form className="mb-6 flex gap-2">
         <Input
           name="q"
           defaultValue={q}
@@ -400,7 +400,7 @@ function EmptyState() {
         <h1 className="text-display-md font-normal tracking-tight text-heading">Global search</h1>
       </div>
 
-      <form className="mb-6 flex gap-2" action="/search">
+      <form className="mb-6 flex gap-2">
         <Input
           name="q"
           placeholder="Case number, order, customer email, batch…"

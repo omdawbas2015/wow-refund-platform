@@ -72,10 +72,16 @@ export function KnetBatchActions(props: {
         continue;
       }
       const [caseNumber, authCode, arn] = parts;
+      // `parts` came from a whitespace split, so `authCode` is never the
+      // empty string here — components with no auth code on file can
+      // only be matched if the operator types `-` or `N/A` as a
+      // placeholder for that token. The placeholder is documented in
+      // the textarea below so this convention is discoverable.
+      const isNoAuthPlaceholder = authCode === '-' || authCode?.toUpperCase() === 'N/A';
       const match = props.components.find(
         (c) =>
           c.caseNumber === caseNumber &&
-          ((c.authCode ?? '') === authCode || authCode === '-' || authCode === ''),
+          (isNoAuthPlaceholder ? !c.authCode : (c.authCode ?? '') === authCode),
       );
       if (!match) {
         skipped.push(line);
@@ -147,7 +153,10 @@ export function KnetBatchActions(props: {
         <div className="mb-2 text-sm font-medium">Paste finance ARN response</div>
         <Textarea
           rows={5}
-          placeholder={`REF-KW-2026-000001  123456  ARN-KW-9999-AAA\nREF-KW-2026-000002  654321  ARN-KW-9999-BBB`}
+          placeholder={`REF-KW-2026-000001  123456  ARN-KW-9999-AAA
+REF-KW-2026-000002  654321  ARN-KW-9999-BBB
+# use "-" or "N/A" if a component has no auth code:
+REF-KW-2026-000003  -        ARN-KW-9999-CCC`}
           value={arnPaste}
           onChange={(e) => setArnPaste(e.target.value)}
         />
