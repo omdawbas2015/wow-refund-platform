@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bell, Check, CheckCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -41,8 +41,17 @@ export function NotificationBell() {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
+  // Set when an optimistic update was just applied; the very next refresh()
+  // (e.g. the one triggered by closing the dropdown after a click) is
+  // skipped so that a stale read can't overwrite optimistic state before
+  // the in-flight write commits.
+  const skipNextRefreshRef = useRef(false);
 
   async function refresh() {
+    if (skipNextRefreshRef.current) {
+      skipNextRefreshRef.current = false;
+      return;
+    }
     setLoading(true);
     try {
       const payload = await fetchMyNotifications();
@@ -60,6 +69,7 @@ export function NotificationBell() {
     if (open) return;
     const id = window.setInterval(() => void refresh(), POLL_INTERVAL_MS);
     return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   function onItemClick(n: NotificationItem) {
@@ -72,6 +82,10 @@ export function NotificationBell() {
         prev.map((it) => (it.id === n.id ? { ...it, readAt: new Date() } : it)),
       );
       setUnread((prev) => Math.max(0, prev - 1));
+      // Closing the dropdown re-runs the effect which calls refresh(); the
+      // server may not have committed the markRead write yet, so a fresh
+      // read would clobber the optimistic state. Skip just that one refresh.
+      skipNextRefreshRef.current = true;
     }
     setOpen(false);
     if (n.href) router.push(n.href);
