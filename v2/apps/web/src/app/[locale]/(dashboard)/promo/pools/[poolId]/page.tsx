@@ -16,12 +16,12 @@ export const dynamic = 'force-dynamic';
 export default async function PoolDetailPage({
   params,
 }: {
-  params: Promise<{ poolId: string }>;
+  params: Promise<{ locale: string; poolId: string }>;
 }) {
-  const { poolId } = await params;
+  const { locale, poolId } = await params;
   const session = await auth();
-  if (!session?.user) redirect('/login');
-  if (!VIEW_ROLES.has(session.user.role ?? '')) redirect('/');
+  if (!session?.user) redirect(`/${locale}/login`);
+  if (!VIEW_ROLES.has(session.user.role ?? '')) redirect(`/${locale}`);
 
   const pool = await prisma.promoConfig.findUnique({
     where: { id: poolId },
@@ -86,7 +86,7 @@ export default async function PoolDetailPage({
     <div className="space-y-5">
       <div className="flex items-center gap-2 text-sm">
         <Button asChild variant="ghost" size="sm">
-          <Link href="/promo">
+          <Link href={`/${locale}/promo`}>
             <ArrowLeft className="h-4 w-4" />
             <span>Back to promos</span>
           </Link>

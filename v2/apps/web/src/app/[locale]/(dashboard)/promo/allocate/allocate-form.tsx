@@ -359,7 +359,7 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
       </div>
 
       {/* Fraud signal panel */}
-      {lookup.email && (lookup.loading || lookup.totalCount > 0) && (
+      {(lookup.loading || (lookup.email && lookup.totalCount > 0)) && (
         <FraudPanel
           lookup={lookup}
           acknowledged={fraudAck}

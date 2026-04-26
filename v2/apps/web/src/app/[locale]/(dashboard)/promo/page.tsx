@@ -36,10 +36,15 @@ type PoolSummary = {
   total: number;
 };
 
-export default async function PromoPage() {
+export default async function PromoPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
   const session = await auth();
-  if (!session?.user) redirect('/login');
-  if (!PROMO_VIEW_ROLES.has(session.user.role ?? '')) redirect('/');
+  if (!session?.user) redirect(`/${locale}/login`);
+  if (!PROMO_VIEW_ROLES.has(session.user.role ?? '')) redirect(`/${locale}`);
 
   const now = new Date();
   const [pools, stockCounts, staleAvailableCounts, recentAllocations] = await Promise.all([
@@ -147,7 +152,7 @@ export default async function PromoPage() {
         </div>
         {canAllocate && (
           <Button asChild>
-            <Link href="/promo/allocate">
+            <Link href={`/${locale}/promo/allocate`}>
               <Plus className="mr-2 h-4 w-4" />
               Allocate promo
             </Link>
@@ -179,7 +184,7 @@ export default async function PromoPage() {
               </h3>
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                 {items.map((p) => (
-                  <PoolCard key={p.configId} pool={p} />
+                  <PoolCard key={p.configId} pool={p} locale={locale} />
                 ))}
               </div>
             </div>
@@ -257,14 +262,14 @@ function groupPools(pools: PoolSummary[]) {
   return Array.from(byCountry.values());
 }
 
-function PoolCard({ pool }: { pool: PoolSummary }) {
+function PoolCard({ pool, locale }: { pool: PoolSummary; locale: string }) {
   const low = pool.available <= 3;
   const out = pool.available === 0;
   const isCompensation = pool.type === 'CUSTOMER_COMPENSATION';
 
   return (
     <Link
-      href={`/promo/pools/${pool.configId}`}
+      href={`/${locale}/promo/pools/${pool.configId}`}
       className="group block rounded-lg border border-border bg-card p-4 transition hover:border-foreground/20 hover:shadow-sm"
     >
       <div className="flex items-start justify-between gap-2">

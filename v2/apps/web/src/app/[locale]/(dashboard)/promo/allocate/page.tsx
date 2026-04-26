@@ -10,10 +10,15 @@ const ALLOCATE_ROLES = new Set(['ADMIN', 'MANAGER', 'AGENT', 'TEAM_LEAD']);
 
 export const dynamic = 'force-dynamic';
 
-export default async function AllocatePromoPage() {
+export default async function AllocatePromoPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
   const session = await auth();
-  if (!session?.user) redirect('/login');
-  if (!ALLOCATE_ROLES.has(session.user.role ?? '')) redirect('/promo');
+  if (!session?.user) redirect(`/${locale}/login`);
+  if (!ALLOCATE_ROLES.has(session.user.role ?? '')) redirect(`/${locale}/promo`);
 
   const pools = await prisma.promoConfig.findMany({
     where: { isActive: true },
@@ -55,7 +60,7 @@ export default async function AllocatePromoPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center gap-2 text-sm">
         <Button asChild variant="ghost" size="sm">
-          <Link href="/promo">
+          <Link href={`/${locale}/promo`}>
             <ArrowLeft className="h-4 w-4" />
             <span>Back to promos</span>
           </Link>
