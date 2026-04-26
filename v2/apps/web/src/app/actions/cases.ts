@@ -341,7 +341,15 @@ export async function cancelCaseAction(formData: FormData): Promise<ActionResult
       select: { id: true, status: true, createdById: true },
     });
     if (!c) return { ok: false, error: 'Case not found' };
-    if (me.role !== 'ADMIN' && c.createdById !== me.id) {
+    // ADMIN and COUNTRY_MANAGER can cancel any case; everyone else must be
+    // the case creator. Mirrors the cases/[id]/page.tsx visibility check
+    // (canManage || createdById === me.id) and the bulk-cancel privilege
+    // gate so single + bulk cancel behave consistently.
+    if (
+      me.role !== 'ADMIN' &&
+      me.role !== 'COUNTRY_MANAGER' &&
+      c.createdById !== me.id
+    ) {
       return { ok: false, error: 'You can only cancel cases you created' };
     }
     assertCaseTransition(c.status, 'CANCELLED');
