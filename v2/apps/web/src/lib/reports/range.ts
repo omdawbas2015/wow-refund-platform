@@ -21,11 +21,24 @@ export function parseRange(input: { from?: string; to?: string } = {}): DateRang
   defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 29);
   defaultFrom.setUTCHours(0, 0, 0, 0);
 
-  const from = input.from && /^\d{4}-\d{2}-\d{2}$/.test(input.from)
-    ? new Date(`${input.from}T00:00:00.000Z`)
+  // Two-stage validation: first the *shape* with a regex, then the *value*
+  // by checking the resulting Date is real. This guards against URL-supplied
+  // values like `2024-13-01` or `2024-99-99` that match the regex but produce
+  // an Invalid Date — `.toISOString()` would otherwise throw RangeError and
+  // crash the report page.
+  const candidateFrom =
+    input.from && /^\d{4}-\d{2}-\d{2}$/.test(input.from)
+      ? new Date(`${input.from}T00:00:00.000Z`)
+      : null;
+  const candidateTo =
+    input.to && /^\d{4}-\d{2}-\d{2}$/.test(input.to)
+      ? new Date(`${input.to}T23:59:59.999Z`)
+      : null;
+  const from = candidateFrom && !Number.isNaN(candidateFrom.getTime())
+    ? candidateFrom
     : defaultFrom;
-  const to = input.to && /^\d{4}-\d{2}-\d{2}$/.test(input.to)
-    ? new Date(`${input.to}T23:59:59.999Z`)
+  const to = candidateTo && !Number.isNaN(candidateTo.getTime())
+    ? candidateTo
     : defaultTo;
 
   return {
