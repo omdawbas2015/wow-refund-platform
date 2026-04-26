@@ -94,17 +94,29 @@ export async function sendStoreMessageAction(
       },
     });
 
+    // dispatchEmail does NOT throw on production webhook failure — it catches
+    // internally and returns `{ delivered: false, error }`. So we MUST inspect
+    // the result, not rely on a thrown error. (Try/catch still wraps the call
+    // because template loading / DB writes inside dispatchEmail can throw.)
     try {
-      await dispatchEmail({
+      const result = await dispatchEmail({
         templateKey: `STORE_${template.key}`,
         locale: 'en',
         to: storeEmail,
-        // We render the subject/body off the StoreMessageTemplate row instead of
+        // We render subject/body off the StoreMessageTemplate row instead of
         // an EmailTemplate row, so pass them as an override.
         variables: {},
         override: { subject: renderedSubject, body: renderedBody },
         context: { type: 'STORE', id: log.id },
       });
+      if (!result.delivered) {
+        const reason = result.error ?? 'Unknown dispatch error';
+        await prisma.storeMessageLog.update({
+          where: { id: log.id },
+          data: { deliveryStatus: 'FAILED', failureReason: reason },
+        });
+        return { ok: false, error: `Email dispatch failed: ${reason}` };
+      }
       await prisma.storeMessageLog.update({
         where: { id: log.id },
         data: { deliveryStatus: 'SENT', deliveredAt: new Date() },
