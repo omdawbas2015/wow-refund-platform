@@ -6,6 +6,7 @@ const TERMINAL: CaseStatus[] = ['REFUNDED', 'REJECTED', 'CANCELLED'];
 export interface SlaSweepResult {
   scanned: number;
   breached: number;
+  warning: number;
   notificationsCreated: number;
   skipped: number;
 }
@@ -60,6 +61,7 @@ export async function runSlaBreachSweep(
 
   const scanned = openCases.length;
   let breached = 0;
+  let warning = 0;
   let notificationsCreated = 0;
   let skipped = 0;
 
@@ -71,12 +73,14 @@ export async function runSlaBreachSweep(
     });
     const elapsedHours = hoursBetween(c.createdAt, now);
     const tier = classifyByHours(elapsedHours, resolved);
-    if (tier !== 'breached') continue;
-    breached += 1;
+    if (tier !== 'breached' && tier !== 'warning') continue;
+    if (tier === 'breached') breached += 1;
+    else warning += 1;
 
+    const notifType = tier === 'breached' ? 'SLA_BREACHED' : 'SLA_WARNING';
     const recent = await prisma.notification.findFirst({
       where: {
-        type: 'SLA_BREACHED',
+        type: notifType,
         contextType: 'CASE',
         contextId: c.id,
         createdAt: { gte: dedupeCutoff },
@@ -94,16 +98,26 @@ export async function runSlaBreachSweep(
       continue;
     }
 
-    const overrunHours = Math.round(elapsedHours - resolved.thresholdHours);
-    const title = `SLA breached · ${c.caseNumber}`;
-    const body = `Case is ${overrunHours}h over the ${resolved.thresholdHours}h threshold${
-      resolved.rule ? ` (rule: ${resolved.rule.name})` : ''
-    }.`;
+    let title: string;
+    let body: string;
+    if (tier === 'breached') {
+      const overrunHours = Math.round(elapsedHours - resolved.thresholdHours);
+      title = `SLA breached · ${c.caseNumber}`;
+      body = `Case is ${overrunHours}h over the ${resolved.thresholdHours}h threshold${
+        resolved.rule ? ` (rule: ${resolved.rule.name})` : ''
+      }.`;
+    } else {
+      const remainingHours = Math.max(0, Math.round(resolved.thresholdHours - elapsedHours));
+      title = `SLA at risk · ${c.caseNumber}`;
+      body = `Case has ~${remainingHours}h left before the ${resolved.thresholdHours}h breach threshold${
+        resolved.rule ? ` (rule: ${resolved.rule.name})` : ''
+      }.`;
+    }
 
     await prisma.notification.createMany({
       data: recipientIds.map((userId) => ({
         userId,
-        type: 'SLA_BREACHED' as const,
+        type: notifType as 'SLA_BREACHED' | 'SLA_WARNING',
         title,
         body,
         href: `/cases/${c.id}`,
@@ -125,11 +139,12 @@ export async function runSlaBreachSweep(
         actorLabel: actor.label ?? source,
         scanned,
         breached,
+        warning,
         notificationsCreated,
         skipped,
       }),
     },
   });
 
-  return { scanned, breached, notificationsCreated, skipped };
+  return { scanned, breached, warning, notificationsCreated, skipped };
 }

@@ -14,14 +14,15 @@ export function ScanSlaBreachesButton() {
     startTransition(async () => {
       const result = await scanSlaBreachesAction();
       if (result.ok) {
-        const { breached, notificationsCreated, skipped } = result.data;
+        const { breached, warning, notificationsCreated, skipped } = result.data;
+        const flagged = breached + warning;
         if (notificationsCreated === 0) {
           toast.success(
-            `Sweep complete. ${breached} breach${breached === 1 ? '' : 'es'}, no new notifications (${skipped} deduped).`,
+            `Sweep complete. ${breached} breached, ${warning} at risk; no new notifications (${skipped} deduped).`,
           );
         } else {
           toast.success(
-            `Sweep complete. ${notificationsCreated} notification${notificationsCreated === 1 ? '' : 's'} sent across ${breached} breached case${breached === 1 ? '' : 's'}.`,
+            `Sweep complete. ${notificationsCreated} notification${notificationsCreated === 1 ? '' : 's'} sent across ${flagged} flagged case${flagged === 1 ? '' : 's'} (${breached} breached, ${warning} at risk).`,
           );
         }
         router.refresh();
@@ -38,7 +39,7 @@ export function ScanSlaBreachesButton() {
       disabled={pending}
       className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {pending ? 'Scanning…' : 'Notify breached cases'}
+      {pending ? 'Scanning…' : 'Notify SLA cases'}
     </button>
   );
 }
