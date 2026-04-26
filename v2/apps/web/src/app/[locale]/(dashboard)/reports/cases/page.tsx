@@ -10,6 +10,18 @@ import {
 } from '@/lib/cases/case-status-display';
 import { Badge } from '@/components/ui/badge';
 import type { CaseStatus } from '@wow/db';
+import { StatusDonut } from '../charts';
+
+const STATUS_COLORS: Record<CaseStatus, string> = {
+  DRAFT: '#94a3b8',
+  PENDING_APPROVAL: '#f59e0b',
+  APPROVED: '#3b82f6',
+  IN_EXECUTION: '#6366f1',
+  PARTIALLY_REFUNDED: '#8b5cf6',
+  REFUNDED: '#10b981',
+  REJECTED: '#ef4444',
+  CANCELLED: '#64748b',
+};
 
 interface PageProps {
   searchParams: Promise<{ from?: string; to?: string }>;
@@ -61,6 +73,23 @@ export default async function CaseStatusReportPage({ searchParams }: PageProps) 
       <p className="mt-1 text-sm text-muted-foreground">
         Cases created between {range.fromIso} and {range.toIso}.
       </p>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Distribution</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <StatusDonut
+            data={sortedStatuses
+              .map((status) => ({
+                name: caseStatusLabel(status),
+                value: map.get(status) ?? 0,
+                color: STATUS_COLORS[status],
+              }))
+              .filter((d) => d.value > 0)}
+          />
+        </CardContent>
+      </Card>
 
       <Card className="mt-6">
         <CardHeader>

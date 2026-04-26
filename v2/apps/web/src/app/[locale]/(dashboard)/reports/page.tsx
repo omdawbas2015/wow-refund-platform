@@ -4,7 +4,8 @@ import { auth } from '@/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link } from '@/i18n/routing';
 import { ChevronRight, BarChart3, Wallet, History, Mail, Globe } from 'lucide-react';
-import { parseRange } from '@/lib/reports/range';
+import { parseRange, eachDayInRange } from '@/lib/reports/range';
+import { DailyVolumeChart } from './charts';
 
 interface PageProps {
   searchParams: Promise<{ from?: string; to?: string }>;
@@ -21,31 +22,61 @@ export default async function ReportsPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const range = parseRange({ from: sp.from, to: sp.to });
 
-  const [caseCount, refundedCount, totalAmount, openCases] = await Promise.all([
-    prisma.refundCase.count({
-      where: { createdAt: { gte: range.from, lte: range.to }, deletedAt: null },
-    }),
-    prisma.refundCase.count({
-      where: {
-        status: 'REFUNDED',
-        createdAt: { gte: range.from, lte: range.to },
-        deletedAt: null,
-      },
-    }),
-    prisma.refundComponent.aggregate({
-      where: {
-        status: 'REFUNDED',
-        refundedAt: { gte: range.from, lte: range.to },
-      },
-      _sum: { amount: true },
-    }),
-    prisma.refundCase.count({
-      where: {
-        status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'IN_EXECUTION'] },
-        deletedAt: null,
-      },
-    }),
-  ]);
+  const [caseCount, refundedCount, totalAmount, openCases, createdRows, refundedRows] =
+    await Promise.all([
+      prisma.refundCase.count({
+        where: { createdAt: { gte: range.from, lte: range.to }, deletedAt: null },
+      }),
+      prisma.refundCase.count({
+        where: {
+          status: 'REFUNDED',
+          createdAt: { gte: range.from, lte: range.to },
+          deletedAt: null,
+        },
+      }),
+      prisma.refundComponent.aggregate({
+        where: {
+          status: 'REFUNDED',
+          refundedAt: { gte: range.from, lte: range.to },
+        },
+        _sum: { amount: true },
+      }),
+      prisma.refundCase.count({
+        where: {
+          status: { in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'IN_EXECUTION'] },
+          deletedAt: null,
+        },
+      }),
+      prisma.refundCase.findMany({
+        where: { createdAt: { gte: range.from, lte: range.to }, deletedAt: null },
+        select: { createdAt: true },
+      }),
+      prisma.refundCase.findMany({
+        where: {
+          status: 'REFUNDED',
+          updatedAt: { gte: range.from, lte: range.to },
+          deletedAt: null,
+        },
+        select: { updatedAt: true },
+      }),
+    ]);
+
+  const days = eachDayInRange(range);
+  const createdByDay = new Map<string, number>(days.map((d) => [d, 0]));
+  for (const r of createdRows) {
+    const k = r.createdAt.toISOString().slice(0, 10);
+    if (createdByDay.has(k)) createdByDay.set(k, (createdByDay.get(k) ?? 0) + 1);
+  }
+  const refundedByDay = new Map<string, number>(days.map((d) => [d, 0]));
+  for (const r of refundedRows) {
+    const k = r.updatedAt.toISOString().slice(0, 10);
+    if (refundedByDay.has(k)) refundedByDay.set(k, (refundedByDay.get(k) ?? 0) + 1);
+  }
+  const dailyVolume = days.map((date) => ({
+    date,
+    created: createdByDay.get(date) ?? 0,
+    refunded: refundedByDay.get(date) ?? 0,
+  }));
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
@@ -68,6 +99,18 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         />
         <Stat label="Open cases (all-time)" value={openCases} />
       </div>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Daily volume</CardTitle>
+          <CardDescription>
+            Cases created vs cases that reached REFUNDED in the selected range.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DailyVolumeChart data={dailyVolume} />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <ReportCard
