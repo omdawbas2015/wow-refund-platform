@@ -110,8 +110,10 @@ export default async function PromoPage() {
   const totalAvailable = summaries.reduce((sum, s) => sum + s.available, 0);
   const totalAllocated = summaries.reduce((sum, s) => sum + s.allocated, 0);
 
-  const canAllocate =
-    session.user.role !== 'READ_ONLY' && session.user.role !== 'STORES';
+  // Must mirror ALLOCATE_*_ROLES in app/actions/promo.ts so we don't render
+  // an "Allocate promo" button for roles the server action will reject.
+  const ALLOCATE_ROLES = new Set(['ADMIN', 'MANAGER', 'AGENT', 'TEAM_LEAD']);
+  const canAllocate = ALLOCATE_ROLES.has(session.user.role ?? '');
 
   const grouped = groupPools(summaries);
 

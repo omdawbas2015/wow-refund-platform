@@ -157,28 +157,56 @@ export async function uploadPromoCodesAction(input: unknown): Promise<
     const pool = await prisma.promoConfig.findUnique({ where: { id: poolId } });
     if (!pool) return { ok: false, error: 'Promo pool not found.' };
 
-    const existing = await prisma.promoCode.findMany({
-      where: { code: { in: codes } },
-      select: { code: true },
-    });
-    const existingSet = new Set(existing.map((e) => e.code));
-    const toInsert = codes.filter((c) => !existingSet.has(c));
-
-    if (toInsert.length > 0) {
-      await prisma.promoCode.createMany({
-        data: toInsert.map((code) => ({
-          configId: poolId,
-          code,
-          status: 'AVAILABLE' as const,
-          expiresAt: expiresAt ? new Date(expiresAt) : null,
-          uploadedById: user.id,
-        })),
+    // Do the dedupe check + inserts inside a transaction so a concurrent
+    // upload can't race us between findMany and createMany. We insert
+    // row-by-row (SQLite doesn't support Prisma's `skipDuplicates`), but
+    // swallow individual P2002 unique-constraint violations so one racing
+    // duplicate never tanks the whole batch — it just gets counted as
+    // skipped.
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.promoCode.findMany({
+        where: { code: { in: codes } },
+        select: { code: true },
       });
-    }
+      const existingSet = new Set(existing.map((e) => e.code));
+      let inserted = 0;
+      let skipped = 0;
+      for (const code of codes) {
+        if (existingSet.has(code)) {
+          skipped += 1;
+          continue;
+        }
+        try {
+          await tx.promoCode.create({
+            data: {
+              configId: poolId,
+              code,
+              status: 'AVAILABLE' as const,
+              expiresAt: expiresAt ? new Date(expiresAt) : null,
+              uploadedById: user.id,
+            },
+          });
+          inserted += 1;
+        } catch (err: unknown) {
+          // P2002 = unique constraint violation (concurrent insert of same code)
+          if (
+            err &&
+            typeof err === 'object' &&
+            'code' in err &&
+            (err as { code?: string }).code === 'P2002'
+          ) {
+            skipped += 1;
+            continue;
+          }
+          throw err;
+        }
+      }
+      return { inserted, skipped };
+    });
 
     revalidatePath('/promo');
     revalidatePath(`/promo/pools/${poolId}`);
-    return { ok: true, data: { inserted: toInsert.length, skipped: codes.length - toInsert.length } };
+    return { ok: true, data: result };
   } catch (e) {
     console.error('[uploadPromoCodesAction]', e);
     return { ok: false, error: 'Failed to upload codes.' };
