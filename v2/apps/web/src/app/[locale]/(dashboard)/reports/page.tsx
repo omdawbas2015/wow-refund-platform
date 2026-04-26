@@ -3,7 +3,7 @@ import { prisma } from '@wow/db';
 import { auth } from '@/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link } from '@/i18n/routing';
-import { ChevronRight, BarChart3, Wallet, History, Mail, Globe, Timer } from 'lucide-react';
+import { ChevronRight, BarChart3, Wallet, History, Mail, Globe, Timer, Users } from 'lucide-react';
 import { parseRange, eachDayInRange } from '@/lib/reports/range';
 import { DailyVolumeChart } from './charts';
 
@@ -148,6 +148,12 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           icon={Timer}
           title="SLA"
           desc="Open cases against active SLA rules"
+        />
+        <ReportCard
+          href={`/reports/agents?from=${range.fromIso}&to=${range.toIso}`}
+          icon={Users}
+          title="By agent"
+          desc="Per-agent volume, refund amount, and resolution time"
         />
       </div>
     </div>
