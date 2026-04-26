@@ -200,6 +200,26 @@ export async function sendApprovalBatchAction(formData: FormData): Promise<Actio
       context: { type: 'BATCH', id: batch.id },
     });
 
+    // Power Automate (and the dev stub) report delivery failures via
+    // { delivered: false, error } rather than throwing. If we ignored that
+    // we'd flip the batch to SENT — and downstream the manager workflow
+    // would never run — even though the manager never got the email.
+    // Audit-log the failed dispatch so it shows up in /admin/cron-status
+    // and the email log, then bail without mutating the batch.
+    if (!result.delivered) {
+      await writeAudit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'batch.approval.send_failed',
+        entityId: batch.id,
+        after: { recipients: batch.recipientEmails, error: result.error ?? 'unknown' },
+      });
+      return {
+        ok: false,
+        error: `Email dispatch failed: ${result.error ?? 'unknown error'}. Batch left as DRAFT — retry once the mail webhook is healthy.`,
+      };
+    }
+
     await prisma.approvalBatch.update({
       where: { id: batch.id },
       data: {

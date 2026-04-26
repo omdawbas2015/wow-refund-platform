@@ -173,6 +173,26 @@ export async function sendKnetBatchAction(formData: FormData): Promise<ActionRes
       context: { type: 'BATCH', id: batch.id },
     });
 
+    // dispatchEmail returns { delivered: false } for production webhook
+    // failures (it does NOT throw). Without this guard we would flip the
+    // batch to SENT and atomically transition every component to
+    // AWAITING_ARN — the components would then sit there forever waiting
+    // for ARNs from a finance email that was never sent. Audit-log the
+    // failed dispatch and bail; the batch stays DRAFT and can be retried.
+    if (!result.delivered) {
+      await writeAudit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'batch.knet.send_failed',
+        entityId: batch.id,
+        after: { recipients: batch.recipientEmails, error: result.error ?? 'unknown' },
+      });
+      return {
+        ok: false,
+        error: `Email dispatch failed: ${result.error ?? 'unknown error'}. Batch left as DRAFT — retry once the mail webhook is healthy.`,
+      };
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.knetBatch.update({
         where: { id: batch.id },
