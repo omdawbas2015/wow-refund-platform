@@ -1,9 +1,24 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import { runSlaBreachSweep } from '@/lib/cases/sla-sweep';
 
 export const dynamic = 'force-dynamic';
 
 const CRON_SECRET = process.env['CRON_SECRET'] ?? '';
+
+/**
+ * Constant-time secret comparison to prevent timing attacks against the
+ * cron auth header. `timingSafeEqual` requires equal-length buffers, so
+ * length is short-circuited first — buffer length is not sensitive info
+ * for a high-entropy random secret.
+ */
+function safeEqual(provided: string, expected: string): boolean {
+  if (!provided || !expected) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 /**
  * Scheduled SLA breach sweep. Intended to be invoked by Vercel Cron, an
@@ -30,7 +45,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const bearer = authHeader.toLowerCase().startsWith('bearer ')
     ? authHeader.slice(7).trim()
     : '';
-  if (headerSecret !== CRON_SECRET && bearer !== CRON_SECRET) {
+  if (!safeEqual(headerSecret, CRON_SECRET) && !safeEqual(bearer, CRON_SECRET)) {
     return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
   }
 

@@ -23,6 +23,7 @@ const STATUS_TABS: Array<{ key: 'ALL' | CaseStatus; label: string }> = [
   { key: 'PARTIALLY_REFUNDED', label: 'Partial' },
   { key: 'REFUNDED', label: 'Refunded' },
   { key: 'REJECTED', label: 'Rejected' },
+  { key: 'CANCELLED', label: 'Cancelled' },
 ];
 
 const PAGE_SIZE = 25;
