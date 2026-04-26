@@ -6,3 +6,4 @@ export * from './batch';
 export * from './admin';
 export * from './promo';
 export * from './help-desk';
+export * from './aura';
