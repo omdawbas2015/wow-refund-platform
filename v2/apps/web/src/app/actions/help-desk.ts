@@ -1,0 +1,257 @@
+'use server';
+
+import { prisma } from '@wow/db';
+import {
+  sendStoreMessageSchema,
+  upsertStoreMessageTemplateSchema,
+  type SendStoreMessageInput,
+  type UpsertStoreMessageTemplateInput,
+} from '@wow/validators';
+import { auth } from '@/auth';
+import { revalidatePath } from 'next/cache';
+import { dispatchEmail } from '@/lib/email/dispatcher';
+
+type ActionResult<T = void> =
+  | (T extends void ? { ok: true } : { ok: true; data: T })
+  | { ok: false; error: string };
+
+async function requireUser() {
+  const session = await auth();
+  if (!session?.user) throw new Error('UNAUTHENTICATED');
+  return session.user;
+}
+
+function ensureAdmin(role: string | null | undefined) {
+  if (role !== 'ADMIN') throw new Error('FORBIDDEN');
+}
+
+async function audit(args: {
+  actorId: string;
+  actorEmail: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  before?: unknown;
+  after?: unknown;
+  metadata?: unknown;
+}) {
+  await prisma.auditLog.create({
+    data: {
+      actorId: args.actorId,
+      actorEmail: args.actorEmail,
+      action: args.action,
+      entityType: args.entityType,
+      entityId: args.entityId,
+      ...(args.before !== undefined ? { beforeData: JSON.stringify(args.before) } : {}),
+      ...(args.after !== undefined ? { afterData: JSON.stringify(args.after) } : {}),
+      ...(args.metadata !== undefined ? { metadata: JSON.stringify(args.metadata) } : {}),
+    },
+  });
+}
+
+/**
+ * Render a template body with mustache-style {{var}} placeholders.
+ * Missing variables are left as the literal placeholder so authors can spot them.
+ */
+function renderTemplate(text: string, vars: Record<string, string>): string {
+  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
+}
+
+// ── Send to store ──────────────────────────────────────────────────────────
+
+export async function sendStoreMessageAction(
+  input: SendStoreMessageInput,
+): Promise<ActionResult<{ logId: string }>> {
+  try {
+    const me = await requireUser();
+    const parsed = sendStoreMessageSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const { templateId, storeEmail, caseNumber, note } = parsed.data;
+
+    const template = await prisma.storeMessageTemplate.findUnique({
+      where: { id: templateId },
+    });
+    if (!template) return { ok: false, error: 'Template not found' };
+    if (!template.isActive) return { ok: false, error: 'Template is inactive' };
+
+    const vars = {
+      caseNumber,
+      note: note || '',
+      sender: me.email,
+    };
+    const renderedSubject = renderTemplate(template.subject, vars);
+    const renderedBody = renderTemplate(template.body, vars);
+
+    const log = await prisma.storeMessageLog.create({
+      data: {
+        caseNumber,
+        storeEmail,
+        templateId,
+        note: note || null,
+        renderedSubject,
+        renderedBody,
+        sentById: me.id,
+      },
+    });
+
+    // dispatchEmail does NOT throw on production webhook failure — it catches
+    // internally and returns `{ delivered: false, error }`. So we MUST inspect
+    // the result, not rely on a thrown error. (Try/catch still wraps the call
+    // because template loading / DB writes inside dispatchEmail can throw.)
+    let dispatched = false;
+    try {
+      const result = await dispatchEmail({
+        templateKey: `STORE_${template.key}`,
+        locale: 'en',
+        to: storeEmail,
+        // We render subject/body off the StoreMessageTemplate row instead of
+        // an EmailTemplate row, so pass them as an override.
+        variables: {},
+        override: { subject: renderedSubject, body: renderedBody },
+        context: { type: 'STORE', id: log.id },
+      });
+      if (!result.delivered) {
+        const reason = result.error ?? 'Unknown dispatch error';
+        try {
+          await prisma.storeMessageLog.update({
+            where: { id: log.id },
+            data: { deliveryStatus: 'FAILED', failureReason: reason },
+          });
+        } catch (logErr) {
+          console.error('[help-desk] failed to mark log FAILED after dispatch returned !delivered', logErr);
+        }
+        return { ok: false, error: `Email dispatch failed: ${reason}` };
+      }
+      dispatched = true;
+    } catch (emailErr) {
+      // dispatchEmail itself threw — email was NOT sent. Mark FAILED and report.
+      const reason = emailErr instanceof Error ? emailErr.message : String(emailErr);
+      try {
+        await prisma.storeMessageLog.update({
+          where: { id: log.id },
+          data: { deliveryStatus: 'FAILED', failureReason: reason },
+        });
+      } catch (logErr) {
+        console.error('[help-desk] failed to mark log FAILED after dispatchEmail threw', logErr);
+      }
+      return { ok: false, error: `Email dispatch failed: ${reason}` };
+    }
+
+    // Email has been dispatched (irreversible side effect). From this point on,
+    // any failure must be logged but must NOT surface as `ok: false`, since
+    // the user would retry and double-send. The status update sits OUTSIDE
+    // the dispatch try/catch so a transient DB error here cannot be confused
+    // with a dispatch failure.
+    if (dispatched) {
+      try {
+        await prisma.storeMessageLog.update({
+          where: { id: log.id },
+          data: { deliveryStatus: 'SENT', deliveredAt: new Date() },
+        });
+      } catch (statusErr) {
+        console.error(
+          '[help-desk] CRITICAL: email sent but storeMessageLog status update failed; manual reconciliation needed',
+          { logId: log.id, err: statusErr },
+        );
+      }
+    }
+
+    // Email has already been dispatched (irreversible side effect). Never let
+    // a transient audit-write failure surface as `ok: false` — that would make
+    // the user retry and double-send. We log to the server but always return
+    // success here.
+    try {
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'help_desk.store_message_sent',
+        entityType: 'STORE_MESSAGE',
+        entityId: log.id,
+        metadata: { templateKey: template.key, caseNumber, storeEmail },
+      });
+    } catch (auditErr) {
+      console.error(
+        '[help-desk] audit write failed after successful store email dispatch',
+        auditErr,
+      );
+    }
+
+    // revalidatePath is best-effort. If it throws, the email is already sent
+    // and the log row is already updated — never let it surface as ok:false.
+    try {
+      revalidatePath('/help-desk/stores');
+    } catch (revErr) {
+      console.error('[help-desk] revalidatePath failed after successful send', revErr);
+    }
+    return { ok: true, data: { logId: log.id } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ── Admin: store template upsert ───────────────────────────────────────────
+
+export async function upsertStoreMessageTemplateAction(
+  input: UpsertStoreMessageTemplateInput,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const me = await requireUser();
+    ensureAdmin(me.role);
+    const parsed = upsertStoreMessageTemplateSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const { templateId, key, label, labelAr, subject, body, isActive, sortOrder } = parsed.data;
+
+    const data = {
+      key,
+      label,
+      labelAr: labelAr || null,
+      subject,
+      body,
+      isActive,
+      sortOrder,
+    };
+
+    if (templateId) {
+      const before = await prisma.storeMessageTemplate.findUnique({ where: { id: templateId } });
+      if (!before) return { ok: false, error: 'Template not found' };
+
+      // Disallow renaming key to a value that already exists on a different row.
+      if (before.key !== key) {
+        const dup = await prisma.storeMessageTemplate.findUnique({ where: { key } });
+        if (dup) return { ok: false, error: 'A template with this key already exists' };
+      }
+
+      const updated = await prisma.storeMessageTemplate.update({
+        where: { id: templateId },
+        data,
+      });
+      await audit({
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'admin.store_message_template.updated',
+        entityType: 'STORE_MESSAGE_TEMPLATE',
+        entityId: updated.id,
+        before,
+        after: updated,
+      });
+      revalidatePath('/admin/store-templates');
+      return { ok: true, data: { id: updated.id } };
+    }
+
+    const dup = await prisma.storeMessageTemplate.findUnique({ where: { key } });
+    if (dup) return { ok: false, error: 'A template with this key already exists' };
+    const created = await prisma.storeMessageTemplate.create({ data });
+    await audit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: 'admin.store_message_template.created',
+      entityType: 'STORE_MESSAGE_TEMPLATE',
+      entityId: created.id,
+      after: created,
+    });
+    revalidatePath('/admin/store-templates');
+    return { ok: true, data: { id: created.id } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
