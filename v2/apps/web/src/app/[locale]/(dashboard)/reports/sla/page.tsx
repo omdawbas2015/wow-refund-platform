@@ -11,6 +11,7 @@ import {
   hoursBetween,
   type SlaTierHours,
 } from '@/lib/cases/sla-rules';
+import { ScanSlaBreachesButton } from './scan-button';
 
 const TERMINAL: ReadonlySet<CaseStatus> = new Set<CaseStatus>([
   'REFUNDED',
@@ -114,11 +115,18 @@ export default async function SlaReportPage() {
       <Link href="/reports" className="text-xs uppercase text-muted-foreground hover:text-primary">
         ← Reports
       </Link>
-      <h1 className="mt-2 text-display-md font-normal tracking-tight text-heading">SLA</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Open refund cases classified against the active SLA rules. Cases that match no rule fall
-        back to a 6-day breach threshold (warning at 3 days).
-      </p>
+      <div className="mt-2 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-display-md font-normal tracking-tight text-heading">SLA</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Open refund cases classified against the active SLA rules. Cases that match no rule
+            fall back to a 6-day breach threshold (warning at 3 days).
+          </p>
+        </div>
+        {session.user.role === 'ADMIN' || session.user.role === 'OPS_LEAD' ? (
+          <ScanSlaBreachesButton />
+        ) : null}
+      </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <SummaryCard label="Breached" value={counts.breached} tone="destructive" />
