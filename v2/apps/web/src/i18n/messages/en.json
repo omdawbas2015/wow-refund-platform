@@ -17,8 +17,10 @@
     "countries": "Countries",
     "brands": "Brands",
     "paymentMethods": "Payment Methods",
+    "rootCauses": "Root Causes",
     "emailTemplates": "Email Templates",
     "auditLog": "Audit Log",
+    "emailLog": "Email Log",
     "settings": "Settings",
     "logout": "Sign out"
   },
