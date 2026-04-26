@@ -182,6 +182,115 @@ async function seedDefaultBrands() {
   }
 }
 
+async function seedBrandCountries() {
+  console.log('→ Linking brands to active countries...');
+  const [brands, countries] = await Promise.all([
+    prisma.brand.findMany({ where: { isActive: true } }),
+    prisma.country.findMany({ where: { isActive: true } }),
+  ]);
+  for (const b of brands) {
+    for (const c of countries) {
+      await prisma.brandCountry.upsert({
+        where: { brandId_countryId: { brandId: b.id, countryId: c.id } },
+        create: { brandId: b.id, countryId: c.id, isActive: true },
+        update: { isActive: true },
+      });
+    }
+  }
+}
+
+/**
+ * Seed PromoConfig pools (3 customer-compensation tiers + 1 service-recovery)
+ * per brand × active country, plus a batch of AVAILABLE codes in each pool.
+ */
+async function seedPromos() {
+  console.log('→ Seeding promo pools and codes...');
+  const [brands, countries] = await Promise.all([
+    prisma.brand.findMany({ where: { isActive: true } }),
+    prisma.country.findMany({ where: { isActive: true }, include: { registry: true } }),
+  ]);
+
+  for (const brand of brands) {
+    for (const country of countries) {
+      const currency = country.registry?.currencyCode ?? 'USD';
+      const compensationTiers: Array<{ value: number; label: string }> = [
+        { value: 10, label: 'Small compensation' },
+        { value: 25, label: 'Standard compensation' },
+        { value: 50, label: 'Large compensation' },
+      ];
+
+      for (const tier of compensationTiers) {
+        const pool = await prisma.promoConfig.upsert({
+          where: {
+            brandId_countryId_type_value: {
+              brandId: brand.id,
+              countryId: country.id,
+              type: 'CUSTOMER_COMPENSATION',
+              value: tier.value,
+            },
+          },
+          create: {
+            brandId: brand.id,
+            countryId: country.id,
+            type: 'CUSTOMER_COMPENSATION',
+            value: tier.value,
+            currency,
+            label: `${brand.name} · ${country.registryCode} · ${tier.label}`,
+            isActive: true,
+          },
+          update: { isActive: true },
+        });
+        await ensurePoolStock(pool.id, brand.slug, country.registryCode, tier.value, 'C');
+      }
+
+      const recoveryPool = await prisma.promoConfig.upsert({
+        where: {
+          brandId_countryId_type_value: {
+            brandId: brand.id,
+            countryId: country.id,
+            type: 'SERVICE_RECOVERY',
+            value: 100,
+          },
+        },
+        create: {
+          brandId: brand.id,
+          countryId: country.id,
+          type: 'SERVICE_RECOVERY',
+          value: 100,
+          currency,
+          label: `${brand.name} · ${country.registryCode} · Service recovery (100%)`,
+          isActive: true,
+        },
+        update: { isActive: true },
+      });
+      await ensurePoolStock(recoveryPool.id, brand.slug, country.registryCode, 100, 'S');
+    }
+  }
+}
+
+async function ensurePoolStock(
+  poolId: string,
+  brandSlug: string,
+  countryCode: string,
+  value: number,
+  kind: 'C' | 'S',
+) {
+  const existing = await prisma.promoCode.count({ where: { configId: poolId } });
+  const target = 20;
+  if (existing >= target) return;
+  const needed = target - existing;
+  const codes = Array.from({ length: needed }, (_, i) => ({
+    configId: poolId,
+    code: `${kind}-${brandSlug.substring(0, 3).toUpperCase()}-${countryCode}-${value}-${Math.random()
+      .toString(36)
+      .slice(2, 8)
+      .toUpperCase()}`,
+    status: 'AVAILABLE' as const,
+    uploadedAt: new Date(),
+  }));
+  await prisma.promoCode.createMany({ data: codes });
+}
+
 async function seedDefaultAdmin() {
   const email = 'admin@wow.local';
   const password = 'admin123';
@@ -209,6 +318,257 @@ async function seedDefaultAdmin() {
     },
   });
   console.log(`→ Created default admin: ${email} / ${password}`);
+}
+
+async function seedDemoCases() {
+  // Only seed demo cases when explicitly requested.
+  if (process.env['SEED_DEMO_CASES'] !== '1') {
+    console.log('→ Skipping demo cases (set SEED_DEMO_CASES=1 to seed)');
+    return;
+  }
+
+  // Skip if any cases already exist
+  const existing = await prisma.refundCase.count();
+  if (existing > 0) {
+    console.log(`→ Demo cases skipped (${existing} cases already exist)`);
+    return;
+  }
+
+  console.log('→ Seeding demo refund cases...');
+
+  const admin = await prisma.user.findUnique({ where: { email: 'admin@wow.local' } });
+  const kuwait = await prisma.country.findUnique({ where: { registryCode: 'KW' } });
+  const saudi = await prisma.country.findUnique({ where: { registryCode: 'SA' } });
+  const chipotle = await prisma.brand.findUnique({ where: { slug: 'chipotle' } });
+  const starbucks = await prisma.brand.findUnique({ where: { slug: 'starbucks' } });
+  const applePay = await prisma.paymentMethod.findUnique({ where: { key: 'APPLE_PAY' } });
+  const knet = await prisma.paymentMethod.findUnique({ where: { key: 'KNET' } });
+  const mastercard = await prisma.paymentMethod.findUnique({ where: { key: 'MASTERCARD' } });
+  const rootCause = await prisma.rootCause.findFirst();
+
+  if (
+    !admin ||
+    !kuwait ||
+    !saudi ||
+    !chipotle ||
+    !starbucks ||
+    !applePay ||
+    !knet ||
+    !mastercard
+  ) {
+    console.log('  ! Missing prerequisites, skipping demo cases');
+    return;
+  }
+
+  // Seed a handful of branches so case rows/details can show a real
+  // physical location. Branches are per-country, so we tag each by the
+  // country id they belong to.
+  const branchSpecs = [
+    { country: kuwait, name: 'The Avenues Mall', code: 'KW-AVN' },
+    { country: kuwait, name: 'Al-Kout Mall', code: 'KW-KOT' },
+    { country: saudi, name: 'Kingdom Centre Riyadh', code: 'SA-KCR' },
+    { country: saudi, name: 'Red Sea Mall Jeddah', code: 'SA-RSM' },
+  ];
+  const branchByCode = new Map<string, { id: string; countryId: string }>();
+  for (const spec of branchSpecs) {
+    const b = await prisma.branch.upsert({
+      where: {
+        countryId_name: { countryId: spec.country.id, name: spec.name },
+      },
+      create: {
+        countryId: spec.country.id,
+        name: spec.name,
+        code: spec.code,
+      },
+      update: {},
+    });
+    branchByCode.set(spec.code, { id: b.id, countryId: b.countryId });
+  }
+
+  type Demo = {
+    countryId: string;
+    brandId: string;
+    branchCode?: string;
+    customerName: string;
+    customerEmail: string;
+    customerPhone: string;
+    orderNumber: string;
+    orderAmount: number;
+    orderCurrency: string;
+    status: string;
+    // Single payment method per case — an agent only records the network
+    // the customer paid with, not a split across multiple rails. Aura
+    // points are tracked separately on the case (sidecar).
+    component: { paymentMethodId: string; authCode?: string };
+    /** Falls back to orderAmount when omitted (full refund). */
+    refundAmount?: number;
+    auraPoints?: number;
+    notes?: string[];
+  };
+
+  const demos: Demo[] = [
+    {
+      countryId: kuwait.id,
+      brandId: chipotle.id,
+      branchCode: 'KW-AVN',
+      customerName: 'Sara Al-Fahad',
+      customerEmail: 'sara.fahad@example.com',
+      customerPhone: '+96599887766',
+      orderNumber: 'CHP-KW-89231',
+      orderAmount: 12.5,
+      orderCurrency: 'KWD',
+      status: 'DRAFT',
+      component: { paymentMethodId: applePay.id },
+      notes: ['Customer reported missing items in delivery.'],
+    },
+    {
+      countryId: kuwait.id,
+      brandId: starbucks.id,
+      branchCode: 'KW-KOT',
+      customerName: 'Omar Khan',
+      customerEmail: 'omar.k@example.com',
+      customerPhone: '+96566554433',
+      orderNumber: 'SBX-KW-44102',
+      orderAmount: 8.75,
+      orderCurrency: 'KWD',
+      status: 'PENDING_APPROVAL',
+      component: { paymentMethodId: knet.id, authCode: 'A12B34' },
+      notes: ['Drink prepared incorrectly twice.', 'Manager confirmed full refund.'],
+    },
+    {
+      countryId: saudi.id,
+      brandId: chipotle.id,
+      branchCode: 'SA-KCR',
+      customerName: 'Layla Hussain',
+      customerEmail: 'layla.h@example.com',
+      customerPhone: '+966500112233',
+      orderNumber: 'CHP-SA-77345',
+      orderAmount: 95.0,
+      orderCurrency: 'SAR',
+      status: 'APPROVED',
+      component: { paymentMethodId: mastercard.id },
+      auraPoints: 500,
+    },
+    {
+      countryId: kuwait.id,
+      brandId: chipotle.id,
+      branchCode: 'KW-AVN',
+      customerName: 'Yousef Al-Mutairi',
+      customerEmail: 'yousef.m@example.com',
+      customerPhone: '+96598765432',
+      orderNumber: 'CHP-KW-92044',
+      orderAmount: 22.0,
+      orderCurrency: 'KWD',
+      status: 'PARTIALLY_REFUNDED',
+      component: { paymentMethodId: mastercard.id },
+      refundAmount: 14.0,
+    },
+    {
+      countryId: saudi.id,
+      brandId: starbucks.id,
+      branchCode: 'SA-RSM',
+      customerName: 'Reem Al-Saud',
+      customerEmail: 'reem.s@example.com',
+      customerPhone: '+966512345678',
+      orderNumber: 'SBX-SA-22198',
+      orderAmount: 60.0,
+      orderCurrency: 'SAR',
+      status: 'REFUNDED',
+      component: { paymentMethodId: mastercard.id },
+      auraPoints: 200,
+      notes: ['Refund completed in batch.'],
+    },
+  ];
+
+  for (let i = 0; i < demos.length; i++) {
+    const d = demos[i]!;
+    const country = await prisma.country.findUnique({
+      where: { id: d.countryId },
+      include: { registry: true },
+    });
+    if (!country) continue;
+
+    const year = new Date().getFullYear();
+    const caseNumber = `REF-${country.registry.code}-${year}-${(i + 1).toString().padStart(6, '0')}`;
+    const totalRefund = d.refundAmount ?? d.orderAmount;
+    const isPartial = Math.abs(totalRefund - d.orderAmount) > 0.001;
+
+    const created = await prisma.refundCase.create({
+      data: {
+        caseNumber,
+        // Fabricated CRM reference so seeded cases surface in external-ticket searches.
+        externalCaseNumber: `CRM-${(100000 + i + 1).toString()}`,
+        countryId: d.countryId,
+        branchId: d.branchCode ? branchByCode.get(d.branchCode)?.id ?? null : null,
+        brandId: d.brandId,
+        customerName: d.customerName,
+        customerEmail: d.customerEmail,
+        customerPhone: d.customerPhone,
+        orderNumber: d.orderNumber,
+        orderDate: new Date(Date.now() - (i + 1) * 86_400_000),
+        orderAmount: d.orderAmount,
+        orderCurrency: d.orderCurrency,
+        totalRefundAmount: totalRefund,
+        isPartial,
+        status: d.status as never,
+        auraPoints: d.auraPoints ?? null,
+        auraStatus: d.auraPoints
+          ? d.status === 'REFUNDED'
+            ? 'COMPLETED'
+            : 'PENDING'
+          : 'NONE',
+        rootCauseId: rootCause?.id ?? null,
+        createdById: admin.id,
+        approvedById: ['APPROVED', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(d.status) ? admin.id : null,
+        approvedAt: ['APPROVED', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(d.status) ? new Date() : null,
+        components: {
+          create: {
+            paymentMethodId: d.component.paymentMethodId,
+            amount: totalRefund,
+            currency: d.orderCurrency,
+            authCode: d.component.authCode ?? null,
+            status:
+              d.status === 'REFUNDED'
+                ? 'REFUNDED'
+                : d.status === 'PARTIALLY_REFUNDED'
+                  ? 'AWAITING_BATCH'
+                  : 'PENDING',
+          },
+        },
+      },
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        caseId: created.id,
+        actorId: admin.id,
+        actorLabel: admin.name,
+        kind: 'case.created',
+        message: `Case ${caseNumber} created`,
+      },
+    });
+
+    if (d.notes) {
+      for (const body of d.notes) {
+        await prisma.caseNote.create({
+          data: { caseId: created.id, authorId: admin.id, body },
+        });
+      }
+    }
+  }
+
+  console.log(`→ Seeded ${demos.length} demo cases.`);
+
+  // Add a couple of unread notifications for the admin
+  await prisma.notification.create({
+    data: {
+      userId: admin.id,
+      type: 'CASE_ASSIGNED',
+      title: 'Welcome — review your refund cases',
+      body: 'Demo data has been seeded. Open the Cases page to explore.',
+      href: '/cases',
+    },
+  });
 }
 
 async function seedFeatureFlags() {
@@ -244,8 +604,11 @@ async function main() {
   await seedStoreMessageTemplates();
   await seedActiveCountries();
   await seedDefaultBrands();
+  await seedBrandCountries();
+  await seedPromos();
   await seedDefaultAdmin();
   await seedFeatureFlags();
+  await seedDemoCases();
 
   console.log('\n✓ Seed complete.');
 }
