@@ -4,9 +4,11 @@ import { prisma } from '@wow/db';
 import { auth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Gift, Plus, AlertTriangle, History } from 'lucide-react';
-import { formatMoney, relativeTime } from '@/lib/format';
+import { Plus, History } from 'lucide-react';
+import { relativeTime } from '@/lib/format';
+import { formatPromoValue, promoTypeLabel } from '@/lib/promo/format';
 import { PromoExportButton } from './export-button';
+import { PoolsBoard, type PoolSummary } from './pools-board';
 
 /**
  * Who gets the pool-management dashboard. Agents / team leads / read-only
@@ -16,24 +18,6 @@ import { PromoExportButton } from './export-button';
 const POOL_MANAGEMENT_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']);
 
 export const dynamic = 'force-dynamic';
-
-type PoolSummary = {
-  configId: string;
-  brandId: string;
-  brandName: string;
-  countryId: string;
-  countryName: string;
-  countryFlag: string;
-  type: 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY';
-  value: number;
-  currency: string;
-  label: string | null;
-  available: number;
-  allocated: number;
-  used: number;
-  expired: number;
-  total: number;
-};
 
 export default async function PromoPage({
   params,
@@ -146,15 +130,13 @@ export default async function PromoPage({
   const ALLOCATE_ROLES = new Set(['ADMIN', 'MANAGER', 'AGENT', 'TEAM_LEAD']);
   const canAllocate = ALLOCATE_ROLES.has(session.user.role ?? '');
 
-  const grouped = groupPools(summaries);
-
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-heading">Promo codes</h1>
           <p className="text-sm text-muted-foreground">
-            Customer compensation and service recovery pools, organized by country and brand.
+            Manage compensation and service-recovery pools across brands and countries.
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
@@ -189,31 +171,7 @@ export default async function PromoPage({
 
       <section>
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Pools</h2>
-        <div className="space-y-6">
-          {grouped.map(({ countryId, countryName, countryFlag, items }) => (
-            <div key={countryId} className="space-y-2">
-              <h3 className="flex items-center gap-2 text-sm font-medium text-heading">
-                <span className="text-base" aria-hidden>
-                  {countryFlag || '🌐'}
-                </span>
-                {countryName}
-              </h3>
-              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                {items.map((p) => (
-                  <PoolCard key={p.configId} pool={p} locale={locale} />
-                ))}
-              </div>
-            </div>
-          ))}
-          {grouped.length === 0 && (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground">
-                <Gift className="h-8 w-8" />
-                <p>No promo pools configured yet.</p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+        <PoolsBoard pools={summaries} locale={locale} />
       </section>
 
       <section>
@@ -238,10 +196,15 @@ export default async function PromoPage({
                       <div className="text-xs text-muted-foreground">
                         {a.code.config.brand.name} ·{' '}
                         {a.code.config.country.registry?.nameEn ?? a.code.config.country.registryCode} ·{' '}
-                        {formatMoney(a.code.config.value, a.code.config.currency)} ·{' '}
-                        {a.code.config.type === 'CUSTOMER_COMPENSATION'
-                          ? 'Customer compensation'
-                          : 'Service recovery'}
+                        {formatPromoValue(
+                          a.code.config.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
+                          a.code.config.value,
+                          a.code.config.currency,
+                        )}{' '}
+                        ·{' '}
+                        {promoTypeLabel(
+                          a.code.config.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
+                        )}
                       </div>
                     </div>
                     <div className="font-mono text-xs text-muted-foreground">{a.code.code}</div>
@@ -255,93 +218,6 @@ export default async function PromoPage({
           </CardContent>
         </Card>
       </section>
-    </div>
-  );
-}
-
-function groupPools(pools: PoolSummary[]) {
-  const byCountry = new Map<
-    string,
-    { countryId: string; countryName: string; countryFlag: string; items: PoolSummary[] }
-  >();
-  for (const p of pools) {
-    if (!byCountry.has(p.countryId)) {
-      byCountry.set(p.countryId, {
-        countryId: p.countryId,
-        countryName: p.countryName,
-        countryFlag: p.countryFlag,
-        items: [],
-      });
-    }
-    byCountry.get(p.countryId)!.items.push(p);
-  }
-  return Array.from(byCountry.values());
-}
-
-function PoolCard({ pool, locale }: { pool: PoolSummary; locale: string }) {
-  const low = pool.available <= 3;
-  const out = pool.available === 0;
-  const isCompensation = pool.type === 'CUSTOMER_COMPENSATION';
-
-  return (
-    <Link
-      href={`/${locale}/promo/pools/${pool.configId}`}
-      className="group block rounded-lg border border-border bg-card p-4 transition hover:border-foreground/20 hover:shadow-sm"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{pool.brandName}</p>
-          <p className="text-xs text-muted-foreground">
-            {isCompensation ? 'Customer compensation' : 'Service recovery'} ·{' '}
-            <span className="font-mono">{formatMoney(pool.value, pool.currency)}</span>
-          </p>
-        </div>
-        {out ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400">
-            <AlertTriangle className="h-3 w-3" />
-            Out of stock
-          </span>
-        ) : low ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-            Low
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-3">
-        <div className="flex items-baseline justify-between text-xs text-muted-foreground">
-          <span>Available</span>
-          <span className="font-mono tabular-nums text-heading">
-            {pool.available} / {pool.total || '—'}
-          </span>
-        </div>
-        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className={`h-full rounded-full ${
-              out ? 'bg-red-500' : low ? 'bg-amber-500' : 'bg-emerald-500'
-            }`}
-            style={{
-              width:
-                pool.total === 0
-                  ? '0%'
-                  : `${Math.max(2, Math.min(100, (pool.available / pool.total) * 100))}%`,
-            }}
-          />
-        </div>
-        <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
-          <StockPill label="Allocated" value={pool.allocated} />
-          <StockPill label="Used" value={pool.used} />
-          <StockPill label="Expired" value={pool.expired} />
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function StockPill({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md bg-muted/40 px-2 py-1 text-center">
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="font-mono text-xs tabular-nums text-heading">{value}</div>
     </div>
   );
 }

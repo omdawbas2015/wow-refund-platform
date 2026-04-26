@@ -5,9 +5,10 @@ import { auth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
-import { formatMoney, formatDateTime, relativeTime } from '@/lib/format';
+import { relativeTime } from '@/lib/format';
+import { formatPromoValue, promoTypeLabel } from '@/lib/promo/format';
 import { UploadCodesPanel } from './upload-codes-panel';
-import { CodeRowActions } from './code-row-actions';
+import { CodesList, type CodeRow } from './codes-list';
 
 const VIEW_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS', 'TEAM_LEAD', 'AGENT', 'READ_ONLY']);
 const UPLOAD_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']);
@@ -53,7 +54,7 @@ export default async function PoolDetailPage({
     prisma.promoCode.findMany({
       where: { configId: poolId },
       orderBy: { uploadedAt: 'desc' },
-      take: 50,
+      take: 500,
       include: {
         allocations: {
           orderBy: { createdAt: 'desc' },
@@ -85,6 +86,36 @@ export default async function PoolDetailPage({
   const canUpload = UPLOAD_ROLES.has(session.user.role ?? '');
   const canAdmin = POOL_ADMIN_ROLES.has(session.user.role ?? '');
 
+  // Codes are sent to the client as already-serialized rows so the filter
+  // tabs / search / pagination stay snappy without extra round-trips.
+  const codeRows: CodeRow[] = recentCodes.map((c) => {
+    // Derive the displayed status: AVAILABLE codes whose expiresAt has passed
+    // are shown as EXPIRED to match the totals shown above.
+    const effectiveStatus =
+      c.status === 'AVAILABLE' && c.expiresAt && c.expiresAt <= now
+        ? 'EXPIRED'
+        : (c.status as CodeRow['status']);
+    const a = c.allocations[0];
+    return {
+      id: c.id,
+      code: c.code,
+      status: effectiveStatus,
+      uploadedAt: c.uploadedAt.toISOString(),
+      expiresAt: c.expiresAt ? c.expiresAt.toISOString() : null,
+      allocation: a
+        ? { customerEmail: a.customerEmail, createdAt: a.createdAt.toISOString() }
+        : null,
+    };
+  });
+  const codeTotals = {
+    ALL: total,
+    AVAILABLE: available,
+    ALLOCATED: allocated,
+    USED: used,
+    EXPIRED: expired,
+    DISABLED: counts['DISABLED'] ?? 0,
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2 text-sm">
@@ -103,12 +134,15 @@ export default async function PoolDetailPage({
           <span>·</span>
           <span>{pool.brand.name}</span>
           <span>·</span>
-          <span>
-            {pool.type === 'CUSTOMER_COMPENSATION' ? 'Customer compensation' : 'Service recovery'}
-          </span>
+          <span>{promoTypeLabel(pool.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY')}</span>
         </div>
         <h1 className="text-2xl font-semibold text-heading">
-          {formatMoney(pool.value, pool.currency)} pool
+          {formatPromoValue(
+            pool.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
+            pool.value,
+            pool.currency,
+          )}{' '}
+          pool
         </h1>
         {pool.label && <p className="text-sm text-muted-foreground">{pool.label}</p>}
       </header>
@@ -122,45 +156,13 @@ export default async function PoolDetailPage({
 
       {canUpload && <UploadCodesPanel poolId={pool.id} />}
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">
-          Codes <span className="text-xs">({total} total)</span>
-        </h2>
-        <Card>
-          <CardContent className="p-0">
-            {recentCodes.length === 0 ? (
-              <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                No codes in this pool yet.
-              </p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {recentCodes.map((c) => (
-                  <li
-                    key={c.id}
-                    className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-heading">{c.code}</span>
-                      <CodeStatusPill status={c.status} />
-                    </div>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      {c.allocations[0] && (
-                        <span className="truncate">
-                          → {c.allocations[0].customerEmail}
-                        </span>
-                      )}
-                      <span>uploaded {relativeTime(c.uploadedAt)}</span>
-                      {c.expiresAt && (
-                        <span>exp {formatDateTime(c.expiresAt)}</span>
-                      )}
-                      {canAdmin && <CodeRowActions codeId={c.id} status={c.status} />}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Codes <span className="text-xs">({total.toLocaleString()} total)</span>
+          </h2>
+        </div>
+        <CodesList codes={codeRows} totals={codeTotals} canAdmin={canAdmin} />
       </section>
 
       {recentAllocations.length > 0 && (
@@ -225,19 +227,4 @@ function StatCard({
   );
 }
 
-function CodeStatusPill({ status }: { status: string }) {
-  const map: Record<string, { bg: string; dot: string; label: string }> = {
-    AVAILABLE: { bg: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-500', label: 'Available' },
-    ALLOCATED: { bg: 'bg-blue-500/10 text-blue-700 dark:text-blue-300', dot: 'bg-blue-500', label: 'Allocated' },
-    USED: { bg: 'bg-muted text-muted-foreground', dot: 'bg-muted-foreground', label: 'Used' },
-    EXPIRED: { bg: 'bg-red-500/10 text-red-700 dark:text-red-300', dot: 'bg-red-500', label: 'Expired' },
-    DISABLED: { bg: 'bg-muted text-muted-foreground', dot: 'bg-muted-foreground', label: 'Disabled' },
-  };
-  const m = map[status] ?? map['AVAILABLE']!;
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${m.bg}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${m.dot}`} />
-      {m.label}
-    </span>
-  );
-}
+

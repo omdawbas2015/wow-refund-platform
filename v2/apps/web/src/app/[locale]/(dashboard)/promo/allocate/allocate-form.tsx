@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import { AlertTriangle, Check, History, Gift, Shield, Mail, Copy, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatPromoValue } from '@/lib/promo/format';
 
 export type PoolOption = {
   id: string;
@@ -49,14 +50,6 @@ type LookupState = {
   totalCount: number;
   history: HistoryEntry[];
 };
-
-function formatMoney(amount: number, currency: string) {
-  try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency}`;
-  }
-}
 
 function formatDateTime(d: Date | string) {
   const date = typeof d === 'string' ? new Date(d) : d;
@@ -142,6 +135,16 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
       setPoolId('');
     }
   }, [matchingPools, poolId]);
+
+  // Service-recovery has exactly one pool per brand×country (always 100% off),
+  // so it's never useful to ask the user to pick a tier. Auto-select the only
+  // matching pool the moment brand+country are set; the explicit pool grid is
+  // hidden in that case.
+  useEffect(() => {
+    if (type === 'SERVICE_RECOVERY' && matchingPools.length === 1 && !poolId) {
+      setPoolId(matchingPools[0]!.id);
+    }
+  }, [type, matchingPools, poolId]);
 
   // Debounced history lookup when the email changes. Uses a generation
   // counter so stale in-flight responses for a previous email can never
@@ -281,8 +284,10 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
         </div>
       </div>
 
-      {/* Pool selection */}
-      {brandId && (
+      {/* Pool selection. Service-recovery is always 100% off and has a single
+          pool per brand×country, so we render an auto-selected confirmation
+          row instead of an unnecessary tier picker. */}
+      {brandId && type === 'CUSTOMER_COMPENSATION' && (
         <div className="space-y-2">
           <Label>
             Pool <span className="text-muted-foreground">(value · stock)</span>
@@ -311,7 +316,9 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
                       out && 'cursor-not-allowed opacity-50',
                     )}
                   >
-                    <span className="font-mono text-heading">{formatMoney(p.value, p.currency)}</span>
+                    <span className="font-mono text-heading">
+                      {formatPromoValue(p.type, p.value, p.currency)}
+                    </span>
                     <span
                       className={cn(
                         'text-xs tabular-nums',
@@ -330,6 +337,38 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
             </div>
           )}
         </div>
+      )}
+      {brandId && type === 'SERVICE_RECOVERY' && matchingPools.length > 0 && (
+        <div
+          className={cn(
+            'flex items-center justify-between rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm',
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-heading">100% off recovery code</span>
+            <span className="text-xs text-muted-foreground">· internal use only</span>
+          </div>
+          <span
+            className={cn(
+              'text-xs tabular-nums',
+              matchingPools[0]!.available === 0
+                ? 'text-red-600 dark:text-red-400'
+                : matchingPools[0]!.available <= 3
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-muted-foreground',
+            )}
+          >
+            {matchingPools[0]!.available === 0
+              ? 'Out of stock'
+              : `${matchingPools[0]!.available} left`}
+          </span>
+        </div>
+      )}
+      {brandId && type === 'SERVICE_RECOVERY' && matchingPools.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No service-recovery pool configured for this brand and country.
+        </p>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -579,7 +618,11 @@ function FraudPanel({
             >
               <span>
                 <span className="text-heading">{h.brand}</span> · {h.country} ·{' '}
-                {formatMoney(h.value, h.currency)}
+                {formatPromoValue(
+                  h.type as 'CUSTOMER_COMPENSATION' | 'SERVICE_RECOVERY',
+                  h.value,
+                  h.currency,
+                )}
                 <span className="ml-1 text-[10px] uppercase tracking-wide">
                   {h.type === 'CUSTOMER_COMPENSATION' ? 'compensation' : 'recovery'}
                 </span>
