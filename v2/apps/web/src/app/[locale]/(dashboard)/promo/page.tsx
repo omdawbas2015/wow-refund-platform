@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Gift, Plus, AlertTriangle, History } from 'lucide-react';
 import { formatMoney, relativeTime } from '@/lib/format';
+import { PromoExportButton } from './export-button';
 
 /**
  * Who gets the pool-management dashboard. Agents / team leads / read-only
@@ -156,7 +157,8 @@ export default async function PromoPage({
             Customer compensation and service recovery pools, organized by country and brand.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-start gap-2">
+          <PromoExportButton />
           <Button asChild variant="outline">
             <Link href={`/${locale}/promo/history`}>
               <History className="mr-2 h-4 w-4" />

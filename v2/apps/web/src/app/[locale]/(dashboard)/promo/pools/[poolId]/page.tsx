@@ -4,12 +4,14 @@ import { prisma } from '@wow/db';
 import { auth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, Upload } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { formatMoney, formatDateTime, relativeTime } from '@/lib/format';
 import { UploadCodesPanel } from './upload-codes-panel';
+import { CodeRowActions } from './code-row-actions';
 
 const VIEW_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS', 'TEAM_LEAD', 'AGENT', 'READ_ONLY']);
 const UPLOAD_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']);
+const POOL_ADMIN_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']);
 
 export const dynamic = 'force-dynamic';
 
@@ -81,6 +83,7 @@ export default async function PoolDetailPage({
   const total = rawAvailable + allocated + used + (counts['EXPIRED'] ?? 0) + (counts['DISABLED'] ?? 0);
 
   const canUpload = UPLOAD_ROLES.has(session.user.role ?? '');
+  const canAdmin = POOL_ADMIN_ROLES.has(session.user.role ?? '');
 
   return (
     <div className="space-y-5">
@@ -150,6 +153,7 @@ export default async function PoolDetailPage({
                       {c.expiresAt && (
                         <span>exp {formatDateTime(c.expiresAt)}</span>
                       )}
+                      {canAdmin && <CodeRowActions codeId={c.id} status={c.status} />}
                     </div>
                   </li>
                 ))}

@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, History } from 'lucide-react';
 import { PromoHistoryList } from './history-list';
+import { PromoExportButton } from '../export-button';
 
 const VIEW_ROLES = new Set([
   'ADMIN',
@@ -13,6 +14,7 @@ const VIEW_ROLES = new Set([
   'AGENT',
   'READ_ONLY',
 ]);
+const POOL_ADMIN_ROLES = new Set(['ADMIN', 'MANAGER', 'OPERATIONS']);
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +30,7 @@ export default async function PromoHistoryPage({
 
   const role = session.user.role ?? '';
   const scopedToOwnRecovery = role === 'AGENT' || role === 'TEAM_LEAD';
+  const canExport = POOL_ADMIN_ROLES.has(role);
 
   return (
     <div className="space-y-5">
@@ -39,7 +42,7 @@ export default async function PromoHistoryPage({
           </Link>
         </Button>
       </div>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-heading flex items-center gap-2">
             <History className="h-6 w-6 text-muted-foreground" />
@@ -54,6 +57,7 @@ export default async function PromoHistoryPage({
             )}
           </p>
         </div>
+        {canExport && <PromoExportButton />}
       </div>
 
       <PromoHistoryList />
