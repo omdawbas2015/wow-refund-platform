@@ -231,6 +231,7 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
   useEffect(() => {
     const trimmed = caseQuery.trim();
     if (trimmed.length < 3) {
+      caseLookupGenRef.current += 1;
       setCaseLookup({ state: 'idle' });
       return;
     }
@@ -280,6 +281,7 @@ export function AllocatePromoForm({ pools }: { pools: PoolOption[] }) {
   useEffect(() => {
     const trimmed = customerEmail.trim().toLowerCase();
     if (!trimmed || !trimmed.includes('@')) {
+      lookupGenRef.current += 1;
       setLookup({ loading: false, email: null, recentCount: 0, totalCount: 0, history: [] });
       return;
     }
