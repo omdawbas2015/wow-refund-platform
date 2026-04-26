@@ -32,6 +32,7 @@ interface SearchParams {
   status?: string;
   sla?: string;
   page?: string;
+  mine?: string;
 }
 
 const SLA_TABS: Array<{ key: 'all' | 'breached' | 'warning' | 'on_track' | 'closed'; label: string }> = [
@@ -52,6 +53,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
   const statusParam = (sp.status ?? '').toUpperCase();
   const status = STATUS_TABS.find((t) => t.key === statusParam)?.key ?? 'ALL';
   const sla: SlaTier | 'all' = parseSlaParam(sp.sla);
+  const mine = sp.mine === '1' && !!session?.user?.id;
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
 
   // Translate the SLA filter into Prisma conditions. We always emit the
@@ -64,20 +66,30 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
   // collide with the top-level `status` key.
   const slaConditions = buildSlaConditions(sla);
 
+  const andConditions: Prisma.RefundCaseWhereInput[] = [...slaConditions];
+  if (mine && session?.user?.id) {
+    andConditions.push({
+      OR: [
+        { assignedToId: session.user.id },
+        { createdById: session.user.id },
+      ],
+    });
+  }
+  if (q) {
+    andConditions.push({
+      OR: [
+        { caseNumber: { contains: q } },
+        { orderNumber: { contains: q } },
+        { customerEmail: { contains: q } },
+        { customerName: { contains: q } },
+      ],
+    });
+  }
+
   const where: Prisma.RefundCaseWhereInput = {
     deletedAt: null,
     ...(status !== 'ALL' ? { status: status as CaseStatus } : {}),
-    ...(slaConditions.length > 0 ? { AND: slaConditions } : {}),
-    ...(q
-      ? {
-          OR: [
-            { caseNumber: { contains: q } },
-            { orderNumber: { contains: q } },
-            { customerEmail: { contains: q } },
-            { customerName: { contains: q } },
-          ],
-        }
-      : {}),
+    ...(andConditions.length > 0 ? { AND: andConditions } : {}),
   };
 
   const [total, rows] = await Promise.all([
@@ -111,6 +123,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
     if (q) params.set('q', q);
     if (status !== 'ALL') params.set('status', status);
     if (sla !== 'all') params.set('sla', sla);
+    if (mine) params.set('mine', '1');
     if (p > 1) params.set('page', String(p));
     const qs = params.toString();
     return `/cases${qs ? `?${qs}` : ''}`;
@@ -120,7 +133,18 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (status !== 'ALL') params.set('status', status);
+    if (mine) params.set('mine', '1');
     if (key !== 'all') params.set('sla', key);
+    const qs = params.toString();
+    return `/cases${qs ? `?${qs}` : ''}`;
+  }
+
+  function mineUrl(next: boolean) {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (status !== 'ALL') params.set('status', status);
+    if (sla !== 'all') params.set('sla', sla);
+    if (next) params.set('mine', '1');
     const qs = params.toString();
     return `/cases${qs ? `?${qs}` : ''}`;
   }
@@ -143,6 +167,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
               if (q) p.set('q', q);
               if (status !== 'ALL') p.set('status', status);
               if (sla !== 'all') p.set('sla', sla);
+              if (mine) p.set('mine', '1');
               return p.toString();
             })()}
             isAdmin={session?.user?.role === 'ADMIN'}
@@ -154,6 +179,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
                 if (q) p.set('q', q);
                 if (status !== 'ALL') p.set('status', status);
                 if (sla !== 'all') p.set('sla', sla);
+                if (mine) p.set('mine', '1');
                 const qs = p.toString();
                 return `/api/export/cases${qs ? `?${qs}` : ''}`;
               })()}
@@ -186,11 +212,38 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
           </div>
           {status !== 'ALL' ? <input type="hidden" name="status" value={status} /> : null}
           {sla !== 'all' ? <input type="hidden" name="sla" value={sla} /> : null}
+          {mine ? <input type="hidden" name="mine" value="1" /> : null}
           <Button type="submit" size="sm" variant="outline">
             Search
           </Button>
         </form>
       </Card>
+
+      {/* Scope: my cases / everyone */}
+      {session?.user?.id ? (
+        <div className="mb-3 flex flex-wrap gap-1">
+          <Link
+            href={mineUrl(false)}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              !mine
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-surface-subtle text-muted-foreground hover:bg-surface-subtle/70'
+            }`}
+          >
+            All cases
+          </Link>
+          <Link
+            href={mineUrl(true)}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              mine
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-surface-subtle text-muted-foreground hover:bg-surface-subtle/70'
+            }`}
+          >
+            My cases
+          </Link>
+        </div>
+      ) : null}
 
       {/* SLA tabs */}
       <div className="mb-3 flex flex-wrap gap-1">
@@ -219,6 +272,7 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
           if (q) params.set('q', q);
           if (tab.key !== 'ALL') params.set('status', tab.key);
           if (sla !== 'all') params.set('sla', sla);
+          if (mine) params.set('mine', '1');
           const href = `/cases${params.toString() ? `?${params.toString()}` : ''}`;
           const active = tab.key === status;
           return (

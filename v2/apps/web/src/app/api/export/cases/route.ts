@@ -42,23 +42,34 @@ export async function GET(req: NextRequest) {
   // exported file matches the filtered on-screen view.
   const sla = parseSlaParam(sp.get('sla') ?? undefined);
   const slaConditions = buildSlaConditions(sla);
+  const mine = sp.get('mine') === '1' && !!session.user.id;
+
+  const andConditions: Prisma.RefundCaseWhereInput[] = [...slaConditions];
+  if (mine && session.user.id) {
+    andConditions.push({
+      OR: [
+        { assignedToId: session.user.id },
+        { createdById: session.user.id },
+      ],
+    });
+  }
+  if (q) {
+    andConditions.push({
+      OR: [
+        { caseNumber: { contains: q } },
+        { orderNumber: { contains: q } },
+        { customerEmail: { contains: q } },
+        { customerName: { contains: q } },
+      ],
+    });
+  }
 
   const where: Prisma.RefundCaseWhereInput = {
     deletedAt: null,
     ...(status && VALID_STATUSES.has(status) ? { status: status as CaseStatus } : {}),
     ...(countryId ? { countryId } : {}),
     ...(brandId ? { brandId } : {}),
-    ...(slaConditions.length > 0 ? { AND: slaConditions } : {}),
-    ...(q
-      ? {
-          OR: [
-            { caseNumber: { contains: q } },
-            { orderNumber: { contains: q } },
-            { customerEmail: { contains: q } },
-            { customerName: { contains: q } },
-          ],
-        }
-      : {}),
+    ...(andConditions.length > 0 ? { AND: andConditions } : {}),
   };
   const cases = await prisma.refundCase.findMany({
     where,
