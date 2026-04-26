@@ -340,59 +340,72 @@ export async function verifyKnetArnAction(formData: FormData): Promise<ActionRes
     if (!comp.case) return { ok: false, error: 'Component is not attached to a case' };
 
     const now = new Date();
-    await prisma.refundComponent.update({
-      where: { id: comp.id },
-      data: approve
-        ? {
-            status: 'REFUNDED',
-            arnVerifiedAt: now,
-            refundedById: me.id,
-            refundedAt: now,
-          }
-        : {
-            // Clear the rejected ARN so it can't be mistaken for a valid
-            // refund reference downstream (export, audit, customer email).
-            // Matches the JSDoc contract on this action.
-            status: 'FAILED',
-            arn: null,
-            failureReason: 'ARN rejected by agent',
+    // Component update + case rollup + batch rollup must be atomic.
+    // A crash between any of these auto-committed writes leaves the
+    // batch's `verifiedComponents` counter or the case status
+    // permanently stale (e.g. batch detail shows "3/5 verified"
+    // forever, case sits in IN_EXECUTION while every component is
+    // decided). One transaction keeps all four mutations in lockstep.
+    const caseRef = comp.case;
+    const batchRef = comp.batch;
+    let nextCaseStatus = caseRef.status;
+    await prisma.$transaction(async (tx) => {
+      await tx.refundComponent.update({
+        where: { id: comp.id },
+        data: approve
+          ? {
+              status: 'REFUNDED',
+              arnVerifiedAt: now,
+              refundedById: me.id,
+              refundedAt: now,
+            }
+          : {
+              // Clear the rejected ARN so it can't be mistaken for a
+              // valid refund reference downstream (export, audit,
+              // customer email). Matches the JSDoc contract on this
+              // action.
+              status: 'FAILED',
+              arn: null,
+              failureReason: 'ARN rejected by agent',
+            },
+      });
+
+      // Roll up case status
+      const all = await tx.refundComponent.findMany({
+        where: { caseId: caseRef.id },
+        select: { status: true },
+      });
+      const rolled = rollupCaseStatus(caseRef.status, all.map((c) => c.status));
+      if (rolled !== caseRef.status) {
+        await tx.refundCase.update({ where: { id: caseRef.id }, data: { status: rolled } });
+      }
+      nextCaseStatus = rolled;
+
+      // Roll up batch status
+      if (batchRef) {
+        const remaining = await tx.refundComponent.count({
+          where: {
+            batchId: batchRef.id,
+            status: { notIn: ['REFUNDED', 'FAILED'] },
           },
+        });
+        // Both APPROVE → REFUNDED and REJECT → FAILED count as a
+        // "decision"; the batch's `remaining` query treats both as
+        // terminal, so we must also bump verifiedComponents in both
+        // cases — otherwise the counter permanently undercounts and
+        // the batch detail page shows e.g. "3/5 verified" even after
+        // every component has been decided.
+        await tx.knetBatch.update({
+          where: { id: batchRef.id },
+          data: {
+            verifiedComponents: { increment: 1 },
+            ...(remaining === 0
+              ? { status: 'COMPLETED', completedAt: now }
+              : {}),
+          },
+        });
+      }
     });
-
-    // Roll up case status
-    const all = await prisma.refundComponent.findMany({
-      where: { caseId: comp.case.id },
-      select: { status: true },
-    });
-    const next = rollupCaseStatus(comp.case.status, all.map((c) => c.status));
-    if (next !== comp.case.status) {
-      await prisma.refundCase.update({ where: { id: comp.case.id }, data: { status: next } });
-    }
-
-    // Roll up batch status
-    if (comp.batch) {
-      const remaining = await prisma.refundComponent.count({
-        where: {
-          batchId: comp.batch.id,
-          status: { notIn: ['REFUNDED', 'FAILED'] },
-        },
-      });
-      // Both APPROVE → REFUNDED and REJECT → FAILED count as a "decision";
-      // the batch's `remaining` query treats both as terminal, so we must
-      // also bump verifiedComponents in both cases — otherwise the counter
-      // permanently undercounts and the batch detail page shows e.g.
-      // "3/5 verified" even after every component has been decided.
-      const verifiedDelta = 1;
-      await prisma.knetBatch.update({
-        where: { id: comp.batch.id },
-        data: {
-          verifiedComponents: { increment: verifiedDelta },
-          ...(remaining === 0
-            ? { status: 'COMPLETED', completedAt: now }
-            : {}),
-        },
-      });
-    }
 
     await writeAudit({
       actorId: me.id,
@@ -400,7 +413,7 @@ export async function verifyKnetArnAction(formData: FormData): Promise<ActionRes
       action: approve ? 'component.arn_verified' : 'component.arn_rejected',
       entityId: comp.id,
       before: { status: comp.status, caseStatus: comp.case.status },
-      after: { status: approve ? 'REFUNDED' : 'FAILED', caseStatus: next },
+      after: { status: approve ? 'REFUNDED' : 'FAILED', caseStatus: nextCaseStatus },
     });
 
     revalidatePath(`/cases/${comp.case.id}`);

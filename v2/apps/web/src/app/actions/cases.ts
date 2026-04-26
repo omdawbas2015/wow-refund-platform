@@ -492,30 +492,37 @@ export async function markComponentRefundedAction(
       return { ok: false, error: `Component is already ${comp.status}` };
     }
 
-    await prisma.refundComponent.update({
-      where: { id: comp.id },
-      data: {
-        status: 'REFUNDED',
-        arn,
-        arnVerifiedAt: new Date(),
-        refundedById: me.id,
-        refundedAt: new Date(),
-        ...(notifyCustomer ? { customerNotifiedAt: new Date() } : {}),
-      },
-    });
-
-    // Roll up case status from all components
-    const all = await prisma.refundComponent.findMany({
-      where: { caseId: comp.caseId },
-      select: { status: true },
-    });
-    const next = rollupCaseStatus(comp.case.status, all.map((c) => c.status));
-    if (next !== comp.case.status) {
-      await prisma.refundCase.update({
-        where: { id: comp.caseId },
-        data: { status: next },
+    // Component update + case-status rollup must be atomic. Without
+    // the transaction a crash between the component update and the
+    // case update would leave the component as REFUNDED while the
+    // parent case stays APPROVED/IN_EXECUTION forever — the SLA queue
+    // would keep flagging it and reports would mis-count.
+    const next = await prisma.$transaction(async (tx) => {
+      await tx.refundComponent.update({
+        where: { id: comp.id },
+        data: {
+          status: 'REFUNDED',
+          arn,
+          arnVerifiedAt: new Date(),
+          refundedById: me.id,
+          refundedAt: new Date(),
+          ...(notifyCustomer ? { customerNotifiedAt: new Date() } : {}),
+        },
       });
-    }
+
+      const all = await tx.refundComponent.findMany({
+        where: { caseId: comp.caseId },
+        select: { status: true },
+      });
+      const rolled = rollupCaseStatus(comp.case.status, all.map((c) => c.status));
+      if (rolled !== comp.case.status) {
+        await tx.refundCase.update({
+          where: { id: comp.caseId },
+          data: { status: rolled },
+        });
+      }
+      return rolled;
+    });
 
     await writeAudit({
       actorId: me.id,
