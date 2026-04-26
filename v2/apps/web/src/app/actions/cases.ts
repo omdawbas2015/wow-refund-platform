@@ -449,6 +449,9 @@ export async function markComponentRefundedAction(
         id: true,
         status: true,
         caseId: true,
+        amount: true,
+        currency: true,
+        paymentMethod: { select: { label: true } },
         case: {
           select: {
             id: true,
@@ -499,6 +502,23 @@ export async function markComponentRefundedAction(
       entityId: comp.id,
       before: { status: comp.status, caseStatus: comp.case.status },
       after: { status: 'REFUNDED', arn, caseStatus: next },
+    });
+    // Mirror the event onto the parent case so it surfaces in the case
+    // timeline (which queries `entityType: 'CASE'`). The `after` payload
+    // carries the friendly fields the timeline renders inline.
+    await writeAudit({
+      actorId: me.id,
+      actorEmail: me.email,
+      action: 'case.component_refunded',
+      entityType: 'CASE',
+      entityId: comp.caseId,
+      after: {
+        componentId: comp.id,
+        paymentMethod: comp.paymentMethod.label,
+        amount: comp.amount,
+        currency: comp.currency,
+        arn,
+      },
     });
 
     if (notifyCustomer) {

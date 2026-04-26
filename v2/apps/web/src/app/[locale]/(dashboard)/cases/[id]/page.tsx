@@ -14,6 +14,7 @@ import {
 import { CaseActions } from './case-actions';
 import { ComponentsTable } from './components-table';
 import { NotesSection } from './notes-section';
+import { CaseTimeline } from './case-timeline';
 
 export default async function CaseDetailsPage(props: { params: Promise<{ id: string; locale: string }> }) {
   const { id } = await props.params;
@@ -139,6 +140,16 @@ export default async function CaseDetailsPage(props: { params: Promise<{ id: str
                   mentions: n.mentions.map((m) => m.user.name),
                 }))}
               />
+            </CardContent>
+          </Card>
+
+          {/* Timeline */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Timeline</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CaseTimeline caseId={refundCase.id} localeFmt={localeFmt} />
             </CardContent>
           </Card>
         </div>
