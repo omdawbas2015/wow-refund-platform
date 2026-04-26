@@ -23,41 +23,60 @@ export default async function DashboardHome() {
   const breachedCutoff = new Date(now.getTime() - 6 * dayMs);
   const warningCutoff = new Date(now.getTime() - 3 * dayMs);
 
-  // Stats — totals plus SLA tiers across the open queue.
-  const [totalCases, pendingApproval, completedCases, pendingUserApprovals, breachedOpen, atRiskOpen, recent] =
-    await Promise.all([
-      prisma.refundCase.count({ where: { deletedAt: null } }),
-      prisma.refundCase.count({ where: { deletedAt: null, status: 'PENDING_APPROVAL' } }),
-      prisma.refundCase.count({ where: { deletedAt: null, status: 'REFUNDED' } }),
-      prisma.user.count({ where: { status: 'PENDING' } }),
-      prisma.refundCase.count({
-        where: {
-          deletedAt: null,
-          status: { notIn: TERMINAL },
-          createdAt: { lte: breachedCutoff },
-        },
-      }),
-      prisma.refundCase.count({
-        where: {
-          deletedAt: null,
-          status: { notIn: TERMINAL },
-          createdAt: { lte: warningCutoff, gt: breachedCutoff },
-        },
-      }),
-      prisma.refundCase.findMany({
-        where: { deletedAt: null },
-        orderBy: { createdAt: 'desc' },
-        take: 8,
-        select: {
-          id: true,
-          caseNumber: true,
-          status: true,
-          customerName: true,
-          createdAt: true,
-          country: { select: { registryCode: true } },
-        },
-      }),
-    ]);
+  // Stats — totals plus SLA tiers across the open queue. We query each tier
+  // independently rather than deriving on-track via subtraction, because
+  // `completedCases` only counts REFUNDED (not REJECTED/CANCELLED), so the
+  // earlier `total - completed - breached - warning` formula was inflating
+  // on-track by exactly the number of rejected/cancelled cases.
+  const [
+    totalCases,
+    pendingApproval,
+    completedCases,
+    pendingUserApprovals,
+    breachedOpen,
+    atRiskOpen,
+    onTrackOpen,
+    recent,
+  ] = await Promise.all([
+    prisma.refundCase.count({ where: { deletedAt: null } }),
+    prisma.refundCase.count({ where: { deletedAt: null, status: 'PENDING_APPROVAL' } }),
+    prisma.refundCase.count({ where: { deletedAt: null, status: 'REFUNDED' } }),
+    prisma.user.count({ where: { status: 'PENDING' } }),
+    prisma.refundCase.count({
+      where: {
+        deletedAt: null,
+        status: { notIn: TERMINAL },
+        createdAt: { lte: breachedCutoff },
+      },
+    }),
+    prisma.refundCase.count({
+      where: {
+        deletedAt: null,
+        status: { notIn: TERMINAL },
+        createdAt: { lte: warningCutoff, gt: breachedCutoff },
+      },
+    }),
+    prisma.refundCase.count({
+      where: {
+        deletedAt: null,
+        status: { notIn: TERMINAL },
+        createdAt: { gt: warningCutoff },
+      },
+    }),
+    prisma.refundCase.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+      select: {
+        id: true,
+        caseNumber: true,
+        status: true,
+        customerName: true,
+        createdAt: true,
+        country: { select: { registryCode: true } },
+      },
+    }),
+  ]);
 
   const stats = [
     { label: 'Total cases', value: totalCases, icon: FileText, tint: 'text-primary' },
@@ -135,7 +154,7 @@ export default async function DashboardHome() {
                   href="/cases?sla=on_track"
                   className="rounded-md bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-700 tabular hover:bg-emerald-500/15 dark:text-emerald-400"
                 >
-                  {Math.max(0, totalCases - completedCases - breachedOpen - atRiskOpen)}
+                  {onTrackOpen}
                 </Link>
               </li>
             </ul>

@@ -1,5 +1,5 @@
 import { prisma } from '@wow/db';
-import type { CaseStatus } from '@wow/db';
+import type { CaseStatus, Prisma } from '@wow/db';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -52,39 +52,37 @@ export default async function CasesPage(props: { searchParams: Promise<SearchPar
   const sla = SLA_TABS.find((t) => t.key === slaParam)?.key ?? 'all';
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
 
-  // Translate SLA filter into a createdAt window + status constraint. The
-  // thresholds match `lib/cases/sla.ts`: warning at >=3d, breached at >=6d.
+  // Translate SLA filter into a createdAt window + (sometimes) status
+  // constraint. The thresholds match `lib/cases/sla.ts`: warning at >=3d,
+  // breached at >=6d. We collect the constraints into AND clauses below
+  // so the explicit status tab and the SLA tier never collide on the
+  // single `where.status` key.
   const now = new Date();
   const dayMs = 24 * 60 * 60 * 1000;
   const TERMINAL: CaseStatus[] = ['REFUNDED', 'REJECTED', 'CANCELLED'];
-  const slaWhere = (() => {
-    if (sla === 'all') return {};
-    if (sla === 'closed') return { status: { in: TERMINAL } };
-    // For tier filters we exclude terminal statuses (those bypass SLA).
-    const notTerminal = { status: { notIn: TERMINAL } };
-    if (sla === 'breached') {
-      return { ...notTerminal, createdAt: { lte: new Date(now.getTime() - 6 * dayMs) } };
-    }
-    if (sla === 'warning') {
-      return {
-        ...notTerminal,
-        createdAt: {
-          lte: new Date(now.getTime() - 3 * dayMs),
-          gt: new Date(now.getTime() - 6 * dayMs),
-        },
-      };
-    }
-    // on_track
-    return {
-      ...notTerminal,
-      createdAt: { gt: new Date(now.getTime() - 3 * dayMs) },
-    };
-  })();
+  const slaConditions: Prisma.RefundCaseWhereInput[] = [];
+  if (sla === 'closed') {
+    slaConditions.push({ status: { in: TERMINAL } });
+  } else if (sla === 'breached') {
+    if (status === 'ALL') slaConditions.push({ status: { notIn: TERMINAL } });
+    slaConditions.push({ createdAt: { lte: new Date(now.getTime() - 6 * dayMs) } });
+  } else if (sla === 'warning') {
+    if (status === 'ALL') slaConditions.push({ status: { notIn: TERMINAL } });
+    slaConditions.push({
+      createdAt: {
+        lte: new Date(now.getTime() - 3 * dayMs),
+        gt: new Date(now.getTime() - 6 * dayMs),
+      },
+    });
+  } else if (sla === 'on_track') {
+    if (status === 'ALL') slaConditions.push({ status: { notIn: TERMINAL } });
+    slaConditions.push({ createdAt: { gt: new Date(now.getTime() - 3 * dayMs) } });
+  }
 
-  const where = {
+  const where: Prisma.RefundCaseWhereInput = {
     deletedAt: null,
     ...(status !== 'ALL' ? { status: status as CaseStatus } : {}),
-    ...slaWhere,
+    ...(slaConditions.length > 0 ? { AND: slaConditions } : {}),
     ...(q
       ? {
           OR: [
