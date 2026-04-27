@@ -26,6 +26,9 @@ import {
   Bell,
   Search as SearchIcon,
   Sparkles,
+  User as UserIcon,
+  Activity,
+  Server,
 } from 'lucide-react';
 
 interface NavSection {
@@ -52,6 +55,7 @@ export function Sidebar({ role }: { role: string | null }) {
         { label: t('cases'), href: '/cases', icon: FileText },
         { label: 'Search', href: '/search', icon: SearchIcon },
         { label: 'Notifications', href: '/notifications', icon: Bell },
+        { label: 'Profile', href: '/profile', icon: UserIcon },
         ...(opsRole
           ? [{ label: t('operations'), href: '/operations', icon: ShieldCheck }]
           : []),
@@ -84,6 +88,8 @@ export function Sidebar({ role }: { role: string | null }) {
         { label: 'Email Log', href: '/admin/email-log', icon: Mail, adminOnly: true },
         { label: 'SLA Rules', href: '/admin/sla-rules', icon: Timer, adminOnly: true },
         { label: 'Fraud Signals', href: '/admin/fraud-signals', icon: ShieldAlert, adminOnly: true },
+        { label: 'Cron Status', href: '/admin/cron-status', icon: Activity, adminOnly: true },
+        { label: 'System Info', href: '/admin/system-info', icon: Server, adminOnly: true },
         { label: t('settings'), href: '/admin/settings', icon: Settings, adminOnly: true },
       ],
     },

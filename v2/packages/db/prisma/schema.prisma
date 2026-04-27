@@ -193,6 +193,9 @@ model User {
   preferredLocale       String     @default("en") // en | ar
   preferredCurrency     String? // display-currency preference (e.g. KWD)
   preferredTheme        String     @default("light") // light | dark | system
+  // Comma-separated list of NotificationType values that the user has
+  // muted. Notifications of those kinds are skipped at dispatch time.
+  mutedNotificationKinds String     @default("")
 
   deletedAt             DateTime? // soft delete
 
