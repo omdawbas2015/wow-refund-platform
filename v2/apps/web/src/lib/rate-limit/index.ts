@@ -6,14 +6,13 @@
  *   2. @upstash/ratelimit when UPSTASH_REDIS_REST_URL and
  *      UPSTASH_REDIS_REST_TOKEN env vars are set.
  *
- * The Upstash branch lazy-imports the SDK so cold starts and dev runs
- * without the package installed do not fail. If the import fails for any
- * reason (missing pkg, missing env), we silently fall back to memory.
- *
  * Designed primarily for /api/auth/* — login, signup, forgot/reset-password.
  * The public surface is `consume(key, max, windowMs)`; the result tells the
  * caller how many requests remain and when the window resets.
  */
+
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
 type Hit = { ts: number };
 const buckets = new Map<string, Hit[]>();
@@ -54,51 +53,23 @@ function memoryConsume(key: string, max: number, windowMs: number): RateLimitRes
   };
 }
 
-let upstashLimiterPromise:
-  | Promise<((key: string) => Promise<RateLimitResult>) | null>
-  | null = null;
+const upstashLimiters = new Map<string, Ratelimit>();
 
-async function getUpstashLimiter(max: number, windowMs: number) {
+function getUpstashLimiter(max: number, windowMs: number): Ratelimit | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;
-
-  if (!upstashLimiterPromise) {
-    upstashLimiterPromise = (async () => {
-      try {
-        // The packages may not be installed in dev — swallow import errors
-        // and fall back to in-memory.
-        const ratelimitMod = (await import(
-          /* @vite-ignore */ '@upstash/ratelimit' as string
-        ).catch(() => null)) as { Ratelimit?: any } | null;
-        const redisMod = (await import(
-          /* @vite-ignore */ '@upstash/redis' as string
-        ).catch(() => null)) as { Redis?: any } | null;
-        if (!ratelimitMod?.Ratelimit || !redisMod?.Redis) return null;
-        const Ratelimit = ratelimitMod.Ratelimit;
-        const Redis = redisMod.Redis;
-        const redis = new Redis({ url, token });
-        const limiter = new Ratelimit({
-          redis,
-          limiter: Ratelimit.slidingWindow(max, `${windowMs} ms`),
-          analytics: false,
-          prefix: 'wow-refund:rl',
-        });
-        return async (key: string): Promise<RateLimitResult> => {
-          const r = await limiter.limit(key);
-          return {
-            allowed: r.success,
-            remaining: r.remaining,
-            reset: r.reset,
-            source: 'upstash',
-          };
-        };
-      } catch {
-        return null;
-      }
-    })();
-  }
-  return upstashLimiterPromise;
+  const cacheKey = `${max}:${windowMs}`;
+  const cached = upstashLimiters.get(cacheKey);
+  if (cached) return cached;
+  const limiter = new Ratelimit({
+    redis: new Redis({ url, token }),
+    limiter: Ratelimit.slidingWindow(max, `${Math.ceil(windowMs / 1000)} s`),
+    analytics: false,
+    prefix: 'wow-refund:rl',
+  });
+  upstashLimiters.set(cacheKey, limiter);
+  return limiter;
 }
 
 /**
@@ -110,8 +81,20 @@ export async function consume(
   max: number,
   windowMs: number,
 ): Promise<RateLimitResult> {
-  const upstash = await getUpstashLimiter(max, windowMs);
-  if (upstash) return upstash(key);
+  const limiter = getUpstashLimiter(max, windowMs);
+  if (limiter) {
+    try {
+      const r = await limiter.limit(key);
+      return {
+        allowed: r.success,
+        remaining: r.remaining,
+        reset: r.reset,
+        source: 'upstash',
+      };
+    } catch {
+      // Upstash REST hiccup — fall through to memory rather than 500.
+    }
+  }
   return memoryConsume(key, max, windowMs);
 }
 

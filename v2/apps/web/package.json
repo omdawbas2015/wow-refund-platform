@@ -36,6 +36,8 @@
     "@trpc/client": "11.0.0-rc.660",
     "@trpc/react-query": "11.0.0-rc.660",
     "@trpc/server": "11.0.0-rc.660",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.37.0",
     "@wow/db": "workspace:*",
     "@wow/ui": "workspace:*",
     "@wow/validators": "workspace:*",
