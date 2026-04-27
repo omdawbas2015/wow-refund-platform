@@ -24,28 +24,41 @@ export async function GET(_req: NextRequest) {
   }
   const userId = session.user.id;
 
+  let cleanup: (() => void) | null = null;
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();
+      let closed = false;
       const send = (payload: EventPayload) => {
-        controller.enqueue(
-          encoder.encode(
-            `event: ${payload.type}\ndata: ${JSON.stringify(payload.data)}\n\n`,
-          ),
-        );
+        if (closed) return;
+        try {
+          controller.enqueue(
+            encoder.encode(
+              `event: ${payload.type}\ndata: ${JSON.stringify(payload.data)}\n\n`,
+            ),
+          );
+        } catch {
+          // Controller already closed (client disconnected mid-flight).
+          closed = true;
+        }
       };
       // Heartbeat every 25s to keep the connection open through proxies
       // (Vercel's edge has a 30s idle timeout on streams).
       const heartbeat = setInterval(() => {
-        controller.enqueue(encoder.encode(`: heartbeat\n\n`));
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`: heartbeat\n\n`));
+        } catch {
+          closed = true;
+        }
       }, 25_000);
       const unsubscribe = subscribe(userId, send);
       // First message tells the client the channel is live so the UI
       // can flip from "polling" to "live".
       send({ type: 'ready', data: { userId } });
-      // Cleanup when the client disconnects. ReadableStream.cancel is
-      // the only signal Next gives us here.
-      const cleanup = () => {
+      cleanup = () => {
+        if (closed) return;
+        closed = true;
         clearInterval(heartbeat);
         unsubscribe();
         try {
@@ -54,11 +67,11 @@ export async function GET(_req: NextRequest) {
           // Already closed.
         }
       };
-      // Tie cleanup to the controller for cancel() invocations.
-      (controller as unknown as { _cleanup?: () => void })._cleanup = cleanup;
     },
     cancel() {
-      // No-op; cleanup is wired via start() above.
+      // Client disconnected. Free the heartbeat + bus subscription so
+      // we don't leak listeners on long-running processes.
+      cleanup?.();
     },
   });
 
