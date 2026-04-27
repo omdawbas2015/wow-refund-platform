@@ -216,14 +216,14 @@ Other reference docs:
 - ⬜ **#21 WebSocket / SSE notifications** via Upstash Redis pub/sub — needs `UPSTASH_REDIS_URL` + `UPSTASH_REDIS_TOKEN`.
 - ⬜ **#22 Sentry SDK** wiring — needs `SENTRY_DSN`.
 - ⬜ **#23 Vercel deploy + Neon Postgres + backup policy** — needs Vercel token + `DATABASE_URL`.
-- ⬜ **#25 Playwright smoke suite** (auth + case lifecycle) — no secrets needed actually.
+- ✅ **#25 Playwright smoke suite** — `@playwright/test` + `playwright.config.ts` + `tests/auth.spec.ts` (login + bad-creds rejection) and `tests/case-list.spec.ts` (cases index loads + bulk-cases reachable). `pnpm test:e2e` runs the suite against `PLAYWRIGHT_BASE_URL` (defaults to `localhost:3000`); CI installs chromium with `pnpm test:e2e:install`. No secrets needed. (commit `94790a2`)
 
 ### Sprint G — Backlog (P2, optional)
 
 - ⬜ **#26 Power Automate flows on M365 tenant** — owner builds externally; Next.js side already ready.
-- ⬜ **#28 pino structured logs + OpenTelemetry**.
+- 🟡 **#28 pino structured logs + OpenTelemetry** — partial. `lib/logger.ts` is a JSON-line shim with the same surface as pino (`info(obj, msg)`, `child(bindings)`); production emits structured log lines that any drain or OTel collector can parse. Real pino + OTel exporter wiring deferred until a log-drain destination is approved (Vercel Log Drains, Datadog, etc.). (commit `e6dcf74`)
 - ⬜ **#29 OpenAPI / Swagger** generation from zod.
-- ⬜ **#30 axe-core a11y audit** in CI.
+- ✅ **#30 axe-core a11y audit** — `tests/a11y.spec.ts` runs `@axe-core/playwright` against `/login` and the post-login dashboard, asserting zero WCAG 2.0/2.1 A and AA violations. Runs alongside the rest of the smoke suite under `pnpm test:e2e`. (commit `a4bbd45`)
 - ⬜ **#31 Storybook** design-system website.
 
 ---
