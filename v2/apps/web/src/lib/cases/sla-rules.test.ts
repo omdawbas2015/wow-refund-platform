@@ -17,6 +17,7 @@ const rule = (overrides: Partial<SlaRule>): SlaRule => ({
   rootCauseId: overrides.rootCauseId ?? null,
   thresholdHours: overrides.thresholdHours ?? 72,
   warningHours: overrides.warningHours ?? 36,
+  escalateToRole: overrides.escalateToRole ?? null,
   createdAt: overrides.createdAt ?? new Date('2026-01-01'),
   updatedAt: overrides.updatedAt ?? new Date('2026-01-01'),
 });
