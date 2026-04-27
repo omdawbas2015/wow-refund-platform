@@ -1,8 +1,8 @@
 # WOW Refund Platform — HANDOVER for the next Devin session
 
-> **Read this file first.** It is self-contained: state of the system, what is done, what is missing, how to resume. Last updated 2026-04-27 03:40 UTC.
+> **Read this file first.** It is self-contained: state of the system, what is done, what is missing, how to resume. Last updated 2026-04-27 03:55 UTC.
 >
-> **Active branch:** `devin/1777249813-continue-roadmap` (HEAD = `7afb059`, ~121 commits ahead of `main`).
+> **Active branch:** `devin/1777249813-continue-roadmap` (HEAD = `3185211`, ~144 commits ahead of `main`).
 > **Source of truth:** v2/ directory only. The Vite/Express code at the repo root is **legacy and frozen** — do not touch it.
 
 ---
@@ -237,6 +237,9 @@ Walked every page in the running app, captured runtime warnings + console errors
 - ✅ **Bell goes live via SSE** — `components/layout/notifications-bell.tsx` now opens an `EventSource` against `/api/notifications/stream`, slows its polling fallback to 2 min once `ready` fires, refetches on every `notification`, and cleans up the source + interval on unmount. Falls back gracefully on 401 / connection errors. (commit `8550816`)
 - ✅ **SSE stream cleanup wired to `cancel()`** — the route stored a `_cleanup` closure on the controller but never called it; `cancel()` was a no-op, leaking the heartbeat interval + bus subscription on every disconnect. Now `cancel()` invokes the real cleanup, with a `closed` guard preventing post-close enqueues. (commit `6a58a8f`)
 - ✅ **Notifications dispatcher publishes to the bus** — `dispatchNotifications()` was the central choke-point for SLA / mention / fraud / AURA notifiers but only wrote DB rows. After `createMany` it now `publish()`es a minimal `notification` event per allowed userId so the SSE clients refetch immediately; payload deliberately stays small so clients still hit `GET /api/notifications` for the authoritative unread count. (commit `7afb059`)
+- ✅ **Drop deprecated `turbo --parallel` flag** — Turbo 2.x was emitting a deprecation warning every dev boot. `turbo.json` already declares `dev` as `persistent: true`, so the flag was redundant. Removing it silences the warning without changing behavior. (commit `d7469f3`)
+- ✅ **Fix `parseArnReply()` greedy-pair bug** — when two case numbers were listed in series without an explicit ARN separator (the parallel-list "Cases: ... ARNs: ..." shape the function is meant to handle), the primary regex would greedily pair the first case number with the second case number as if the second were an ARN, dropping the second case. Now the loop rejects matches where the captured ARN is itself a `REF-XX-YYYY-NNNNNN` token, so control falls through to the parallel-list fallback that handles this shape correctly. (commit `bcdeec6`)
+- ✅ **Test-suite expansion to 190 tests across 22 files** — added vitest coverage for `lib/cases/sla` (18 tests for the SLA classifier + Prisma where builder), `lib/cases/sla-rules` (12 tests for the rule-aware picker + 3-tier classifier), `lib/cases/state-machine` (case lifecycle + component terminal), `lib/cases/status-rollup` (case status derivation), `lib/cases/case-status-display` + `lib/batches/batch-status-display` (badge variant + label coverage for every enum value), `lib/scheduled-reports/cron` (17 tests for parser, matcher, isDueSince, validator), `lib/format` (formatMoney/Date/relativeTime + 23h-31m regression lock), `lib/utils` (cn, formatCurrency, truncate, maskEmail, generateCaseNumber), `lib/rbac/roles` (role gate matrix), `lib/reports/range` (parseRange + eachDayInRange), `lib/promo/format` (SERVICE_RECOVERY 100% lock-in), `lib/email/render` (placeholder template renderer), `lib/batches/parse-arn` + `lib/batches/parse-reply` + `lib/batches/format` + `lib/batches/magic-link` (batch helpers), `lib/exports/xlsx` (export helper + Content-Disposition).
 
 ---
 
