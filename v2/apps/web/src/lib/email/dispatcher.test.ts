@@ -45,7 +45,7 @@ describe('lib/email/dispatcher', () => {
     });
     expect(findUnique).not.toHaveBeenCalled();
     expect(create).toHaveBeenCalledTimes(1);
-    expect(create.mock.calls[0][0].data).toMatchObject({
+    expect(create.mock.calls[0]?.[0]?.data).toMatchObject({
       to: 'a@example.com',
       subject: 'Hi',
       body: 'Body',
@@ -67,10 +67,10 @@ describe('lib/email/dispatcher', () => {
       to: 'a@example.com',
       variables: { name: 'Alice', code: '123456' },
     });
-    const data = create.mock.calls[0][0].data;
-    expect(data.subject).toBe('Hello Alice');
-    expect(data.body).toBe('Your code is 123456');
-    expect(data.templateId).toBe('tpl-1');
+    const data = create.mock.calls[0]?.[0]?.data;
+    expect(data?.subject).toBe('Hello Alice');
+    expect(data?.body).toBe('Your code is 123456');
+    expect(data?.templateId).toBe('tpl-1');
   });
 
   it('throws if the template cannot be found', async () => {
@@ -114,7 +114,7 @@ describe('lib/email/dispatcher', () => {
       override: { subject: 'S', body: 'B' },
       context: { type: 'CASE', id: 'case-1' },
     });
-    expect(create.mock.calls[0][0].data).toMatchObject({
+    expect(create.mock.calls[0]?.[0]?.data).toMatchObject({
       contextType: 'CASE',
       contextId: 'case-1',
     });
@@ -127,7 +127,7 @@ describe('lib/email/dispatcher', () => {
       variables: {},
       override: { subject: 'S', body: 'B' },
     });
-    expect(create.mock.calls[0][0].data).toMatchObject({
+    expect(create.mock.calls[0]?.[0]?.data).toMatchObject({
       cc: null,
       bcc: null,
       contextType: null,
@@ -142,7 +142,7 @@ describe('lib/email/dispatcher', () => {
       to: 'a@example.com',
       variables: {},
     });
-    const where = findUnique.mock.calls[0][0].where.key_locale;
-    expect(where.locale).toBe('en');
+    const where = findUnique.mock.calls[0]?.[0]?.where?.key_locale;
+    expect(where?.locale).toBe('en');
   });
 });

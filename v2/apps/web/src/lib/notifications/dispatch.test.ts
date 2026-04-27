@@ -112,7 +112,8 @@ describe('lib/notifications/dispatch', () => {
         type: 'SLA_WARNING',
         title: 'x',
       });
-      const where = findMany.mock.calls[0][0]?.where?.id?.in;
+      const firstCall = findMany.mock.calls[0];
+      const where = firstCall?.[0]?.where?.id?.in;
       expect(where).toEqual(['u1']);
     });
 
@@ -141,7 +142,7 @@ describe('lib/notifications/dispatch', () => {
       });
       expect(out).toEqual({ created: 1, mutedSkipped: 1, unknownSkipped: 0 });
 
-      const writtenRows = createMany.mock.calls[0][0]?.data;
+      const writtenRows = createMany.mock.calls[0]?.[0]?.data;
       expect(writtenRows).toHaveLength(1);
       expect(writtenRows[0].userId).toBe('u2');
 
@@ -194,7 +195,7 @@ describe('lib/notifications/dispatch', () => {
         type: 'SYSTEM',
         title: 'system msg',
       });
-      const row = createMany.mock.calls[0][0]?.data?.[0];
+      const row = createMany.mock.calls[0]?.[0]?.data?.[0];
       expect(row).toMatchObject({
         userId: 'u1',
         type: 'SYSTEM',
