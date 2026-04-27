@@ -4,6 +4,8 @@ import { prisma } from '@wow/db';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/format';
+import { ResendEmailButton } from './resend-button';
+import { BulkResendFailedButton } from './bulk-resend-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +28,7 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
     ...(status ? { status } : {}),
   };
 
-  const [entries, total] = await Promise.all([
+  const [entries, total, failedCount] = await Promise.all([
     prisma.emailLog.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -34,6 +36,12 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
       take: PAGE_SIZE,
     }),
     prisma.emailLog.count({ where }),
+    prisma.emailLog.count({
+      where: {
+        status: 'FAILED',
+        ...(q ? { OR: [{ to: { contains: q } }, { subject: { contains: q } }] } : {}),
+      },
+    }),
   ]);
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -55,7 +63,17 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <CardTitle>{total} email{total === 1 ? '' : 's'} · page {pageNum} of {pages}</CardTitle>
-              <CardDescription>Search by recipient or subject.</CardDescription>
+              <CardDescription>
+                Search by recipient or subject.
+                {failedCount > 0 ? (
+                  <>
+                    {' '}<span className="text-destructive font-medium">{failedCount} failed</span> matching this filter.
+                  </>
+                ) : null}
+              </CardDescription>
+            </div>
+            <div className="flex items-end gap-2">
+              <BulkResendFailedButton failedCount={failedCount} q={q ?? ''} />
             </div>
             <form className="flex gap-2" method="get">
               <input
@@ -91,12 +109,13 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
                 <th className="p-3">Template</th>
                 <th className="p-3">To</th>
                 <th className="p-3">Subject</th>
+                <th className="p-3 text-end">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {entries.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-6 text-center text-muted-foreground">No emails sent yet.</td>
+                  <td colSpan={6} className="p-6 text-center text-muted-foreground">No emails sent yet.</td>
                 </tr>
               ) : entries.map((e) => (
                 <tr key={e.id}>
@@ -105,6 +124,9 @@ export default async function EmailLogPage({ searchParams }: PageProps) {
                   <td className="p-3 font-mono text-xs">{e.templateKey ?? '—'}</td>
                   <td className="p-3 text-xs">{e.to}</td>
                   <td className="p-3 max-w-xs truncate">{e.subject}</td>
+                  <td className="p-3 text-end">
+                    {e.status === 'FAILED' ? <ResendEmailButton logId={e.id} /> : <span className="text-xs text-muted-foreground">—</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>

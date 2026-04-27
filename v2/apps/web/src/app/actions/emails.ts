@@ -67,7 +67,108 @@ export async function resendEmailLogAction(
     });
 
     revalidatePath('/reports/emails');
+    revalidatePath('/admin/email-log');
     return { ok: true, data: { logId: result.logId, delivered: result.delivered } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Resend every FAILED email matching the given filters. Walks the matching
+ * rows one at a time so a transport failure on one message doesn't abort the
+ * rest, returning per-row succeeded / failed counts. Capped at 200 rows per
+ * call to keep server actions short-lived.
+ */
+const MAX_BULK_RESEND = 200;
+
+export async function bulkResendFailedEmailsAction(
+  input: { q?: string | null } = {},
+): Promise<
+  | { ok: true; total: number; delivered: number; failed: number }
+  | { ok: false; error: string }
+> {
+  try {
+    const me = await requireAdmin();
+    const q = (input.q ?? '').trim();
+    const where = {
+      status: 'FAILED',
+      ...(q ? { OR: [{ to: { contains: q } }, { subject: { contains: q } }] } : {}),
+    };
+
+    const failed = await prisma.emailLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: MAX_BULK_RESEND,
+    });
+
+    let delivered = 0;
+    let failedCount = 0;
+
+    for (const original of failed) {
+      try {
+        const result = await dispatchEmail({
+          templateKey: original.templateKey,
+          to: original.to,
+          ...(original.cc ? { cc: original.cc } : {}),
+          ...(original.bcc ? { bcc: original.bcc } : {}),
+          variables: {},
+          override: { subject: original.subject, body: original.body },
+          ...(original.contextType
+            ? {
+                context: {
+                  type: original.contextType as
+                    | 'CASE'
+                    | 'BATCH'
+                    | 'PROMO'
+                    | 'STORE'
+                    | 'OTP'
+                    | 'AUTH'
+                    | 'SYSTEM',
+                  ...(original.contextId ? { id: original.contextId } : {}),
+                },
+              }
+            : {}),
+        });
+
+        if (result.delivered) delivered += 1;
+        else failedCount += 1;
+
+        await prisma.auditLog.create({
+          data: {
+            actorId: me.id,
+            actorEmail: me.email,
+            action: 'admin.email.bulk_resend',
+            entityType: 'EMAIL_LOG',
+            entityId: original.id,
+            metadata: JSON.stringify({
+              newLogId: result.logId,
+              delivered: result.delivered,
+              ...(result.error ? { error: result.error } : {}),
+            }),
+          },
+        });
+      } catch (err) {
+        failedCount += 1;
+        await prisma.auditLog.create({
+          data: {
+            actorId: me.id,
+            actorEmail: me.email,
+            action: 'admin.email.bulk_resend',
+            entityType: 'EMAIL_LOG',
+            entityId: original.id,
+            metadata: JSON.stringify({
+              delivered: false,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          },
+        });
+      }
+    }
+
+    revalidatePath('/admin/email-log');
+    revalidatePath('/reports/emails');
+    return { ok: true, total: failed.length, delivered, failed: failedCount };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
