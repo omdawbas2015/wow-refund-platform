@@ -11,11 +11,13 @@ const RECENT_LIMIT = 6;
 
 const statusTone: Record<string, 'success' | 'warning' | 'destructive' | 'default' | 'secondary'> = {
   REFUNDED: 'success',
+  PARTIALLY_REFUNDED: 'success',
   COMPLETED: 'success',
   APPROVED: 'success',
   PENDING_APPROVAL: 'warning',
   IN_REVIEW: 'warning',
   AWAITING_PAYMENT: 'warning',
+  PROCESSING: 'warning',
   REJECTED: 'destructive',
   CANCELLED: 'destructive',
   DRAFT: 'secondary',
