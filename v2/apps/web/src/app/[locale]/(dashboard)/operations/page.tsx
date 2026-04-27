@@ -195,9 +195,17 @@ export default async function OperationsPage({
               Daily approvals, KNET execution, and Aura confirmations.
             </p>
           </div>
-          <Badge variant="outline" className="text-xs">
-            Phase 3 · live batches
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/operations/bulk-cases"
+              className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-medium text-heading transition-colors hover:bg-surface-subtle"
+            >
+              Bulk operations
+            </Link>
+            <Badge variant="outline" className="text-xs">
+              Phase 3 · live batches
+            </Badge>
+          </div>
         </div>
       </div>
 
