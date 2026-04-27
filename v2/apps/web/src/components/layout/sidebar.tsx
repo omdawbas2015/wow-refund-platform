@@ -21,6 +21,10 @@ import {
   AlertTriangle,
   History,
   MessageSquare,
+  ShieldAlert,
+  Timer,
+  Bell,
+  Search as SearchIcon,
 } from 'lucide-react';
 
 interface NavSection {
@@ -45,6 +49,8 @@ export function Sidebar({ role }: { role: string | null }) {
       items: [
         { label: t('dashboard'), href: '/', icon: LayoutDashboard },
         { label: t('cases'), href: '/cases', icon: FileText },
+        { label: 'Search', href: '/search', icon: SearchIcon },
+        { label: 'Notifications', href: '/notifications', icon: Bell },
         ...(opsRole
           ? [{ label: t('operations'), href: '/operations', icon: ShieldCheck }]
           : []),
@@ -72,6 +78,8 @@ export function Sidebar({ role }: { role: string | null }) {
         { label: t('emailTemplates'), href: '/admin/email-templates', icon: Mail, adminOnly: true },
         { label: t('auditLog') ?? 'Audit Log', href: '/admin/audit-log', icon: History, adminOnly: true },
         { label: 'Email Log', href: '/admin/email-log', icon: Mail, adminOnly: true },
+        { label: 'SLA Rules', href: '/admin/sla-rules', icon: Timer, adminOnly: true },
+        { label: 'Fraud Signals', href: '/admin/fraud-signals', icon: ShieldAlert, adminOnly: true },
         { label: t('settings'), href: '/admin/settings', icon: Settings, adminOnly: true },
       ],
     },
