@@ -171,12 +171,12 @@ Other reference docs:
 > **Convention:** ⬜ = pending, ✅ = done (commit SHA in parentheses), 🟡 = in progress.
 > When you finish an item, change ⬜ to ✅, append the commit SHA, then `git push` HANDOVER.md as its own commit.
 
-### Sprint A — Highest-value UI completion (no secrets)
+### Sprint A — Highest-value UI completion (no secrets) ✅ DONE 2026-04-27
 
-- ⬜ **#3 Bulk operations multi-select UI** on `/cases` — checkboxes + bulk action bar; server actions `bulkSubmitDrafts`, `bulkCancel`, `bulkReassignCases` already exist.
-- ⬜ **#4 Resend FAILED emails** action button on `/admin/email-log`.
-- ⬜ **#17 Dashboard charts/sparklines** on KPI cards (recharts already installed).
-- ⬜ **#11 Scheduled reports UI** — `ScheduledReport` model exists, no UI/cron.
+- ✅ **#3 Bulk operations multi-select UI** at `/operations/bulk-cases` — checkboxes, action bar, three confirmation dialogs (submit drafts / cancel / reassign), zod-validated server actions in `app/actions/bulk-cases.ts`. Per-row processing so a single conflict doesn't abort the batch. (commits `daa13e2`, `4995f95`)
+- ✅ **#4 Resend FAILED emails** on `/admin/email-log` — per-row Resend button on FAILED rows + "Resend all FAILED" bulk action backed by `bulkResendFailedEmailsAction` (capped at 200 rows, audit log per attempt). (commit `38adbd6`)
+- ✅ **#17 Dashboard sparklines** on KPI cards via recharts `<KpiSparkline>`; data buckets the last 14 days from `RefundCase.createdAt` + `AuditLog` flow events + `User.createdAt`. (commit `2f3ca8b`)
+- ✅ **#11 Scheduled reports UI + cron** — `/admin/scheduled-reports` CRUD with run-now/pause/edit/delete, 5-field cron parser, `/api/cron/scheduled-reports` sweep gated by `CRON_SECRET`, registered in `vercel.json` at `*/5 * * * *`. (commit `dded4a6`)
 
 ### Sprint B — Polish features
 
