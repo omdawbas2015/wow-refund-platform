@@ -34,6 +34,7 @@ import {
   Building2,
   CalendarRange,
   Workflow,
+  CloudUpload,
 } from 'lucide-react';
 
 interface NavSection {
@@ -98,6 +99,7 @@ export function Sidebar({ role }: { role: string | null }) {
         { label: 'Automation Rules', href: '/admin/automation-rules', icon: Workflow, adminOnly: true },
         { label: 'Batch Schedules', href: '/admin/batch-schedules', icon: CalendarRange, adminOnly: true },
         { label: 'Scheduled Reports', href: '/admin/scheduled-reports', icon: CalendarClock, adminOnly: true },
+        { label: 'Backup', href: '/admin/backup', icon: CloudUpload, adminOnly: true },
         { label: 'Cron Status', href: '/admin/cron-status', icon: Activity, adminOnly: true },
         { label: 'System Info', href: '/admin/system-info', icon: Server, adminOnly: true },
         { label: t('settings'), href: '/admin/settings', icon: Settings, adminOnly: true },

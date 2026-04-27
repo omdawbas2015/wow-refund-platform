@@ -1116,6 +1116,23 @@ model BatchSchedule {
   @@map("batch_schedule")
 }
 
+/// Singleton backup configuration (id is always "singleton"). Created on
+/// first save by the admin UI.
+model BackupSettings {
+  id              String   @id @default("singleton")
+  enabled         Boolean  @default(false)
+  cronExpr        String   @default("0 2 * * *")
+  timezone        String   @default("Asia/Kuwait")
+  retentionDays   Int      @default(30)
+  destination     String   @default("local") // local | s3 | gcs
+  destinationPath String?
+  notifyEmail     String?
+  updatedAt       DateTime @updatedAt
+  updatedById     String?
+
+  @@map("backup_settings")
+}
+
 model BackupLog {
   id          String   @id @default(cuid())
   trigger     String // SCHEDULED | MANUAL
