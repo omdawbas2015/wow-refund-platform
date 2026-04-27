@@ -3,8 +3,23 @@ import { auth } from '@/auth';
 import { prisma } from '@wow/db';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Link } from '@/i18n/routing';
 import { FileText, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { KpiSparkline, type SparkPoint } from './kpi-sparkline';
+
+const RECENT_LIMIT = 6;
+
+const statusTone: Record<string, 'success' | 'warning' | 'destructive' | 'default' | 'secondary'> = {
+  REFUNDED: 'success',
+  COMPLETED: 'success',
+  APPROVED: 'success',
+  PENDING_APPROVAL: 'warning',
+  IN_REVIEW: 'warning',
+  AWAITING_PAYMENT: 'warning',
+  REJECTED: 'destructive',
+  CANCELLED: 'destructive',
+  DRAFT: 'secondary',
+};
 
 const SPARK_DAYS = 14;
 
@@ -71,6 +86,28 @@ export default async function DashboardHome() {
       select: { createdAt: true },
     }),
   ]);
+
+  const recentCases = await prisma.refundCase.findMany({
+    where: { deletedAt: null },
+    orderBy: { updatedAt: 'desc' },
+    take: RECENT_LIMIT,
+    select: {
+      id: true,
+      caseNumber: true,
+      status: true,
+      totalRefundAmount: true,
+      orderCurrency: true,
+      updatedAt: true,
+      brand: { select: { name: true } },
+    },
+  });
+
+  const dateFmt = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   const trendCreated = bucketByDay(
     casesCreatedRecent.map((r) => ({ date: r.createdAt })),
@@ -142,27 +179,63 @@ export default async function DashboardHome() {
             <CardDescription>Latest cases across all countries</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">
-              No cases yet. Create your first case from the Cases tab.
-            </p>
+            {recentCases.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No cases yet. Create your first case from the Cases tab.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {recentCases.map((c) => (
+                  <li key={c.id} className="flex items-center justify-between gap-4 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/cases/${c.id}`}
+                        className="text-sm font-medium tracking-tight text-foreground hover:underline"
+                      >
+                        {c.caseNumber}
+                      </Link>
+                      <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="truncate">{c.brand?.name ?? '—'}</span>
+                        <span>·</span>
+                        <span className="tabular">
+                          {c.totalRefundAmount.toFixed(2)} {c.orderCurrency}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge
+                        variant={statusTone[c.status] ?? 'default'}
+                        className="font-mono text-[10px] uppercase tracking-wide"
+                      >
+                        {c.status.replace(/_/g, ' ')}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {dateFmt.format(c.updatedAt)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Phase 1 scaffolding</CardTitle>
-              <Badge variant="success">Active</Badge>
+              <CardTitle>System status</CardTitle>
+              <Badge variant="success">Operational</Badge>
             </div>
-            <CardDescription>Foundation complete — ready for Phase 2 domain features.</CardDescription>
+            <CardDescription>Live snapshot of the platform's core surfaces.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <ul className="space-y-1.5">
-              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> Auth.js with admin approval</li>
-              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> i18n (AR + EN) with RTL</li>
-              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> Design system (Stripe tokens)</li>
-              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> Prisma schema (40+ tables)</li>
-              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> Power Automate dispatcher (stub)</li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> Auth.js v5 with RBAC across 8 roles</li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> i18n EN + AR with RTL + Cairo / IBM Plex Arabic</li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> Three-layer design tokens + dark-mode parity</li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> Prisma migrations + composite indexes</li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> Bulk ops, scheduled reports, automation rules</li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /> Playwright + axe-core smoke suites</li>
             </ul>
           </CardContent>
         </Card>
