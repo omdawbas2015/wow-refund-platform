@@ -12,13 +12,28 @@
 The owner's instructions, restated verbatim from prior sessions:
 
 1. **Never ask questions.** Work autonomously until your credit runs out.
-2. **Every change = a separate git commit, pushed to GitHub immediately.** The owner switches accounts and continues from `git log` on GitHub. Lose a commit = lose work.
-3. **Always start from the latest commit on GitHub** (`git pull` before working).
-4. **`/cases` and `/promo` UI must not change.** The owner has spent multiple sessions polishing both — preserve their visual appearance and directory structure exactly. Backend logic is fine to extend; UI files (`page.tsx`, components in those folders, layouts) are off-limits.
-5. **No screenshots / decorative work** — focus credit on system, planning, execution.
-6. **Don't open PRs unless asked.** The owner reviews directly via GitHub commits.
-7. **Don't merge to `main`.** The owner does that.
-8. **Never commit `dev.db`, `.env*`, or anything under `node_modules`/`.next`.**
+2. **GitHub-first. Always.** Before any work:
+   - `git fetch origin && git pull origin <active-branch>` to start from the latest pushed commit.
+   - Verify with `git log -1` that you are at the same SHA as `origin/<branch>` on github.com.
+   - Never start from a stale local snapshot or assume earlier-phase state. The system is already at phase 7+; resuming from "phase 1 / 2" is a bug, not a feature.
+3. **Every change = a separate git commit, pushed to GitHub immediately.** Not at end of feature, not at end of sprint — push the moment a logical unit is done. The owner switches accounts and continues from `git log` on GitHub. Lose a push = lose work.
+4. **At the end of each sprint, also update this `HANDOVER.md`** (and its `v2/HANDOVER.md` mirror) with: completed items, current commit SHA, anything new the next session needs to know. Commit + push the HANDOVER update as its own commit (`docs(handover): update after Sprint X`). This is how the next session knows where you left off.
+5. **`/cases` and `/promo` UI must not change.** The owner has spent multiple sessions polishing both — preserve their visual appearance and directory structure exactly. Backend logic is fine to extend; UI files (`page.tsx`, components in those folders, layouts) are off-limits.
+6. **No screenshots / decorative work** — focus credit on system, planning, execution.
+7. **Don't open PRs unless asked.** The owner reviews directly via GitHub commits.
+8. **Don't merge to `main`.** The owner does that.
+9. **Never commit `dev.db`, `.env*`, or anything under `node_modules`/`.next`.**
+
+### Resume protocol (the one-liner the next session must execute first)
+
+```bash
+git fetch origin && \
+  git checkout devin/1777249813-continue-roadmap && \
+  git pull origin devin/1777249813-continue-roadmap && \
+  git log -3 --oneline
+```
+
+The last `git log` line is the source of truth for where work resumed. Read this `HANDOVER.md` next, then scroll to §6 to see which items remain.
 
 ---
 
@@ -151,53 +166,65 @@ Other reference docs:
 
 ---
 
-## 6. What is missing (34 items, ordered by priority)
+## 6. What is missing (34 items, ordered by priority — tick as you go)
 
-### Tier 1 — UI completion, no external secrets needed (Sprint A + B)
+> **Convention:** ⬜ = pending, ✅ = done (commit SHA in parentheses), 🟡 = in progress.
+> When you finish an item, change ⬜ to ✅, append the commit SHA, then `git push` HANDOVER.md as its own commit.
 
-1. **Onboarding tour** (Phase 8) — first-login guided walkthrough across `/cases`, `/promo`, `/operations`, `/reports`.
-2. **Changelog banner** (Phase 8) — top-bar dismissible banner pointing at `/changelog`. Page exists; banner doesn't.
-3. **Bulk operations multi-select UI** on `/cases` (Phase 6) — server actions `bulkSubmitDrafts`, `bulkCancel`, `bulkReassignCases` already exist; just need checkboxes + bulk action bar.
-4. **Resend FAILED emails** action button on `/admin/email-log` — page filters FAILED, no resend button yet.
-5. **Currencies admin** page (Phase 5) — `CurrencyRegistry` schema exists.
-6. **Branches admin** page (Phase 5) — `Branch` schema exists.
-7. **Batch schedules admin** page (Phase 5).
-8. **Automation rules admin** page (Phase 5).
-9. **Backup settings** page (Phase 5).
-10. **Module on/off toggles** distinct from feature flags (Phase 5).
-11. **Scheduled reports UI** (ARCHITECTURE Phase 7) — `ScheduledReport` model exists, no UI/cron.
-12. **Full AR translation pass** for `/admin/*` (Phase 7) — admin still mostly English.
-13. **Dark-mode audit per screen** (Phase 7/8) — toggle works, no per-screen verification.
-14. **Three-layer design tokens + Cairo / IBM Plex Sans Arabic font stack** (ANALYSIS P1) — primitives → semantic → component layers, plus Arabic fonts.
-15. **Command palette ⌘K** with action verbs (ANALYSIS P1) — not just text search.
-16. **FINANCE + AUDITOR roles** separation in RBAC (ANALYSIS P1) — currently rolled into ADMIN/OPERATIONS.
-17. **Dashboard charts/sparklines** on KPI cards (HANDOFF §10).
-18. **Exchange rate in-memory cache** (15min TTL) (ANALYSIS P1).
-19. **Prisma indexes** on `RefundCase(status, countryId, createdAt)` and `PromoCode(type, countryId, value, status)` (ANALYSIS P1).
+### Sprint A — Highest-value UI completion (no secrets)
 
-### Tier 2 — Production hardening, requires secrets / services (Sprint C)
+- ⬜ **#3 Bulk operations multi-select UI** on `/cases` — checkboxes + bulk action bar; server actions `bulkSubmitDrafts`, `bulkCancel`, `bulkReassignCases` already exist.
+- ⬜ **#4 Resend FAILED emails** action button on `/admin/email-log`.
+- ⬜ **#17 Dashboard charts/sparklines** on KPI cards (recharts already installed).
+- ⬜ **#11 Scheduled reports UI** — `ScheduledReport` model exists, no UI/cron.
 
-20. **PII encryption at rest** (AES-GCM in Prisma middleware) — HANDOFF Phase 7.
-21. **WebSocket / SSE notifications** via Upstash Redis pub/sub — HANDOFF Phase 6 + ANALYSIS P1. **Needs `UPSTASH_REDIS_URL` + `UPSTASH_REDIS_TOKEN` from owner.**
-22. **Sentry SDK** wiring — HANDOFF Phase 7. **Needs `SENTRY_DSN` from owner.**
-23. **Vercel deploy + Neon Postgres + backup policy** — HANDOFF Phase 7. **Needs Vercel token + `DATABASE_URL` from owner.**
-24. **Real Prisma migrations** (`prisma migrate deploy`, replace `db push`) — ANALYSIS P1.
-25. **Playwright smoke suite** (auth + case lifecycle) — HANDOFF Phase 7.
-26. **Power Automate flows on M365 tenant** — HANDOFF §10. Owner builds externally; Next.js side ready (see `v2/docs/power-automate/README.md`).
-27. **Rate limiting** on `/api/auth/*` — ANALYSIS P0.
+### Sprint B — Polish features
 
-### Tier 3 — Backlog (P2)
+- ⬜ **#1 Onboarding tour** — first-login guided walkthrough across `/cases`, `/promo`, `/operations`, `/reports`.
+- ⬜ **#2 Changelog banner** — top-bar dismissible banner pointing at `/changelog`.
+- ⬜ **#15 Command palette ⌘K** with action verbs ("Create refund", "Approve batch X", "Export KNET batch").
 
-28. **pino structured logs + OpenTelemetry** (ANALYSIS P2).
-29. **OpenAPI/Swagger** generation from zod (ANALYSIS P2).
-30. **axe-core a11y audit** in CI (ANALYSIS P2).
-31. **Storybook** design-system website (ANALYSIS P2).
+### Sprint C — Admin pages
 
-### Data hygiene
+- ⬜ **#5 Currencies admin** page — `CurrencyRegistry` schema exists.
+- ⬜ **#6 Branches admin** page — `Branch` schema exists.
+- ⬜ **#7 Batch schedules admin** page — new `BatchSchedule` model.
+- ⬜ **#8 Automation rules admin** page — new `AutomationRule` model.
+- ⬜ **#9 Backup settings** page — new `BackupSettings` (singleton).
+- ⬜ **#10 Module on/off toggles** distinct from feature flags.
 
-32. Remove committed `v2/packages/db/prisma/dev.db` from git history; add to `.gitignore` (ANALYSIS P0).
-33. Refresh `v2/README.md` — currently says Phase 1 only, very stale.
-34. Update `v2/HANDOFF.md` to reflect post-Phase-2 state (it ends at Phase 2).
+### Sprint D — Polish + perf
+
+- ⬜ **#12 Full AR translation pass** for `/admin/*` — admin still mostly English.
+- ⬜ **#13 Dark-mode audit per screen** — toggle works, no per-screen verification.
+- ⬜ **#14 Three-layer design tokens + Cairo / IBM Plex Sans Arabic font stack**.
+- ⬜ **#18 Exchange rate in-memory cache** (15min TTL).
+- ⬜ **#19 Prisma indexes** on `RefundCase(status, countryId, createdAt)` and `PromoCode(type, countryId, value, status)`.
+
+### Sprint E — Security + hygiene
+
+- ⬜ **#16 FINANCE + AUDITOR roles** separation in RBAC.
+- ⬜ **#24 Real Prisma migrations** (`prisma migrate deploy`, replace `db push`).
+- ⬜ **#27 Rate limiting** on `/api/auth/*` (`@upstash/ratelimit` with in-memory fallback for dev).
+- ⬜ **#32 Remove committed `v2/packages/db/prisma/dev.db`** from git history; add to `.gitignore`.
+- ⬜ **#33 Refresh `v2/README.md`** (already partially done by 2026-04-27).
+- ⬜ **#34 Update `v2/HANDOFF.md`** to reflect post-Phase-2 state.
+
+### Sprint F — Production hardening (requires owner-provided secrets)
+
+- ⬜ **#20 PII encryption at rest** (AES-GCM in Prisma middleware) — needs `PII_ENCRYPTION_KEY`.
+- ⬜ **#21 WebSocket / SSE notifications** via Upstash Redis pub/sub — needs `UPSTASH_REDIS_URL` + `UPSTASH_REDIS_TOKEN`.
+- ⬜ **#22 Sentry SDK** wiring — needs `SENTRY_DSN`.
+- ⬜ **#23 Vercel deploy + Neon Postgres + backup policy** — needs Vercel token + `DATABASE_URL`.
+- ⬜ **#25 Playwright smoke suite** (auth + case lifecycle) — no secrets needed actually.
+
+### Sprint G — Backlog (P2, optional)
+
+- ⬜ **#26 Power Automate flows on M365 tenant** — owner builds externally; Next.js side already ready.
+- ⬜ **#28 pino structured logs + OpenTelemetry**.
+- ⬜ **#29 OpenAPI / Swagger** generation from zod.
+- ⬜ **#30 axe-core a11y audit** in CI.
+- ⬜ **#31 Storybook** design-system website.
 
 ---
 
@@ -224,15 +251,22 @@ Example provisioning hints you can give the owner:
 ## 8. Build process — every change = commit + push
 
 ```bash
-# always pull before starting
+# 1. Always start from latest GitHub state (NOT from local stale state)
+git fetch origin
 git pull origin <current-branch>
+git log -1   # confirm you match origin
 
-# work on a feature
+# 2. Work on a feature
 # ... edit files ...
 cd v2 && pnpm typecheck   # MUST pass
-git add -A && git commit -m "feat(v2-onboarding): add first-login tour"
+
+# 3. Commit + push IMMEDIATELY when the logical unit is done
+git add -A
+git commit -m "feat(v2-onboarding): add first-login tour"
 git push origin <current-branch>
 ```
+
+**At the end of each sprint:** also update `HANDOVER.md` + `v2/HANDOVER.md` (Section 6 checkboxes + commit SHA at top), then commit + push as its own `docs(handover): update after Sprint X` commit. This is the breadcrumb the next session uses to resume from the correct state.
 
 **Commit message style:** Conventional Commits with scope. Examples:
 - `feat(v2-cases): bulk multi-select on /cases`
@@ -305,18 +339,26 @@ If you genuinely need to add backend logic that involves a `/cases` or `/promo` 
 
 ## 12. Direct instruction to the next Devin session
 
-> Hi. The owner switched accounts and you are picking up the system. The current state is **fully working** (50 routes 200 OK, typecheck 100%, demo data seeded). Your job is to finish the **34 missing items** in §6 above, in order.
+> Hi. The owner switched accounts and you are picking up the system. The current state is **fully working** (50 routes 200 OK, typecheck 100%, demo data seeded, phases 1–7 substantially complete). Your job is to finish the **34 missing items** in §6 above, in order.
+>
+> **CRITICAL — read this first:**
+> - The system is **far past Phase 1 / Phase 2**. Do not assume otherwise from any other doc you find.
+> - The latest state lives **only on GitHub**, on branch `devin/1777249813-continue-roadmap`. Anything else (older branches, local snapshots, the legacy code at the repo root) is irrelevant to your task.
+> - Always resume from `origin/devin/1777249813-continue-roadmap` — never from a stale local checkout.
 >
 > Start by:
-> 1. `git pull origin devin/1777249813-continue-roadmap`
-> 2. `cd v2 && pnpm install && pnpm db:push && SEED_DEMO_CASES=1 pnpm db:seed && pnpm dev`
-> 3. Verify at `http://localhost:3000` you see the dashboard with admin login.
-> 4. Pick **item #1** from §6 (onboarding tour) and start. Each item = its own commit + push.
-> 5. Continue down the list until your credit runs out or all Tier 1 items are done.
-> 6. Send the owner a final non-blocking message listing which Tier 2 secrets you need to continue (Upstash, Sentry, Vercel, Neon).
+> 1. `git fetch origin && git checkout devin/1777249813-continue-roadmap && git pull origin devin/1777249813-continue-roadmap`
+> 2. `git log -3 --oneline` — confirm you see this HANDOVER's commits and any newer ones from the previous Devin run. **The newest commit is the source of truth, not this file's "Last updated" date.**
+> 3. `cd v2 && pnpm install && pnpm db:push && SEED_DEMO_CASES=1 pnpm db:seed && pnpm dev`
+> 4. Verify at `http://localhost:3000` you see the dashboard with admin login.
+> 5. Re-read §6 of this HANDOVER and find the first item without a ✅ checkmark — that is where you resume. (The previous session may have completed several items already; don't redo them.)
+> 6. Each item = its own commit + push **immediately**. Don't batch.
+> 7. After every sprint, update §6 of this HANDOVER (tick completed items + bump the commit SHA at the top of this file) and commit it as `docs(handover): update after Sprint X`.
+> 8. Continue down the list until credit runs out or Tier 1 is complete.
+> 9. Send the owner a final non-blocking message listing which Tier 2 secrets you need to continue (Upstash, Sentry, Vercel, Neon).
 >
 > **Do not modify `/cases` or `/promo` UI files.** Add features around them, never touch them.
 >
-> **Every change = commit + push.** The owner switches accounts and reads `git log` on GitHub.
+> **Every change = commit + push to GitHub immediately.** The owner switches accounts and reads `git log` on GitHub. If it isn't pushed, it didn't happen.
 >
 > Welcome, and good luck.
