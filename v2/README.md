@@ -87,14 +87,6 @@ Read these before making durable changes.
 
 ## Status
 
-**Phase 1** — Foundation (complete)
-- [x] Monorepo scaffold (Turborepo + pnpm workspaces)
-- [x] Prisma schema (40+ tables across 19 sections) + idempotent seed
-- [x] Auth flows: login, signup-with-approval, OTP forgot-password, first-login set password
-- [x] Admin panel skeleton (users, pending approvals with role + country assignment)
-- [x] Design system base components (Stripe tokens, Inter, blue-tinted shadows)
-- [x] i18n setup (AR + EN + RTL via next-intl)
-- [x] Power Automate email dispatcher (stubbed in dev, webhook-ready for prod)
-- [x] Inbound webhook route (`/api/webhooks/power-automate`)
+**Phases 1-7 — substantially complete.** 50 routes verified 200 OK, typecheck 100%, demo data seeded.
 
-See `docs/ARCHITECTURE.md` for the full roadmap and phase breakdown.
+For the authoritative current state, the 34 outstanding items, and the next-Devin onboarding guide, **read [`/HANDOVER.md`](../HANDOVER.md)** at the repo root first. Original phase roadmap is in [`v2/HANDOFF.md`](./HANDOFF.md) and [`v2/docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
