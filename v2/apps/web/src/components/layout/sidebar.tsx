@@ -33,6 +33,7 @@ import {
   Coins,
   Building2,
   CalendarRange,
+  Workflow,
 } from 'lucide-react';
 
 interface NavSection {
@@ -94,6 +95,7 @@ export function Sidebar({ role }: { role: string | null }) {
         { label: 'Email Log', href: '/admin/email-log', icon: Mail, adminOnly: true },
         { label: 'SLA Rules', href: '/admin/sla-rules', icon: Timer, adminOnly: true },
         { label: 'Fraud Signals', href: '/admin/fraud-signals', icon: ShieldAlert, adminOnly: true },
+        { label: 'Automation Rules', href: '/admin/automation-rules', icon: Workflow, adminOnly: true },
         { label: 'Batch Schedules', href: '/admin/batch-schedules', icon: CalendarRange, adminOnly: true },
         { label: 'Scheduled Reports', href: '/admin/scheduled-reports', icon: CalendarClock, adminOnly: true },
         { label: 'Cron Status', href: '/admin/cron-status', icon: Activity, adminOnly: true },
