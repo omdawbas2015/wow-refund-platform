@@ -1,5 +1,22 @@
 # WOW Refund Platform v2 — Handoff
 
+> ⚠️ **THIS DOCUMENT IS HISTORICAL (Phase 2 baseline).**
+>
+> The authoritative live state, the 34-item Sprint A → G roadmap, and
+> the resume protocol for the next Devin session live in
+> [`/HANDOVER.md`](../HANDOVER.md) at the repo root. **Read that first.**
+>
+> The system is now at **phase 7+**. As of 2026-04-27, Sprints A through
+> E from the HANDOVER roadmap have landed (50+ routes verified 200 OK,
+> typecheck 100% across 4 packages, real Prisma migrations, /api/auth
+> rate limiting, AUDITOR/FINANCE RBAC helpers, three-layer design tokens,
+> exchange-rate cache, currencies/branches/batch-schedules/automation-
+> rules/backup admin pages, module on/off toggles). Sprint F (Upstash,
+> Sentry, Vercel, Neon) is gated on owner-provided secrets.
+>
+> The original phase-1/2 narrative below is preserved as historical
+> context only — do not treat it as the current implementation state.
+
 > **Purpose:** Everything a new engineer (or a new Devin session on a different account) needs to pick up this project from exactly where it was left off.
 >
 > **Last updated:** 2026-04-25 — end of Phase 2.
