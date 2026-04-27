@@ -35,12 +35,29 @@ STEP 3 — Boot the dev environment:
   SEED_DEMO_CASES=1 pnpm db:seed
   pnpm dev
 
-STEP 4 — Find the next ⬜ unchecked item in HANDOVER.md §6 and start there.
-Currently the open items are Sprint F #20 / #21 / #22 / #23 (need
-owner-provided secrets) and Sprint G #26 / #29 / #31. If no secrets are
-available in this session, work on Sprint G #29 (OpenAPI / Swagger from
-zod) and #31 (Storybook scaffold) — both are P2 backlog items that don't
-need secrets.
+STEP 4 — Open HANDOVER.md §6 and check Sprint F. As of 2026-04-27 every
+Sprint F item is either ✅ (#25 Playwright) or 🟡 (scaffold landed,
+behaviour gated on a missing secret). Sprint G has #29 / #30 / #31 done
+and #28 partial. The only fully-open item is Sprint G #26 (Power
+Automate flows on M365), which the OWNER builds externally — the
+Next.js side already exposes /api/webhooks/power-automate.
+
+If owner-provided secrets are now available, your job is to flip the
+scaffolds:
+
+  PII_ENCRYPTION_KEY     → start opting fields into encrypt() in
+                           lib/crypto/pii.ts via Prisma client.\$extends.
+  UPSTASH_REDIS_REST_URL → activate the Upstash bridge in
+                           lib/events/bus.ts (publish to Redis, subscribe
+                           on every replica) so SSE fanout is multi-rep.
+  SENTRY_DSN             → wrap next.config.mjs with withSentryConfig()
+                           so source maps + route instrumentation upload.
+  DATABASE_URL + Vercel  → flip schema.prisma provider to postgresql on
+                           a deploy branch and follow docs/DEPLOY.md.
+
+If no secrets are available, the substantive backlog is empty. Spend
+the session on UI polish, more Playwright coverage, or wiring the
+in-app bell icon to /api/notifications/stream (today it polls).
 
 HARD RULES (do NOT violate):
 - The system is at phase 7+. Do NOT assume Phase 1 or Phase 2 state from
@@ -79,7 +96,11 @@ Begin from the next ⬜ item now.
 - **Sprint C** — currencies / branches / batch-schedules / automation-rules / backup admin pages, module on/off toggles.
 - **Sprint D** — AR + EN translation namespaces, dark-mode audit, three-layer design tokens + Cairo / IBM Plex Sans Arabic, exchange-rate cache, Prisma composite indexes.
 - **Sprint E** — RBAC helpers + AUDITOR audit-log access, real Prisma migrations, sliding-window auth rate limiter, dev.db scrub + .gitignore tightening, README refresh, HANDOFF banner.
-- **Sprint F** — Playwright smoke suite (auth + cases). Items #20 / #21 / #22 / #23 still blocked on owner-provided secrets.
-- **Sprint G** — JSON logger shim (foundation for pino + OTel), axe-core a11y smoke. #29 / #31 still open.
+- **Sprint F** — Playwright smoke (auth + cases) ✅. PII helpers, SSE notifications + event bus, Sentry SDK config, Vercel + Neon deploy plan, .env.example, docker-compose for local Postgres — all landed as 🟡 scaffolds; behaviour activates the moment owner provisions secrets.
+- **Sprint G** — JSON logger shim, axe-core a11y, OpenAPI from zod, /admin/design-tokens preview. #26 (M365 flows) is owner-side; #28 (real pino + OTel) deferred until a log drain destination is approved.
+
+CI workflow proposed in `docs/proposed-ci.yml` — owner copies it to
+`.github/workflows/ci.yml` (Devin's OAuth scope can't push workflow
+files). See `docs/CI_SETUP.md`.
 
 See `/HANDOVER.md` for commit SHAs and full descriptions.
