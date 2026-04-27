@@ -17,6 +17,10 @@ import {
   Settings,
   CreditCard,
   Mail,
+  Tag,
+  AlertTriangle,
+  History,
+  MessageSquare,
 } from 'lucide-react';
 
 interface NavSection {
@@ -61,8 +65,13 @@ export function Sidebar({ role }: { role: string | null }) {
         { label: t('users'), href: '/admin/users', icon: Users, adminOnly: true },
         { label: t('pendingApprovals'), href: '/admin/pending-approvals', icon: ClipboardList, adminOnly: true },
         { label: t('countries'), href: '/admin/countries', icon: Globe, adminOnly: true },
+        { label: 'Brands', href: '/admin/brands', icon: Tag, adminOnly: true },
         { label: t('paymentMethods'), href: '/admin/payment-methods', icon: CreditCard, adminOnly: true },
+        { label: 'Root Causes', href: '/admin/root-causes', icon: AlertTriangle, adminOnly: true },
+        { label: 'Store Templates', href: '/admin/store-templates', icon: MessageSquare, adminOnly: true },
         { label: t('emailTemplates'), href: '/admin/email-templates', icon: Mail, adminOnly: true },
+        { label: t('auditLog') ?? 'Audit Log', href: '/admin/audit-log', icon: History, adminOnly: true },
+        { label: 'Email Log', href: '/admin/email-log', icon: Mail, adminOnly: true },
         { label: t('settings'), href: '/admin/settings', icon: Settings, adminOnly: true },
       ],
     },
