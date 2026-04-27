@@ -1,5 +1,6 @@
 import { prisma } from '@wow/db';
 import type { Prisma } from '@wow/db';
+import { publish } from '@/lib/events/bus';
 
 export type NotificationKind =
   | 'CASE_ASSIGNED'
@@ -83,6 +84,22 @@ export async function dispatchNotifications(
     contextId: input.contextId ?? null,
   }));
   await prisma.notification.createMany({ data });
+
+  // Notify any open SSE channels so the bell refreshes immediately.
+  // The payload is intentionally minimal — clients refetch
+  // GET /api/notifications to read the full row + unread count.
+  for (const userId of allowedIds) {
+    publish(userId, {
+      type: 'notification',
+      data: {
+        kind: input.type,
+        title: input.title,
+        contextType: input.contextType ?? null,
+        contextId: input.contextId ?? null,
+      },
+    });
+  }
+
   return { created: allowedIds.length, mutedSkipped, unknownSkipped };
 }
 
