@@ -30,6 +30,8 @@ import {
   Activity,
   Server,
   CalendarClock,
+  Coins,
+  Building2,
 } from 'lucide-react';
 
 interface NavSection {
@@ -80,7 +82,9 @@ export function Sidebar({ role }: { role: string | null }) {
         { label: t('users'), href: '/admin/users', icon: Users, adminOnly: true },
         { label: t('pendingApprovals'), href: '/admin/pending-approvals', icon: ClipboardList, adminOnly: true },
         { label: t('countries'), href: '/admin/countries', icon: Globe, adminOnly: true },
+        { label: 'Currencies', href: '/admin/currencies', icon: Coins, adminOnly: true },
         { label: 'Brands', href: '/admin/brands', icon: Tag, adminOnly: true },
+        { label: 'Branches', href: '/admin/branches', icon: Building2, adminOnly: true },
         { label: t('paymentMethods'), href: '/admin/payment-methods', icon: CreditCard, adminOnly: true },
         { label: 'Root Causes', href: '/admin/root-causes', icon: AlertTriangle, adminOnly: true },
         { label: 'Store Templates', href: '/admin/store-templates', icon: MessageSquare, adminOnly: true },
