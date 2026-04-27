@@ -27,6 +27,11 @@ export function parseArnReply(rawBody: string): ParsedArnEntry[] {
     const caseNumber = match[1]?.toUpperCase();
     const arn = match[2]?.toUpperCase().replace(/[^A-Z0-9-]/g, '');
     if (!caseNumber || !arn || arn.length < 6) continue;
+    // Reject when the "ARN" we matched is itself another case number —
+    // happens when two case numbers are listed in series ('A B' shape)
+    // and the regex greedily pairs them. The next case number gets its
+    // own match on the next iteration.
+    if (/^REF-[A-Z]{2}-\d{4}-\d{6}$/.test(arn)) continue;
     if (seen.has(caseNumber)) continue;
     seen.add(caseNumber);
     entries.push({ caseNumber, arn });
