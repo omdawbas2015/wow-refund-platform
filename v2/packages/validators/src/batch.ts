@@ -7,13 +7,36 @@ import { nonEmptyString } from './common';
 
 export const createApprovalBatchSchema = z.object({
   countryId: nonEmptyString,
+  // Either form accepted: legacy single `recipientEmail` (string) or new
+  // multi `recipientEmails` (comma-separated). Both are optional.
   recipientEmail: z.string().trim().email().optional(),
+  recipientEmails: z.string().trim().optional().or(z.literal('')),
+  scheduledFor: z.coerce.date().optional(),
   // Optional override: only batch the explicitly selected cases. When omitted
   // we batch every PENDING_APPROVAL case in the country that isn't already
   // attached to a live batch.
   caseIds: z.array(nonEmptyString).optional(),
 });
 export type CreateApprovalBatchInput = z.infer<typeof createApprovalBatchSchema>;
+
+export const sendApprovalBatchSchema = z.object({
+  batchId: nonEmptyString,
+});
+export type SendApprovalBatchInput = z.infer<typeof sendApprovalBatchSchema>;
+
+export const decideApprovalBatchSchema = z.object({
+  batchId: nonEmptyString,
+  decisions: z
+    .array(
+      z.object({
+        caseId: nonEmptyString,
+        decision: z.enum(['APPROVE', 'REJECT']),
+        reason: z.string().trim().max(500).optional().or(z.literal('')),
+      }),
+    )
+    .min(1, 'At least one decision is required'),
+});
+export type DecideApprovalBatchInput = z.infer<typeof decideApprovalBatchSchema>;
 
 export const cancelApprovalBatchSchema = z.object({
   batchId: nonEmptyString,
@@ -34,11 +57,18 @@ export type DecideCaseInput = z.infer<typeof decideCaseSchema>;
 
 export const createKnetBatchSchema = z.object({
   recipientEmail: z.string().trim().email().optional(),
+  recipientEmails: z.string().trim().optional().or(z.literal('')),
+  scheduledFor: z.coerce.date().optional(),
   // When omitted, the action picks every KNET component currently in
   // PENDING / READY_FOR_BATCH that isn't already attached to a live batch.
   componentIds: z.array(nonEmptyString).optional(),
 });
 export type CreateKnetBatchInput = z.infer<typeof createKnetBatchSchema>;
+
+export const sendKnetBatchSchema = z.object({
+  batchId: nonEmptyString,
+});
+export type SendKnetBatchInput = z.infer<typeof sendKnetBatchSchema>;
 
 export const verifyComponentArnSchema = z.object({
   componentId: nonEmptyString,
@@ -50,12 +80,35 @@ export const verifyComponentArnSchema = z.object({
 });
 export type VerifyComponentArnInput = z.infer<typeof verifyComponentArnSchema>;
 
+// Finance approve/reject an ARN previously ingested for a KNET component.
+export const verifyKnetArnSchema = z.object({
+  componentId: nonEmptyString,
+  approve: z.coerce.boolean(),
+});
+export type VerifyKnetArnInput = z.infer<typeof verifyKnetArnSchema>;
+
+// Bulk ARN ingestion (manual entry of many components at once).
+export const ingestKnetArnSchema = z.object({
+  batchId: nonEmptyString,
+  arns: z
+    .array(
+      z.object({
+        componentId: nonEmptyString,
+        arn: z.string().trim().min(6).max(40),
+      }),
+    )
+    .min(1, 'At least one ARN is required'),
+});
+export type IngestKnetArnInput = z.infer<typeof ingestKnetArnSchema>;
+
 // ─────────────────────────────────────────────────────────────────────────
 //  AURA BATCHES
 // ─────────────────────────────────────────────────────────────────────────
 
 export const createAuraBatchSchema = z.object({
   recipientEmail: z.string().trim().email().optional(),
+  recipientEmails: z.string().trim().optional().or(z.literal('')),
+  scheduledFor: z.coerce.date().optional(),
   caseIds: z.array(nonEmptyString).optional(),
 });
 export type CreateAuraBatchInput = z.infer<typeof createAuraBatchSchema>;

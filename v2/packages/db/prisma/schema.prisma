@@ -684,6 +684,11 @@ model AuraBatch {
   totalCases         Int @default(0)
   completedCases     Int @default(0)
 
+  /// Snapshot of case ids/components included in the batch (JSON array of
+  /// `{ caseId, caseNumber, customerName, auraPoints }`). Captured at create
+  /// time so the batch is auditable even if cases later change state.
+  caseSnapshot       String?
+
   completedAt        DateTime?
 
   createdAt          DateTime @default(now())
