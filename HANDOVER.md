@@ -201,14 +201,14 @@ Other reference docs:
 - ✅ **#18 Exchange rate in-memory cache** — `lib/exchange-rate/cache.ts` exports `getExchangeRate(from, to)` with a 15-minute in-memory TTL, persistent DB write-through, and stale-while-error fallback when exchangerate.host is unavailable. (commit `439cd59`)
 - ✅ **#19 Prisma indexes** — `RefundCase` gains a composite `@@index([status, countryId, createdAt])` covering the dashboard / cases-list query shape; `PromoCode` gains `@@index([status, configId])` so the available-pool lookup is bounded by configId. Verified with `pnpm db:push` + 4/4 typecheck. (commit `81ddb24`)
 
-### Sprint E — Security + hygiene
+### Sprint E — Security + hygiene ✅ DONE 2026-04-27
 
-- ⬜ **#16 FINANCE + AUDITOR roles** separation in RBAC.
-- ⬜ **#24 Real Prisma migrations** (`prisma migrate deploy`, replace `db push`).
-- ⬜ **#27 Rate limiting** on `/api/auth/*` (`@upstash/ratelimit` with in-memory fallback for dev).
-- ⬜ **#32 Remove committed `v2/packages/db/prisma/dev.db`** from git history; add to `.gitignore`.
-- ⬜ **#33 Refresh `v2/README.md`** (already partially done by 2026-04-27).
-- ⬜ **#34 Update `v2/HANDOFF.md`** to reflect post-Phase-2 state.
+- ✅ **#16 FINANCE + AUDITOR roles** — added `lib/rbac/roles.ts` central helpers (`isAdmin`, `isFinance`, `isAuditor`, `canViewAdminArea`, `canViewFinanceArea`, `canViewAuditLog`, `canManageOperations`). `/admin/audit-log` now uses `canViewAuditLog()` so AUDITOR users can read audit data without escalating to ADMIN. Other admin pages remain ADMIN-only and switch to the helpers incrementally. (commit `d8d2171`)
+- ✅ **#24 Real Prisma migrations** — generated `migrations/20260427025439_initial_baseline/migration.sql` covering Sprint C/D schema deltas (`ModuleToggle`, `BackupSettings`, `aura_batch.caseSnapshot`, composite indexes on `RefundCase` and `PromoCode`). Production deploys can now use `pnpm db:migrate:deploy` against versioned migrations. (commit `f4dbb17`)
+- ✅ **#27 Rate limiting** — `lib/rate-limit/index.ts` is a 2-tier sliding-window limiter: prefers Upstash when `UPSTASH_REDIS_REST_URL`+`UPSTASH_REDIS_REST_TOKEN` are set, falls back to in-memory Map otherwise. Wired into NextAuth `authorize()` and the signup/forgot/reset/set-password server actions at 5 attempts per 5 min per IP per scope. (commit `d078a5f`)
+- ✅ **#32 Remove committed `v2/packages/db/prisma/dev.db`** — `dev.db` is not currently tracked at the v2 path; the four legacy SQLite files at the repo root (`./dev.db`, `./prisma/dev.db`, `./prisma/main.db`, `./prisma/prisma/dev.db`) were removed from the index, and `.gitignore` was tightened to block `*.db` / `*.db-journal` / `**/dev.db` / `**/main.db` / `v2/packages/db/prisma/*.db` / `.next/`. Full git-history scrub still requires a coordinated maintenance window. (commits `0d84825`, `f4dbb17`)
+- ✅ **#33 Refresh `v2/README.md`** — Quick Start now uses `pnpm db:migrate` + `db:migrate:deploy`, env doc adds Upstash + Sentry, status section enumerates Sprints A–E. (commit `0cecb38`)
+- ✅ **#34 Update `v2/HANDOFF.md`** — banner at the top marks the phase-2 narrative as historical and points readers at `/HANDOVER.md` for the live state. (commit `28a5d9b`)
 
 ### Sprint F — Production hardening (requires owner-provided secrets)
 
