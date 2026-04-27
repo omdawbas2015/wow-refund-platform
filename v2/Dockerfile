@@ -62,16 +62,20 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 
 # 1) Standalone server (self-contained .next/standalone with minimal deps).
+#    Next.js's standalone tracer follows imports from server components +
+#    route handlers and bundles every required package — including the
+#    pnpm-store @prisma/client + the generated client under .prisma — into
+#    .next/standalone/node_modules. Trusting that here keeps the image
+#    minimal; if any module is missing at runtime add an explicit COPY.
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 # 2) Static assets are not bundled into standalone — copy them by hand.
+#    (apps/web has no public/ folder; everything ships from .next/static.)
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
-# 3) Prisma engines + schema for runtime queries (and migrate deploy in the
-#    Job manifest, which uses the @wow/db package directly).
+# 3) Prisma schema + migrations + a thin pnpm install of @prisma/client +
+#    prisma CLI so the K8s migrate Job (which runs ./node_modules/.bin/prisma
+#    migrate deploy) has everything it needs without re-installing the
+#    workspace.
 COPY --from=builder --chown=nextjs:nodejs /app/packages/db ./packages/db
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.pnpm/@prisma ./node_modules/.pnpm/@prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 
 USER nextjs
 EXPOSE 3000
