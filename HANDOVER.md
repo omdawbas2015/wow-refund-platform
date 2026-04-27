@@ -1,8 +1,8 @@
 # WOW Refund Platform — HANDOVER for the next Devin session
 
-> **Read this file first.** It is self-contained: state of the system, what is done, what is missing, how to resume. Last updated 2026-04-27.
+> **Read this file first.** It is self-contained: state of the system, what is done, what is missing, how to resume. Last updated 2026-04-27 03:40 UTC.
 >
-> **Active branch:** `devin/1777249813-continue-roadmap` (HEAD = `fc01778`, 64 commits ahead of `main`).
+> **Active branch:** `devin/1777249813-continue-roadmap` (HEAD = `7afb059`, ~121 commits ahead of `main`).
 > **Source of truth:** v2/ directory only. The Vite/Express code at the repo root is **legacy and frozen** — do not touch it.
 
 ---
@@ -213,7 +213,7 @@ Other reference docs:
 ### Sprint F — Production hardening (requires owner-provided secrets)
 
 - 🟡 **#20 PII encryption at rest** — `lib/crypto/pii.ts` exposes AES-256-GCM `encrypt` / `decrypt` / `encryptIfPresent` / `decryptIfPresent`. Reads a 32-byte hex key from `PII_ENCRYPTION_KEY`; if unset the helpers are pass-through, so per-field opt-in works without breaking dev. Storage format `v1:<iv>:<ct>:<tag>` reserves room for algo rotation. Wiring into Prisma `client.$extends` for specific RefundCase / Customer fields is the next step once a column-level rollout plan is approved. (commit `00b1d89`)
-- 🟡 **#21 SSE notifications + per-user event bus** — `lib/events/bus.ts` (in-process EventEmitter keyed by user id) and `GET /api/notifications/stream` (SSE endpoint with 25s heartbeats and auth gate) are landed. Single-replica deploys get real-time fanout for free; multi-replica needs the documented Upstash pub/sub bridge in `bus.ts` to be activated once `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are provisioned. UI integration (bell icon switching from poll to live) deferred. (commit `a70fae9`)
+- 🟡 **#21 SSE notifications + per-user event bus** — `lib/events/bus.ts` (in-process EventEmitter keyed by user id) and `GET /api/notifications/stream` (SSE endpoint with 25s heartbeats and auth gate) are landed. The bell icon (`components/layout/notifications-bell.tsx`) now subscribes to the SSE stream and slows its polling fallback to 2 min on `ready`; `dispatchNotifications()` calls `publish()` after every `createMany` so SLA / fraud / mention / AURA notifiers fan out live. SSE route's `cancel()` is wired to a real cleanup that clears the heartbeat + bus subscription so disconnects stop leaking timers. Single-replica deploys get real-time fanout for free; multi-replica still needs the Upstash pub/sub bridge in `bus.ts` once `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are provisioned. (commits `a70fae9`, `8550816`, `6a58a8f`, `7afb059`)
 - 🟡 **#22 Sentry SDK** — `@sentry/nextjs` installed; `sentry.client.config.ts` / `sentry.server.config.ts` / `sentry.edge.config.ts` and `instrumentation.ts` all early-return when `SENTRY_DSN` is unset (zero-cost no-op in dev). The build-time `withSentryConfig()` wrap and source-map upload are the one-line follow-ups once `SENTRY_DSN` + `SENTRY_AUTH_TOKEN` are provided. (commit `cd14af2`)
 - 🟡 **#23 Vercel deploy + Neon Postgres + backup policy** — `v2/vercel.json` pins build / region / cron triggers and `v2/docs/DEPLOY.md` captures the env-var matrix + schema.prisma provider switch + 6-step rollout checklist. Cuts over the moment Neon `DATABASE_URL` + Vercel project are wired. (commit `056d729`)
 - ✅ **#25 Playwright smoke suite** — `@playwright/test` + `playwright.config.ts` + `tests/auth.spec.ts` (login + bad-creds rejection) and `tests/case-list.spec.ts` (cases index loads + bulk-cases reachable). `pnpm test:e2e` runs the suite against `PLAYWRIGHT_BASE_URL` (defaults to `localhost:3000`); CI installs chromium with `pnpm test:e2e:install`. No secrets needed. (commit `94790a2`)
@@ -225,6 +225,18 @@ Other reference docs:
 - ✅ **#29 OpenAPI / Swagger** — `GET /api/openapi` emits an OpenAPI 3.1 doc generated live from `@wow/validators` zod schemas via `zod-to-json-schema`. Covers the public auth surface, `/api/health`, `/api/openapi` itself, and the Power Automate inbound webhook. Internal tRPC routers stay excluded by design. (commit `8593a32`)
 - ✅ **#30 axe-core a11y audit** — `tests/a11y.spec.ts` runs `@axe-core/playwright` against `/login` and the post-login dashboard, asserting zero WCAG 2.0/2.1 A and AA violations. Runs alongside the rest of the smoke suite under `pnpm test:e2e`. (commit `a4bbd45`)
 - 🟡 **#31 Storybook design-system website** — replaced with `/admin/design-tokens` living preview page (semantic palette, typography ramp incl. Cairo + IBM Plex Sans Arabic, component swatches). Renders against the real CSS pipeline so dark-mode + RTL parity is verifiable in one URL, with no Storybook builder install. Full Storybook scaffold can land later if a UI engineer takes ownership. (commit `db55d6a`)
+
+### Sprint H — Live audit + improvements 2026-04-27 (no secrets) 🟡 IN PROGRESS
+
+Walked every page in the running app, captured runtime warnings + console errors, and shipped fixes one logical unit per commit. All commits below are on `devin/1777249813-continue-roadmap` and verified `pnpm typecheck` 4/4 + `pnpm test` 22/22 green.
+
+- ✅ **Audit every route** — Playwright-driven walk over 34 admin / dashboard / operations / promo / reports / help-desk routes returned HTTP 200 on each; only first-paint NextAuth `getSession()` aborts during navigation transitions surfaced (race noise, no real failures).
+- ✅ **Silence Turbopack `@prisma/client can't be external` warning** — `@prisma/client` was reaching `apps/web` only via pnpm hoisting; added it as a direct dep so `serverExternalPackages` resolves cleanly and the dev log is quiet. (commit `b2f6da8`)
+- ✅ **Replace stale Phase 1 dashboard card** — the dashboard had a hardcoded "No cases yet" empty state and a "Phase 1 scaffolding — ready for Phase 2" card that contradicted the operating contract (system is at phase 7+). Recent activity now queries the 6 most recently updated cases and renders status-tinted badges; the second card is now a "System status" enumeration of actually-shipped surfaces. (commits `e7497c3`, `a4fde2d`)
+- ✅ **Vitest config + 22 unit tests** — `apps/web/vitest.config.ts` plus tests for `lib/crypto/pii` (encrypt round-trip, key gating, legacy plaintext, wrong-key fallback, key-length validation), `lib/rate-limit` (sliding window, key isolation, cap), `lib/events/bus` (publish, isolation, unsubscribe, fanout), `lib/logger` (level routing, `LOG_LEVEL` filtering, `child(bindings)`). `pnpm test` → 22/22 passed. (commit `1034b00`)
+- ✅ **Bell goes live via SSE** — `components/layout/notifications-bell.tsx` now opens an `EventSource` against `/api/notifications/stream`, slows its polling fallback to 2 min once `ready` fires, refetches on every `notification`, and cleans up the source + interval on unmount. Falls back gracefully on 401 / connection errors. (commit `8550816`)
+- ✅ **SSE stream cleanup wired to `cancel()`** — the route stored a `_cleanup` closure on the controller but never called it; `cancel()` was a no-op, leaking the heartbeat interval + bus subscription on every disconnect. Now `cancel()` invokes the real cleanup, with a `closed` guard preventing post-close enqueues. (commit `6a58a8f`)
+- ✅ **Notifications dispatcher publishes to the bus** — `dispatchNotifications()` was the central choke-point for SLA / mention / fraud / AURA notifiers but only wrote DB rows. After `createMany` it now `publish()`es a minimal `notification` event per allowed userId so the SSE clients refetch immediately; payload deliberately stays small so clients still hit `GET /api/notifications` for the authoritative unread count. (commit `7afb059`)
 
 ---
 

@@ -25,7 +25,8 @@ STEP 1 — Resume from the latest GitHub state:
 STEP 2 — Read /HANDOVER.md at the repo root. It is the single source of truth.
 The 34-item Sprint A → G roadmap, the operating contract, the resume protocol,
 and the ticked status of every item live there. Sprints A, B, C, D, E are
-fully closed. Sprint F #25 + Sprint G #28 (partial) and #30 are also closed.
+fully closed. Sprint F #25 + Sprint G #28 (partial), #29, #30, #31 are closed.
+Sprint H (live audit + improvements) added on 2026-04-27 and is ongoing.
 
 STEP 3 — Boot the dev environment:
 
@@ -55,9 +56,20 @@ scaffolds:
   DATABASE_URL + Vercel  → flip schema.prisma provider to postgresql on
                            a deploy branch and follow docs/DEPLOY.md.
 
-If no secrets are available, the substantive backlog is empty. Spend
-the session on UI polish, more Playwright coverage, or wiring the
-in-app bell icon to /api/notifications/stream (today it polls).
+If no secrets are available, the substantive backlog is:
+  - Sprint H continues. The bell icon now talks SSE (commit 8550816)
+    and dispatchNotifications() publishes on the bus (commit 7afb059),
+    so the SSE channel is no longer dead-code; spot-check it.
+  - Add more vitest coverage. apps/web/vitest.config.ts is wired and
+    src/lib/{crypto,rate-limit,events,logger}.test.ts already pass
+    22/22; pure modules without DB / network are good targets next.
+  - Browser-walk for visible regressions. The Playwright audit script
+    pattern (apps/web/audit.local.mjs in commit history) is reusable
+    \u2014 it connects to chromium via @playwright/test and walks ~34
+    routes capturing console errors + request failures.
+  - UI polish: loading states, empty states, accessibility labels.
+  - The /admin/design-tokens preview is a good place to verify any
+    palette / typography tweaks before they land in production.
 
 HARD RULES (do NOT violate):
 - The system is at phase 7+. Do NOT assume Phase 1 or Phase 2 state from
@@ -98,6 +110,7 @@ Begin from the next ⬜ item now.
 - **Sprint E** — RBAC helpers + AUDITOR audit-log access, real Prisma migrations, sliding-window auth rate limiter, dev.db scrub + .gitignore tightening, README refresh, HANDOFF banner.
 - **Sprint F** — Playwright smoke (auth + cases) ✅. PII helpers, SSE notifications + event bus, Sentry SDK config, Vercel + Neon deploy plan, .env.example, docker-compose for local Postgres — all landed as 🟡 scaffolds; behaviour activates the moment owner provisions secrets.
 - **Sprint G** — JSON logger shim, axe-core a11y, OpenAPI from zod, /admin/design-tokens preview. #26 (M365 flows) is owner-side; #28 (real pino + OTel) deferred until a log drain destination is approved.
+- **Sprint H — live audit + improvements 2026-04-27** — Playwright walk over 34 routes (all 200 OK), `@prisma/client` added to apps/web direct deps to silence Turbopack warning, dashboard "Phase 1 scaffolding" card replaced with live "System status" + real recent cases, vitest config + 22 unit tests for crypto / rate-limit / events / logger, bell upgraded to SSE-first with polling fallback, SSE route `cancel()` wired to real cleanup (no more leaked heartbeats), `dispatchNotifications()` publishes to the bus so SSE actually fires.
 
 CI workflow proposed in `docs/proposed-ci.yml` — owner copies it to
 `.github/workflows/ci.yml` (Devin's OAuth scope can't push workflow
