@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { Sidebar } from '@/components/layout/sidebar';
 import { TopBar } from '@/components/layout/top-bar';
+import { ChangelogBanner } from '@/components/layout/changelog-banner';
 
 export default async function DashboardLayout({
   children,
@@ -24,6 +25,7 @@ export default async function DashboardLayout({
           userEmail={session.user.email ?? ''}
           currentLocale={locale}
         />
+        <ChangelogBanner />
         <main className="scrollbar-thin flex-1 overflow-y-auto">
           {children}
         </main>
