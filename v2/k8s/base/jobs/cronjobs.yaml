@@ -1,0 +1,164 @@
+# In-cluster CronJobs that hit the existing /api/cron/* route handlers.
+# Each handler is idempotent and gated behind X-Cron-Secret (see
+# v2/apps/web/src/lib/cron/auth.ts).
+#
+# Schedules mirror v2/vercel.json — keep these two files in sync if you
+# ever deploy in parallel to both.
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wow-cron-scheduled-reports
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: cron
+spec:
+  schedule: '*/15 * * * *'
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: curl
+              image: curlimages/curl:8.10.1
+              env:
+                - name: CRON_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: wow-secrets
+                      key: CRON_SECRET
+              command: ['sh', '-c']
+              args:
+                - >
+                  curl -fsS -m 600
+                  -H "X-Cron-Secret: $CRON_SECRET"
+                  http://wow-web/api/cron/scheduled-reports
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wow-cron-sla-breach-scan
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: cron
+spec:
+  schedule: '*/30 * * * *'
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: curl
+              image: curlimages/curl:8.10.1
+              env:
+                - name: CRON_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: wow-secrets
+                      key: CRON_SECRET
+              command: ['sh', '-c']
+              args:
+                - >
+                  curl -fsS -m 600
+                  -H "X-Cron-Secret: $CRON_SECRET"
+                  http://wow-web/api/cron/sla-breach-scan
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wow-cron-fraud-scan
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: cron
+spec:
+  schedule: '0 */6 * * *'
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: curl
+              image: curlimages/curl:8.10.1
+              env:
+                - name: CRON_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: wow-secrets
+                      key: CRON_SECRET
+              command: ['sh', '-c']
+              args:
+                - >
+                  curl -fsS -m 600
+                  -H "X-Cron-Secret: $CRON_SECRET"
+                  http://wow-web/api/cron/fraud-scan
+---
+# Nightly logical backup of Postgres → PVC. Pair this with an external
+# rsync / s3-cp sidecar later if you want offsite copies.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wow-cron-postgres-backup
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: backup
+spec:
+  schedule: '0 2 * * *'
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pgdump
+              image: postgres:16-alpine
+              env:
+                - name: PGUSER
+                  value: wow
+                - name: PGDATABASE
+                  value: wow_refund
+                - name: PGHOST
+                  value: wow-postgres
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: wow-secrets
+                      key: POSTGRES_PASSWORD
+              command: ['sh', '-c']
+              args:
+                - >
+                  set -e;
+                  ts=$(date -u +%Y%m%dT%H%M%SZ);
+                  pg_dump --format=custom --no-owner --no-acl
+                  --file=/backups/wow_refund_$ts.dump &&
+                  ls -lh /backups/wow_refund_$ts.dump &&
+                  find /backups -name 'wow_refund_*.dump' -mtime +14 -delete
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: wow-postgres-backups

@@ -1,0 +1,60 @@
+# Single-instance Redis used by:
+#   - SSE multi-replica fanout (Sprint F #21)
+#   - rate-limit shared bucket (Sprint F #21)
+# Restart-safe — appendonly persistence to an emptyDir is enough; no
+# durable state lives here that we can't rebuild from Postgres.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wow-redis
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wow-refund
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wow-refund
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          args: ['redis-server', '--appendonly', 'yes', '--save', '60', '1000']
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            exec:
+              command: ['redis-cli', 'ping']
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            exec:
+              command: ['redis-cli', 'ping']
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+      volumes:
+        - name: data
+          emptyDir: {}

@@ -1,0 +1,21 @@
+# Non-secret runtime config shared by every web pod and CronJob.
+# Real secrets (DATABASE_URL, AUTH_SECRET, …) live in the Secret manifest.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wow-config
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+data:
+  AUTH_TRUST_HOST: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+  NODE_ENV: production
+  PORT: '3000'
+  HOSTNAME: 0.0.0.0
+  # Internal service URLs. Pods in the same namespace resolve these by name.
+  REDIS_URL: redis://wow-redis:6379
+  # Public URL the app advertises (Auth.js callbacks, emails). Override per cluster.
+  NEXTAUTH_URL: https://wow.example.com
+  # Email transport — leave blank to log emails to stdout (dev mode).
+  POWER_AUTOMATE_WEBHOOK_URL: ''

@@ -1,0 +1,60 @@
+# One-shot Job that applies pending Prisma migrations against the
+# Postgres StatefulSet. Run this BEFORE rolling out a Deployment that
+# expects the new schema. Pattern:
+#
+#   kubectl -n wow-refund delete job wow-migrate --ignore-not-found
+#   kubectl -n wow-refund apply -f k8s/base/jobs/migrate.yaml
+#   kubectl -n wow-refund wait --for=condition=complete job/wow-migrate --timeout=5m
+#   kubectl -n wow-refund rollout restart deploy/wow-web
+#
+# (CI/CD wraps this in a single shell step — see .github/workflows.)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wow-migrate
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: migrate
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wow-refund
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: migrate
+          image: ghcr.io/omdawbas2015/wow-refund-platform:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: wow-config
+            - secretRef:
+                name: wow-secrets
+          # The image ships node_modules/.prisma + .pnpm/@prisma so we can
+          # invoke prisma directly without re-installing the workspace.
+          # `migrate deploy` is idempotent: applies pending migrations and
+          # exits 0 if none are pending.
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              cd /app
+              ./node_modules/.bin/prisma migrate deploy \
+                --schema=packages/db/prisma/postgres/schema.prisma
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 512Mi

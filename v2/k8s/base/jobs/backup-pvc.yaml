@@ -1,0 +1,16 @@
+# Separate PVC for nightly logical backups. Lives outside the Postgres
+# data volume so a corrupted data dir never takes the dumps with it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wow-postgres-backups
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: backup
+spec:
+  accessModes: ['ReadWriteOnce']
+  storageClassName: ''
+  resources:
+    requests:
+      storage: 20Gi

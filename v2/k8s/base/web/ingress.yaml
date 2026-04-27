@@ -1,0 +1,35 @@
+# Public ingress. Defaults to NGINX ingress class — switch ingressClassName
+# to `traefik` if your cluster runs Traefik instead. Replace the host with
+# your real domain before applying.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wow-web
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: web
+  annotations:
+    # SSE keeps the connection open for the bell — turn off response buffering.
+    nginx.ingress.kubernetes.io/proxy-buffering: 'off'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
+    # Reasonable upload ceiling for case attachments.
+    nginx.ingress.kubernetes.io/proxy-body-size: '25m'
+spec:
+  ingressClassName: nginx
+  # Uncomment when cert-manager is installed:
+  # tls:
+  #   - hosts: [wow.example.com]
+  #     secretName: wow-tls
+  rules:
+    - host: wow.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: wow-web
+                port:
+                  number: 80

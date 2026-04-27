@@ -1,0 +1,33 @@
+# Example overlay: scale web down to 1 replica, point Ingress to a
+# dev hostname, drop HPA. Copy this folder per environment (staging,
+# prod) and customise.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: wow-refund
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: Deployment
+      name: wow-web
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Ingress
+      name: wow-web
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: dev.wow.example.com
+  - target:
+      kind: PodDisruptionBudget
+      name: wow-web
+    patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 0

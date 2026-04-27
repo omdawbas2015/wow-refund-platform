@@ -1,0 +1,20 @@
+# Headless Service for the Postgres StatefulSet — pods get DNS as
+# wow-postgres-0.wow-postgres.wow-refund.svc.cluster.local. Clients
+# inside the namespace just use `wow-postgres:5432`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wow-postgres
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: postgres
+spec:
+  clusterIP: None
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  selector:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: postgres

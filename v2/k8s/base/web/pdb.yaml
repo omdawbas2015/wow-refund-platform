@@ -1,0 +1,18 @@
+# Keep at least 2 web pods running during voluntary disruptions
+# (rolling updates, node drains, autoscaler downsize). Combined with
+# the topologySpreadConstraints in the Deployment this means we
+# survive losing one of the two worker nodes without dropping traffic.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: wow-web
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: web
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wow-refund
+      app.kubernetes.io/component: web

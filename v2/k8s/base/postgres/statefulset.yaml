@@ -1,0 +1,86 @@
+# Single-instance Postgres StatefulSet.
+#
+# Trade-offs:
+#  - Pros: zero operator complexity, runs anywhere, pg_dump CronJob below
+#    gives a logical backup. Plenty for the size of this app.
+#  - Cons: not HA. If the node hosting the pod dies the DB is unavailable
+#    until kubelet schedules the pod elsewhere (~2-5 min, longer if the
+#    PVC is node-local and the volume needs to follow). For real HA swap
+#    this for CloudNativePG or Zalando Postgres Operator.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: wow-postgres
+  namespace: wow-refund
+  labels:
+    app.kubernetes.io/name: wow-refund
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: wow-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wow-refund
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wow-refund
+        app.kubernetes.io/component: postgres
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: wow
+            - name: POSTGRES_DB
+              value: wow_refund
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wow-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          readinessProbe:
+            exec:
+              command: ['pg_isready', '-U', 'wow', '-d', 'wow_refund']
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ['pg_isready', '-U', 'wow', '-d', 'wow_refund']
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ['ReadWriteOnce']
+        # Leaves the StorageClass empty so the cluster's default provisioner
+        # is used (local-path-provisioner / longhorn / cephfs / rbd / etc.).
+        storageClassName: ''
+        resources:
+          requests:
+            storage: 10Gi
