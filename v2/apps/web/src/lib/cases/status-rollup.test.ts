@@ -33,17 +33,17 @@ describe('lib/cases/status-rollup', () => {
       expect(
         rollupCaseStatus(
           'IN_EXECUTION',
-          ['REFUNDED', 'PENDING', 'IN_BATCH'] as ComponentStatus[],
+          ['REFUNDED', 'PENDING', 'AWAITING_ARN'] as ComponentStatus[],
         ),
       ).toBe('PARTIALLY_REFUNDED');
     });
 
     it('any moving + APPROVED -> IN_EXECUTION', () => {
       expect(
-        rollupCaseStatus('APPROVED', ['IN_BATCH', 'PENDING'] as ComponentStatus[]),
+        rollupCaseStatus('APPROVED', ['AWAITING_ARN', 'PENDING'] as ComponentStatus[]),
       ).toBe('IN_EXECUTION');
       expect(
-        rollupCaseStatus('APPROVED', ['DISPATCHED'] as ComponentStatus[]),
+        rollupCaseStatus('APPROVED', ['ARN_RECEIVED'] as ComponentStatus[]),
       ).toBe('IN_EXECUTION');
     });
 
@@ -60,10 +60,10 @@ describe('lib/cases/status-rollup', () => {
       // The rollup is conservative: it only flips APPROVED/IN_EXECUTION,
       // never moves a case out of an upstream gating state.
       expect(
-        rollupCaseStatus('DRAFT', ['IN_BATCH'] as ComponentStatus[]),
+        rollupCaseStatus('DRAFT', ['AWAITING_ARN'] as ComponentStatus[]),
       ).toBe('DRAFT');
       expect(
-        rollupCaseStatus('PENDING_APPROVAL', ['DISPATCHED'] as ComponentStatus[]),
+        rollupCaseStatus('PENDING_APPROVAL', ['ARN_RECEIVED'] as ComponentStatus[]),
       ).toBe('PENDING_APPROVAL');
     });
   });
@@ -80,7 +80,7 @@ describe('lib/cases/status-rollup', () => {
         hasOpenComponents(['REFUNDED', 'PENDING'] as ComponentStatus[]),
       ).toBe(true);
       expect(
-        hasOpenComponents(['IN_BATCH'] as ComponentStatus[]),
+        hasOpenComponents(['AWAITING_ARN'] as ComponentStatus[]),
       ).toBe(true);
     });
 

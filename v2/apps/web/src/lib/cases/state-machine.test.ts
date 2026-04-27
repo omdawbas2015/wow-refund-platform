@@ -67,10 +67,11 @@ describe('lib/cases/state-machine', () => {
       expect(isComponentTerminal('FAILED')).toBe(true);
     });
 
-    it('PENDING / IN_BATCH / DISPATCHED are not terminal', () => {
+    it('PENDING / AWAITING_BATCH / AWAITING_ARN / ARN_RECEIVED are not terminal', () => {
       expect(isComponentTerminal('PENDING')).toBe(false);
-      expect(isComponentTerminal('IN_BATCH')).toBe(false);
-      expect(isComponentTerminal('DISPATCHED')).toBe(false);
+      expect(isComponentTerminal('AWAITING_BATCH')).toBe(false);
+      expect(isComponentTerminal('AWAITING_ARN')).toBe(false);
+      expect(isComponentTerminal('ARN_RECEIVED')).toBe(false);
     });
   });
 });
