@@ -8,3 +8,12 @@ coverage/
 !.env.example
 
 /src/generated/prisma
+
+# Local SQLite databases — never commit. Devs run pnpm db:push + db:seed.
+*.db
+*.db-journal
+**/dev.db
+**/main.db
+v2/packages/db/prisma/*.db
+.next/
+
