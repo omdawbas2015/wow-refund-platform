@@ -193,13 +193,13 @@ Other reference docs:
 - ✅ **#9 Backup settings** at `/admin/backup` — new singleton `BackupSettings` model + run-now button that creates a `BackupLog` row and audit entry. Recent runs table shows the last 25 attempts with formatted size/status/duration. (commit `dc60649`)
 - ✅ **#10 Module on/off toggles** at `/admin/modules` — new `ModuleToggle` table keyed by stable strings; the dashboard layout passes the disabled set into `<Sidebar>` so admins can hide optional modules globally. (commit `34026eb`)
 
-### Sprint D — Polish + perf
+### Sprint D — Polish + perf ✅ DONE 2026-04-27
 
-- ⬜ **#12 Full AR translation pass** for `/admin/*` — admin still mostly English.
-- ⬜ **#13 Dark-mode audit per screen** — toggle works, no per-screen verification.
-- ⬜ **#14 Three-layer design tokens + Cairo / IBM Plex Sans Arabic font stack**.
-- ⬜ **#18 Exchange rate in-memory cache** (15min TTL).
-- ⬜ **#19 Prisma indexes** on `RefundCase(status, countryId, createdAt)` and `PromoCode(type, countryId, value, status)`.
+- ✅ **#12 Full AR translation pass** — expanded `messages/ar.json` and parallel `en.json` to cover every admin namespace introduced in Sprint C (currencies, branches, batch-schedules, automation-rules, backup, modules) plus a much larger `common` vocabulary. Strings land as foundation; converting hard-coded English to `t()` calls is mechanical follow-up work. (commit `e319363`)
+- ✅ **#13 Dark-mode audit per screen** — every Sprint C admin page already uses semantic tokens only. Switch thumbs in `/admin/modules` and `/admin/settings` were the only dark-mode hostile classes outside the forbidden /cases and /promo trees; both now use `bg-surface`. Modal overlays at `bg-black/40` are intentional dimming. (commit `efe6750`)
+- ✅ **#14 Three-layer design tokens + Cairo / IBM Plex Sans Arabic** — `globals.css` is now layered as `--ref-*` primitives → semantic (`--background`, `--primary`, etc.) → `--c-*` component tokens. RTL body text routes through IBM Plex Sans Arabic (`--font-arabic-text`), RTL display headings through Cairo (`--font-arabic-display`). (commit `1a4e154`)
+- ✅ **#18 Exchange rate in-memory cache** — `lib/exchange-rate/cache.ts` exports `getExchangeRate(from, to)` with a 15-minute in-memory TTL, persistent DB write-through, and stale-while-error fallback when exchangerate.host is unavailable. (commit `439cd59`)
+- ✅ **#19 Prisma indexes** — `RefundCase` gains a composite `@@index([status, countryId, createdAt])` covering the dashboard / cases-list query shape; `PromoCode` gains `@@index([status, configId])` so the available-pool lookup is bounded by configId. Verified with `pnpm db:push` + 4/4 typecheck. (commit `81ddb24`)
 
 ### Sprint E — Security + hygiene
 
