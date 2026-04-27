@@ -1116,6 +1116,20 @@ model BatchSchedule {
   @@map("batch_schedule")
 }
 
+/// Per-module on/off switch. Keys are stable strings like "promo", "reports",
+/// "stores", "automation". When disabled, the module's UI surfaces are hidden
+/// from the sidebar and the routes redirect home.
+model ModuleToggle {
+  key         String   @id // promo | reports | stores | automation | scheduled-reports | etc
+  label       String
+  description String?
+  isEnabled   Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  @@map("module_toggle")
+}
+
 /// Singleton backup configuration (id is always "singleton"). Created on
 /// first save by the admin UI.
 model BackupSettings {

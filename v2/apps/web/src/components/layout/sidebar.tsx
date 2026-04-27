@@ -35,11 +35,12 @@ import {
   CalendarRange,
   Workflow,
   CloudUpload,
+  ToggleLeft,
 } from 'lucide-react';
 
 interface NavSection {
   label: string;
-  items: NavItem[];
+  items: (NavItem & { module?: string })[];
 }
 interface NavItem {
   label: string;
@@ -48,9 +49,16 @@ interface NavItem {
   adminOnly?: boolean;
 }
 
-export function Sidebar({ role }: { role: string | null }) {
+export function Sidebar({
+  role,
+  disabledModules = [],
+}: {
+  role: string | null;
+  disabledModules?: string[];
+}) {
   const pathname = usePathname();
   const t = useTranslations('nav');
+  const disabled = new Set(disabledModules);
 
   const opsRole = role === 'ADMIN' || role === 'OPERATIONS' || role === 'MANAGER';
   const sections: NavSection[] = [
@@ -65,17 +73,24 @@ export function Sidebar({ role }: { role: string | null }) {
         ...(opsRole
           ? [{ label: t('operations'), href: '/operations', icon: ShieldCheck }]
           : []),
-        { label: t('promo'), href: '/promo', icon: Gift },
+        { label: t('promo'), href: '/promo', icon: Gift, module: 'promo' },
       ],
     },
     {
       label: t('helpDesk'),
-      items: [{ label: t('storesCommunication'), href: '/help-desk/stores', icon: Store }],
+      items: [
+        {
+          label: t('storesCommunication'),
+          href: '/help-desk/stores',
+          icon: Store,
+          module: 'stores',
+        },
+      ],
     },
     {
       label: t('reports'),
       items: [
-        { label: t('reports'), href: '/reports', icon: BarChart3 },
+        { label: t('reports'), href: '/reports', icon: BarChart3, module: 'reports' },
         { label: 'Changelog', href: '/changelog', icon: Sparkles },
       ],
     },
@@ -95,11 +110,12 @@ export function Sidebar({ role }: { role: string | null }) {
         { label: t('auditLog') ?? 'Audit Log', href: '/admin/audit-log', icon: History, adminOnly: true },
         { label: 'Email Log', href: '/admin/email-log', icon: Mail, adminOnly: true },
         { label: 'SLA Rules', href: '/admin/sla-rules', icon: Timer, adminOnly: true },
-        { label: 'Fraud Signals', href: '/admin/fraud-signals', icon: ShieldAlert, adminOnly: true },
-        { label: 'Automation Rules', href: '/admin/automation-rules', icon: Workflow, adminOnly: true },
-        { label: 'Batch Schedules', href: '/admin/batch-schedules', icon: CalendarRange, adminOnly: true },
-        { label: 'Scheduled Reports', href: '/admin/scheduled-reports', icon: CalendarClock, adminOnly: true },
-        { label: 'Backup', href: '/admin/backup', icon: CloudUpload, adminOnly: true },
+        { label: 'Fraud Signals', href: '/admin/fraud-signals', icon: ShieldAlert, adminOnly: true, module: 'fraud-signals' },
+        { label: 'Automation Rules', href: '/admin/automation-rules', icon: Workflow, adminOnly: true, module: 'automation-rules' },
+        { label: 'Batch Schedules', href: '/admin/batch-schedules', icon: CalendarRange, adminOnly: true, module: 'batch-schedules' },
+        { label: 'Scheduled Reports', href: '/admin/scheduled-reports', icon: CalendarClock, adminOnly: true, module: 'scheduled-reports' },
+        { label: 'Backup', href: '/admin/backup', icon: CloudUpload, adminOnly: true, module: 'backup' },
+        { label: 'Modules', href: '/admin/modules', icon: ToggleLeft, adminOnly: true },
         { label: 'Cron Status', href: '/admin/cron-status', icon: Activity, adminOnly: true },
         { label: 'System Info', href: '/admin/system-info', icon: Server, adminOnly: true },
         { label: t('settings'), href: '/admin/settings', icon: Settings, adminOnly: true },
@@ -120,7 +136,11 @@ export function Sidebar({ role }: { role: string | null }) {
 
       <nav className="scrollbar-thin flex-1 overflow-y-auto px-3 py-2">
         {sections.map((section, i) => {
-          const items = section.items.filter((item) => !item.adminOnly || role === 'ADMIN');
+          const items = section.items.filter(
+            (item) =>
+              (!item.adminOnly || role === 'ADMIN') &&
+              (!item.module || !disabled.has(item.module)),
+          );
           if (items.length === 0) return null;
           return (
             <div key={i} className="mb-4">
