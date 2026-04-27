@@ -488,6 +488,9 @@ model RefundCase {
   @@index([externalCaseNumber])
   @@index([createdAt])
   @@index([deletedAt])
+  // Composite index supporting the common dashboard / cases-list query
+  // shape: filter by country + status, then order by createdAt desc.
+  @@index([status, countryId, createdAt])
   @@map("refund_case")
 }
 
@@ -756,6 +759,10 @@ model PromoCode {
 
   @@index([configId])
   @@index([status])
+  // Allocation lookups join via the parent PromoConfig — keeping a
+  // composite on (status, configId) means the available-pool query can
+  // be served from the index without scanning all promo codes.
+  @@index([status, configId])
   @@map("promo_code")
 }
 
