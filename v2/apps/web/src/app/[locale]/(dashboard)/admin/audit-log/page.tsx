@@ -4,6 +4,7 @@ import { prisma } from '@wow/db';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/format';
+import { canViewAuditLog } from '@/lib/rbac/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +17,7 @@ const PAGE_SIZE = 50;
 export default async function AuditLogPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user) redirect('/login');
-  if (session.user.role !== 'ADMIN') redirect('/');
+  if (!canViewAuditLog(session.user.role)) redirect('/');
 
   const { q, entityType, page } = await searchParams;
   const pageNum = Math.max(1, parseInt(page ?? '1', 10) || 1);
