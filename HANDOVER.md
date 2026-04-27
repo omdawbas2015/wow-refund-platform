@@ -184,14 +184,14 @@ Other reference docs:
 - ✅ **#2 Changelog banner** — dismissible top-bar banner that reads `LATEST_CHANGELOG.version` from `app/[locale]/(dashboard)/changelog/entries.ts`; bumping that version re-shows the banner. (commit `80a1585`)
 - ✅ **#15 Command palette ⌘K** — cmdk-based palette with action verbs grouped Navigate / Cases / Operations / Promo / Admin / Help. Role-filtered and bypassed when focus is in an editable element. (commit `7d74be3`)
 
-### Sprint C — Admin pages
+### Sprint C — Admin pages ✅ DONE 2026-04-27
 
-- ⬜ **#5 Currencies admin** page — `CurrencyRegistry` schema exists.
-- ⬜ **#6 Branches admin** page — `Branch` schema exists.
-- ⬜ **#7 Batch schedules admin** page — new `BatchSchedule` model.
-- ⬜ **#8 Automation rules admin** page — new `AutomationRule` model.
-- ⬜ **#9 Backup settings** page — new `BackupSettings` (singleton).
-- ⬜ **#10 Module on/off toggles** distinct from feature flags.
+- ✅ **#5 Currencies admin** at `/admin/currencies` — read-only ISO 4217 directory with search and an "in use" filter that scopes to currencies attached to active countries; surfaces open-case counts per currency. (commit `b080e79`)
+- ✅ **#6 Branches admin** at `/admin/branches` — full CRUD with country filter, bilingual name fields, soft-deactivate when cases reference the branch, and audit-log entries on every mutation. (commit `206fbb9`)
+- ✅ **#7 Batch schedules admin** at `/admin/batch-schedules` — CRUD over `BatchSchedule` grouped by APPROVAL / KNET / AURA. Reuses `validateCron()` from `lib/scheduled-reports/cron.ts`; KNET/AURA force `countryId = null`. (commit `570ed6f`)
+- ✅ **#8 Automation rules admin** at `/admin/automation-rules` — CRUD over `AutomationRule` with JSON conditions/actions, scope filtering, priority ordering, and a read-only preview dialog for auditors. (commit `b2fd286`)
+- ✅ **#9 Backup settings** at `/admin/backup` — new singleton `BackupSettings` model + run-now button that creates a `BackupLog` row and audit entry. Recent runs table shows the last 25 attempts with formatted size/status/duration. (commit `dc60649`)
+- ✅ **#10 Module on/off toggles** at `/admin/modules` — new `ModuleToggle` table keyed by stable strings; the dashboard layout passes the disabled set into `<Sidebar>` so admins can hide optional modules globally. (commit `34026eb`)
 
 ### Sprint D — Polish + perf
 
