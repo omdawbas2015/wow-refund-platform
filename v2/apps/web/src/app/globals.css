@@ -3,13 +3,49 @@
 @tailwind utilities;
 
 /* ═══════════════════════════════════════════════════════════════════
-   Design tokens — Stripe-inspired visual language.
-   Light mode is primary; dark mode is available via `[data-theme=dark]`.
+   Design tokens — three-layer system.
+
+   Layer 1 (reference / primitives): raw HSL values with no meaning.
+     Prefixed --ref-*. These are the shared palette.
+
+   Layer 2 (semantic): meaning-bearing tokens like --background, --primary.
+     Theme-aware (light + dark variants). Reference primitives where
+     useful, but kept as literal values where the override semantics
+     differ between themes.
+
+   Layer 3 (component): purpose-built tokens for specific UI primitives.
+     Prefixed --c-*. They reference semantic tokens, never primitives.
+     Use these in component CSS / Tailwind utilities so future themes can
+     re-skin a component without rewriting the semantic layer.
+
    All tokens are HSL so Tailwind's opacity modifiers work.
    ═══════════════════════════════════════════════════════════════════ */
 
 @layer base {
   :root {
+    /* Layer 1 — reference primitives (Stripe blurple + neutrals) */
+    --ref-blurple-50:   246 95% 96%;
+    --ref-blurple-100:  240 90% 90%;
+    --ref-blurple-200:  240 90% 85%;
+    --ref-blurple-400:  246 95% 71%;
+    --ref-blurple-500:  246 95% 61%;
+    --ref-blurple-600:  246 66% 52%;
+    --ref-blurple-700:  242 52% 36%;
+    --ref-navy-50:      210 40% 98%;
+    --ref-navy-100:     210 40% 96%;
+    --ref-navy-200:     214 32% 91%;
+    --ref-navy-400:     217 19% 48%;
+    --ref-navy-700:     215 33% 24%;
+    --ref-navy-900:     216 74% 11%;
+    --ref-navy-950:     216 74% 8%;
+    --ref-white:        0 0% 100%;
+    --ref-rose-500:     340 84% 53%;
+    --ref-rose-600:     340 84% 63%;
+    --ref-emerald-500:  145 79% 41%;
+    --ref-emerald-400:  145 60% 51%;
+    --ref-amber-500:    38 92% 50%;
+    --ref-amber-400:    38 92% 60%;
+
     /* Semantic surfaces */
     --background:          0 0% 100%;         /* #ffffff */
     --surface:             0 0% 100%;
@@ -57,6 +93,22 @@
     --info-foreground:     0 0% 100%;
 
     --radius: 0.375rem;    /* 6px — conservative */
+
+    /* Layer 3 — component tokens. Reference semantic vars only. */
+    --c-button-primary-bg:     var(--primary);
+    --c-button-primary-fg:     var(--primary-foreground);
+    --c-button-primary-hover:  var(--primary-hover);
+    --c-badge-success-bg:      var(--success);
+    --c-badge-success-fg:      var(--success-foreground);
+    --c-badge-warning-bg:      var(--warning);
+    --c-badge-warning-fg:      var(--warning-foreground);
+    --c-badge-destructive-bg:  var(--destructive);
+    --c-badge-destructive-fg:  var(--destructive-foreground);
+    --c-card-bg:               var(--card);
+    --c-card-border:           var(--border);
+    --c-input-bg:              var(--background);
+    --c-input-border:          var(--input);
+    --c-input-ring:            var(--ring);
   }
 
   [data-theme='dark'],
@@ -140,9 +192,15 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* RTL spacing fixups */
+  /* RTL spacing fixups — Arabic uses IBM Plex Sans Arabic for body text and
+     Cairo for displays (h1/h2). Both fall back to system Arabic stacks. */
   [dir='rtl'] {
-    font-family: var(--font-sans), 'Noto Sans Arabic', 'Cairo', 'Inter', sans-serif;
+    font-family: var(--font-arabic-text), 'IBM Plex Sans Arabic', 'Noto Sans Arabic', 'Cairo', var(--font-sans), 'Inter', sans-serif;
+  }
+  [dir='rtl'] h1,
+  [dir='rtl'] h2,
+  [dir='rtl'] h3 {
+    font-family: var(--font-arabic-display), 'Cairo', 'IBM Plex Sans Arabic', 'Noto Sans Arabic', sans-serif;
   }
 
   /* Selection */

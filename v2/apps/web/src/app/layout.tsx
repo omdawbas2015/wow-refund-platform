@@ -1,6 +1,6 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import { Inter, JetBrains_Mono, Cairo, IBM_Plex_Sans_Arabic } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { SessionProvider } from '@/components/providers/session-provider';
@@ -16,6 +16,20 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-mono',
   display: 'swap',
+});
+
+const cairo = Cairo({
+  subsets: ['arabic', 'latin'],
+  variable: '--font-arabic-display',
+  display: 'swap',
+  weight: ['400', '500', '600', '700'],
+});
+
+const ibmPlexArabic = IBM_Plex_Sans_Arabic({
+  subsets: ['arabic', 'latin'],
+  variable: '--font-arabic-text',
+  display: 'swap',
+  weight: ['400', '500', '600', '700'],
 });
 
 export const metadata: Metadata = {
@@ -37,7 +51,15 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={cn(inter.variable, jetbrainsMono.variable, 'min-h-screen bg-background font-sans text-foreground antialiased')}>
+      <body
+        className={cn(
+          inter.variable,
+          jetbrainsMono.variable,
+          cairo.variable,
+          ibmPlexArabic.variable,
+          'min-h-screen bg-background font-sans text-foreground antialiased',
+        )}
+      >
         <ThemeProvider attribute="data-theme" defaultTheme="light" enableSystem={false}>
           <SessionProvider>
             {children}
