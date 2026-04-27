@@ -1,0 +1,96 @@
+# Full self-hosted stack: Postgres + Redis + the production web image.
+# Mirrors the K8s topology (see v2/k8s/) so local "docker compose up" is
+# a fast smoke test of the production container before deploying.
+#
+# Usage:
+#   # 1. Build the image (slow once, fast after):
+#   docker compose -f docker-compose.full.yml build
+#
+#   # 2. Start the full stack:
+#   docker compose -f docker-compose.full.yml up -d
+#
+#   # 3. Generate the initial schema (first run only):
+#   docker compose -f docker-compose.full.yml exec web \
+#     sh -c "cd /app && node_modules/.bin/prisma migrate deploy \
+#       --schema=packages/db/prisma/postgres/schema.prisma"
+#
+#   # 4. Open http://localhost:3000 — admin@wow.local / admin123
+#
+# Stops cleanly with `docker compose -f docker-compose.full.yml down`.
+# Add `-v` to also drop the Postgres / Redis volumes.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: wow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wow
+      POSTGRES_PASSWORD: wow
+      POSTGRES_DB: wow_refund
+    volumes:
+      - wow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U wow -d wow_refund']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    ports:
+      - '5432:5432'
+
+  redis:
+    image: redis:7-alpine
+    container_name: wow-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - wow_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    ports:
+      - '6379:6379'
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wow-refund-web:local
+    container_name: wow-web
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Postgres
+      DATABASE_URL: postgresql://wow:wow@postgres:5432/wow_refund?schema=public
+      DIRECT_DATABASE_URL: postgresql://wow:wow@postgres:5432/wow_refund?schema=public
+      # Redis (used by SSE multi-replica fanout once Sprint F #21 lands)
+      REDIS_URL: redis://redis:6379
+      # Auth — DEV-ONLY values; replace before any real exposure.
+      AUTH_SECRET: dev-only-replace-in-prod-with-openssl-rand-base64-32
+      AUTH_TRUST_HOST: 'true'
+      NEXTAUTH_URL: http://localhost:3000
+      # Email transport — Power Automate webhook left blank → dev-mode console log.
+      POWER_AUTOMATE_WEBHOOK_URL: ''
+      POWER_AUTOMATE_SIGNING_SECRET: ''
+      # Cron secret for the in-cluster CronJobs (k8s topology) / `curl` smoke tests.
+      CRON_SECRET: dev-cron-secret-change-me
+      # Telemetry off in self-hosted by default.
+      NEXT_TELEMETRY_DISABLED: '1'
+    ports:
+      - '3000:3000'
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3000/api/health']
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  wow_postgres_data:
+  wow_redis_data:
