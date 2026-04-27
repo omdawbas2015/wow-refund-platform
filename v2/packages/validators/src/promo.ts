@@ -56,3 +56,23 @@ export const uploadPromoCodesSchema = z.object({
   expiresAt: z.union([z.string().datetime(), z.null()]).optional(),
 });
 export type UploadPromoCodesInput = z.infer<typeof uploadPromoCodesSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
+//  PROMO CONFIG ADMIN
+// ─────────────────────────────────────────────────────────────────────────
+
+export const createPromoConfigSchema = z.object({
+  brandId: nonEmptyString,
+  countryId: nonEmptyString,
+  type: z.enum(['CUSTOMER_COMPENSATION', 'SERVICE_RECOVERY']),
+  value: z.coerce.number().min(0),
+  currency: nonEmptyString.max(8),
+  label: z.string().trim().max(120).optional().or(z.literal('')),
+});
+export type CreatePromoConfigInput = z.infer<typeof createPromoConfigSchema>;
+
+export const togglePromoConfigSchema = z.object({
+  configId: nonEmptyString,
+  isActive: z.coerce.boolean(),
+});
+export type TogglePromoConfigInput = z.infer<typeof togglePromoConfigSchema>;

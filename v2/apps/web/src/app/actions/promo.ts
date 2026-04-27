@@ -1,7 +1,14 @@
 'use server';
 
 import { Prisma, prisma } from '@wow/db';
-import { allocatePromoSchema, uploadPromoCodesSchema } from '@wow/validators';
+import {
+  allocatePromoSchema,
+  uploadPromoCodesSchema,
+  createPromoConfigSchema,
+  togglePromoConfigSchema,
+  type CreatePromoConfigInput,
+  type TogglePromoConfigInput,
+} from '@wow/validators';
 import { auth } from '@/auth';
 import { revalidatePath } from 'next/cache';
 
@@ -866,5 +873,86 @@ export async function exportPromoAllocationsXlsxAction(input: {
   } catch (e) {
     console.error('[exportPromoAllocationsXlsxAction]', e);
     return { ok: false, error: 'Failed to export allocations.' };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  PROMO CONFIG ADMIN
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function createPromoConfigAction(
+  input: CreatePromoConfigInput,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const me = await requireSession();
+    if (me.role !== 'ADMIN' && me.role !== 'OPS_LEAD') {
+      return { ok: false, error: 'Forbidden' };
+    }
+    const parsed = createPromoConfigSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    }
+    const { brandId, countryId, type, value, currency, label } = parsed.data;
+
+    const dup = await prisma.promoConfig.findUnique({
+      where: { brandId_countryId_type_value: { brandId, countryId, type, value } },
+    });
+    if (dup) return { ok: false, error: 'A promo config with these parameters already exists' };
+
+    const created = await prisma.promoConfig.create({
+      data: { brandId, countryId, type, value, currency, label: label || null },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorId: me.id,
+        actorEmail: me.email,
+        action: 'promo.config.created',
+        entityType: 'PROMO_CONFIG',
+        entityId: created.id,
+      },
+    });
+
+    revalidatePath('/promo');
+    return { ok: true, data: { id: created.id } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function togglePromoConfigAction(
+  input: TogglePromoConfigInput,
+): Promise<ActionResult> {
+  try {
+    const me = await requireSession();
+    if (me.role !== 'ADMIN' && me.role !== 'OPS_LEAD') {
+      return { ok: false, error: 'Forbidden' };
+    }
+    const parsed = togglePromoConfigSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    }
+    const { configId, isActive } = parsed.data;
+
+    const before = await prisma.promoConfig.findUnique({ where: { id: configId } });
+    if (!before) return { ok: false, error: 'Config not found' };
+
+    await prisma.promoConfig.update({ where: { id: configId }, data: { isActive } });
+
+    await prisma.auditLog.create({
+      data: {
+        actorId: me.id,
+        actorEmail: me.email,
+        action: isActive ? 'promo.config.activated' : 'promo.config.deactivated',
+        entityType: 'PROMO_CONFIG',
+        entityId: configId,
+      },
+    });
+
+    revalidatePath('/promo');
+    revalidatePath(`/promo/configs/${configId}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
