@@ -25,6 +25,7 @@ import {
   Timer,
   Bell,
   Search as SearchIcon,
+  Sparkles,
 } from 'lucide-react';
 
 interface NavSection {
@@ -63,7 +64,10 @@ export function Sidebar({ role }: { role: string | null }) {
     },
     {
       label: t('reports'),
-      items: [{ label: t('reports'), href: '/reports', icon: BarChart3 }],
+      items: [
+        { label: t('reports'), href: '/reports', icon: BarChart3 },
+        { label: 'Changelog', href: '/changelog', icon: Sparkles },
+      ],
     },
     {
       label: t('admin'),
