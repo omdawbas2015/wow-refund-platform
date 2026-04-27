@@ -8,7 +8,6 @@ describe('lib/logger', () => {
   beforeEach(() => {
     vi.resetModules();
     delete process.env.LOG_LEVEL;
-    process.env.NODE_ENV = 'test';
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

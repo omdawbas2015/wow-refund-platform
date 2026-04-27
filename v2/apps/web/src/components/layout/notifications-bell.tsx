@@ -41,8 +41,45 @@ export function NotificationsBell({ locale }: { locale: string }) {
 
   useEffect(() => {
     void load();
-    const interval = setInterval(() => void load(), 30_000);
-    return () => clearInterval(interval);
+
+    // Prefer SSE for live updates; if it disconnects we keep polling as a
+    // safety net so the bell never goes stale. Polls slow to 2 min when
+    // SSE is healthy, fast to 30 s otherwise.
+    let source: EventSource | null = null;
+    let live = false;
+    const slowMs = 120_000;
+    const fastMs = 30_000;
+    let interval = setInterval(() => void load(), fastMs);
+
+    function rearm(ms: number) {
+      clearInterval(interval);
+      interval = setInterval(() => void load(), ms);
+    }
+
+    if (typeof window !== 'undefined' && 'EventSource' in window) {
+      try {
+        source = new EventSource('/api/notifications/stream');
+        source.addEventListener('ready', () => {
+          live = true;
+          rearm(slowMs);
+        });
+        // Any custom server event or default 'message' refreshes the bell.
+        source.onmessage = () => void load();
+        source.addEventListener('notification', () => void load());
+        source.onerror = () => {
+          live = false;
+          rearm(fastMs);
+        };
+      } catch {
+        // No SSE — polling continues at fast cadence.
+      }
+    }
+
+    return () => {
+      clearInterval(interval);
+      source?.close();
+      void live; // suppress unused-variable lint when SSE never opens
+    };
   }, []);
 
   function markRead(id: string) {
