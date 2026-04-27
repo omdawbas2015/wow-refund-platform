@@ -69,7 +69,7 @@ export function FeatureFlagsEditor(props: { flags: Flag[] }) {
           >
             <span
               className={
-                'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ' +
+                'absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-transform ' +
                 (flag.enabled ? 'translate-x-4' : 'translate-x-0.5')
               }
             />

@@ -56,7 +56,7 @@ export function ModuleToggleRow({ module }: { module: ModuleToggleStatus }) {
         } ${pending ? 'opacity-60' : ''}`}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-background shadow-sm transition-transform ${
+          className={`inline-block h-4 w-4 transform rounded-full bg-surface shadow-sm transition-transform ${
             enabled ? 'translate-x-4' : 'translate-x-0.5'
           }`}
         />
