@@ -40,14 +40,18 @@ v2/
 # From v2/ directory
 pnpm install
 
-# Generate Prisma client + push schema to local SQLite
+# Generate Prisma client + apply migrations to local SQLite
 pnpm db:generate
-pnpm db:push
-pnpm db:seed
+pnpm db:migrate           # dev: runs `prisma migrate dev` (creates DB if needed)
+SEED_DEMO_CASES=1 pnpm db:seed
 
 # Start dev server
 pnpm dev
 ```
+
+`pnpm db:push` is still available for fast schema iteration but real
+production deploys must use `pnpm db:migrate:deploy` to apply versioned
+migrations from `packages/db/prisma/migrations/`.
 
 Local URL: <http://localhost:3000>
 
@@ -74,7 +78,12 @@ For production:
 - `AUTH_SECRET` — NextAuth secret (generate via `openssl rand -hex 32`)
 - `POWER_AUTOMATE_WEBHOOK_URL` — outbound email webhook
 - `POWER_AUTOMATE_SIGNING_SECRET` — HMAC shared secret
-- `REDIS_URL` — Upstash Redis URL (for notifications + cache)
+- `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` — Redis for
+  rate limiting and notifications. The auth rate limiter (5 attempts /
+  5 min / IP / scope) silently falls back to in-memory when these are
+  unset, but production deployments behind multiple replicas MUST set
+  them so the limiter is consistent across instances.
+- `SENTRY_DSN` — error + session replay (optional but recommended).
 
 ## Project Memory
 
@@ -87,6 +96,18 @@ Read these before making durable changes.
 
 ## Status
 
-**Phases 1-7 — substantially complete.** 50 routes verified 200 OK, typecheck 100%, demo data seeded.
+**Phase 7+ — substantially complete.** 50+ routes verified 200 OK,
+typecheck 100% across 4 packages, demo data seeded. Sprints A → E from
+the HANDOVER roadmap (bulk operations, KPI sparklines, scheduled
+reports, command palette, currencies/branches/batch-schedules/
+automation-rules/backup admin pages, module on/off toggles, three-layer
+design tokens, exchange-rate cache, Prisma indexes, AUDITOR/FINANCE
+RBAC helpers, /api/auth rate limiting, real Prisma migrations) have
+landed. Sprint F (Upstash, Sentry, Vercel + Neon) is gated on
+owner-provided secrets.
 
-For the authoritative current state, the 34 outstanding items, and the next-Devin onboarding guide, **read [`/HANDOVER.md`](../HANDOVER.md)** at the repo root first. Original phase roadmap is in [`v2/HANDOFF.md`](./HANDOFF.md) and [`v2/docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
+For the authoritative current state, the 34-item roadmap, and the
+next-Devin onboarding guide, **read [`/HANDOVER.md`](../HANDOVER.md)**
+at the repo root first. Original phase roadmap is in
+[`v2/HANDOFF.md`](./HANDOFF.md) and
+[`v2/docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
