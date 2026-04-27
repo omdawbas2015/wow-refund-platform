@@ -4,6 +4,7 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { TopBar } from '@/components/layout/top-bar';
 import { ChangelogBanner } from '@/components/layout/changelog-banner';
 import { CommandPalette } from '@/components/layout/command-palette';
+import { OnboardingTour } from '@/components/layout/onboarding-tour';
 
 export default async function DashboardLayout({
   children,
@@ -32,6 +33,7 @@ export default async function DashboardLayout({
         </main>
       </div>
       <CommandPalette role={session.user.role ?? null} />
+      <OnboardingTour />
     </div>
   );
 }
