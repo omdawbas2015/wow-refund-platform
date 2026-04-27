@@ -36,6 +36,7 @@ import {
   Workflow,
   CloudUpload,
   ToggleLeft,
+  Palette,
 } from 'lucide-react';
 
 interface NavSection {
@@ -116,6 +117,7 @@ export function Sidebar({
         { label: 'Scheduled Reports', href: '/admin/scheduled-reports', icon: CalendarClock, adminOnly: true, module: 'scheduled-reports' },
         { label: 'Backup', href: '/admin/backup', icon: CloudUpload, adminOnly: true, module: 'backup' },
         { label: 'Modules', href: '/admin/modules', icon: ToggleLeft, adminOnly: true },
+        { label: 'Design Tokens', href: '/admin/design-tokens', icon: Palette, adminOnly: true },
         { label: 'Cron Status', href: '/admin/cron-status', icon: Activity, adminOnly: true },
         { label: 'System Info', href: '/admin/system-info', icon: Server, adminOnly: true },
         { label: t('settings'), href: '/admin/settings', icon: Settings, adminOnly: true },
