@@ -2,7 +2,7 @@
 
 > **Read this file first.** It is self-contained: state of the system, what is done, what is missing, how to resume. Last updated 2026-04-27 18:20 UTC.
 >
-> **Active branch:** `devin/1777249813-continue-roadmap` (HEAD = `456e954`, ~152 commits ahead of `main`).
+> **Active branch:** `devin/1777249813-continue-roadmap` (HEAD = `449f45f`, ~160 commits ahead of `main`).
 > **Source of truth:** v2/ directory only. The Vite/Express code at the repo root is **legacy and frozen** — do not touch it.
 
 ---
@@ -243,6 +243,34 @@ Walked every page in the running app, captured runtime warnings + console errors
 - ✅ **Fix typecheck regression on `sla-rules.test.ts`** — Prisma 6.19's regenerated `SlaRule` type added a required `escalateToRole: string | null` field; the test fixture was missing it so `pnpm typecheck` failed against `@wow/web`. Added the field as defaulted-null. (commit `e8ec8c5`)
 - ✅ **Test coverage expansion: 250+ tests across 28 files** — added vitest coverage for previously-untested helpers: `lib/password` (10 tests for hash/verify roundtrip + bcrypt salting + OTP code generator + random hex token), `lib/exchange-rate/cache` (9 tests for identity / cold-network / memory-cache / fresh-DB-row / stale-fallback / null-when-no-row / non-2xx / non-numeric / case-normalisation paths), `lib/feature-flags` (7 tests for stored value / missing fallback / DB-error fallback for both single + bulk readers), `lib/module-toggles` (10 tests locking the toggle key set + status merging + isModuleEnabled defensive default), `lib/notifications/dispatch` (16 tests for parseMutedKinds / serializeMutedKinds roundtrip / dispatch dedup / unknown-skip / muted-skip / SSE publish payload / nullable optional field handling), `lib/cron/auth` (8 tests for x-cron-secret + Bearer header acceptance + 503 when secret unset + 401 fallthrough), `lib/email/dispatcher` (7 tests for override path / placeholder render / template-not-found / dev-mode SENT / context persistence / nullable optionals / locale default). (commits `0d3869c`, `2c2a628`, `b7145da`, `30b24de`, `66d48ce`, `456e954`)
 - ✅ **Silence Turbopack warnings on `rimraf` / `require-in-the-middle` / `import-in-the-middle`** — same root cause as the Sprint H @prisma/client fix: Next.js's default `serverExternalPackages` list resolves these from the consuming app, but pnpm hoisting kept them out of `apps/web/node_modules/`. Added all three as direct deps so the resolver finds them, silencing the dev-log noise without changing runtime behaviour. (commits `9dde5ef`, `5fed2b9`)
+
+### Sprint I — Self-hosted Docker + Kubernetes deploy 2026-04-27 🟡 IN PROGRESS
+
+Owner has a 1-master + 2-worker on-prem Kubernetes cluster and wants the app + its database to run there always-on. No managed services available, so the entire stack — Postgres, Redis, web — runs inside the cluster. Sprint F #21 (multi-replica SSE fanout) becomes reachable as a side-effect because Redis is now in-cluster.
+
+- ✅ **Tighten optional-chaining on vitest mock indexing** — Sprint H test additions used `mock.calls[0][0].field` directly. With `noUncheckedIndexedAccess`, tsc reports 13 errors across `lib/cron/auth.test`, `lib/notifications/dispatch.test`, `lib/email/dispatcher.test`. Turbo's @wow/web cache had hidden them earlier; on a fresh cache typecheck failed. Switched every site to optional-chained form (`calls[0]?.[0]?.field`) and tightened the cron/auth verify return type alias to `NextResponse | null`. (commit `034645a`)
+- ✅ **Next.js `output: 'standalone'`** — emits `.next/standalone/server.js` with a self-contained `node_modules` so the production image stays around 150MB instead of 1.5GB. No effect on `pnpm dev`. (commit `a092841`)
+- ✅ **Production Dockerfile + Postgres prisma variant** — 4-stage `v2/Dockerfile` (base node:22-alpine + corepack pnpm, deps install, prisma generate + next build, slim runtime as nextjs:1001 with `/api/health` HEALTHCHECK). Added `packages/db/prisma/postgres/schema.prisma` as a parallel schema with `provider="postgresql"` + `directUrl` and a separate migration history under `postgres/migrations/`; sqlite stays the default for local dev. New `@wow/db` scripts: `generate:pg`, `migrate:dev:pg`, `migrate:deploy:pg`. `.dockerignore` excludes node_modules / .next / .turbo / dev.db / .env* / k8s/ / docs/. (commit `49397bb`)
+- ✅ **`docker-compose.full.yml`** — postgres-16-alpine + redis-7-alpine + the production image wired together with depends_on healthchecks. Mirrors the K8s topology so you can smoke-test the production container locally with one command. The simple postgres-only `docker-compose.yml` stays untouched for the laptop-dev workflow. (commit `a637c3d`)
+- ✅ **Kubernetes manifests under `v2/k8s/`** — Kustomize base + dev overlay. Postgres StatefulSet (10Gi PVC, default StorageClass, pg_isready probes). Redis Deployment. Web Deployment 3 replicas with non-root 1001:1001, `runAsNonRoot`, `drop ALL` caps, RollingUpdate maxSurge=1/maxUnavail=1, `topologySpreadConstraints` hostname so 3 pods spread across 2 worker nodes, readiness + liveness on `/api/health`, 5s preStop drain, HPA 3-10 on CPU 70% / mem 80%, PodDisruptionBudget minAvailable=2 so a node drain never drops below 2 pods. NGINX Ingress with SSE-friendly headers (`proxy-buffering: off`, 3600s timeouts). One-shot migrate Job runs `prisma migrate deploy` against the postgres schema. Four CronJobs: scheduled-reports (`*/15`), sla-breach-scan (`*/30`), fraud-scan (`0 */6`), pg_dump backup (`0 2`) with 14-day retention to a separate 20Gi PVC. All 17 YAML files validated. (commit `cf83191`)
+- ✅ **GitHub Actions: build + push to GHCR** — `.github/workflows/docker-build.yml` runs typecheck + tests, then builds the v2 image and pushes to `ghcr.io/omdawbas2015/wow-refund-platform` with tags `latest` (active branch) / `<branch>` / `sha-<short>` / `v<tag>`. Uses the workflow's built-in `GITHUB_TOKEN` (`packages: write`) — no PAT required. GHA cache wired so subsequent builds are fast. (commit `7a42d9e`)
+- ✅ **`v2/docs/DOCKER.md` + `v2/docs/K8S.md`** — operator playbook covering: Dockerfile stage breakdown, single-container run, full-stack compose bootstrap, two-schema sync workflow, K8s pre-flight (Ingress controller, StorageClass, GHCR pull-secret), step-by-step apply order, migration Job pattern, rolling deploys, backup + restore, when to graduate to CloudNativePG / Zalando Operator, and a troubleshooting table for first-deploy gotchas. (commit `449f45f`)
+
+Owner can now do, end to end:
+
+```bash
+# (one-time, off-cluster) generate the initial Postgres migration:
+cd v2 && DATABASE_URL='postgresql://...' \
+  pnpm --filter @wow/db migrate:dev:pg --name init && git add packages/db/prisma/postgres/migrations && git commit && git push
+
+# (in-cluster) apply manifests:
+kubectl apply -k v2/k8s/base
+kubectl -n wow-refund create secret generic wow-secrets --from-literal=...
+kubectl -n wow-refund apply -f v2/k8s/base/jobs/migrate.yaml
+kubectl -n wow-refund rollout status deploy/wow-web
+```
+
+CI pushes a new image on every commit; `kubectl rollout restart deploy/wow-web` re-pulls latest with zero downtime (PDB minAvailable=2).
 
 ---
 
