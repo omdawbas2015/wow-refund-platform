@@ -6,10 +6,29 @@ import { prisma } from '@wow/db';
 import { loginSchema } from '@wow/validators';
 import { verifyPassword } from './lib/password';
 import { authConfig } from './auth.config';
+import { consumeAuthLimit } from './lib/rate-limit';
 
 const LOCKOUT_ATTEMPTS = Number(process.env['LOGIN_LOCKOUT_ATTEMPTS'] ?? 5);
 const LOCKOUT_WINDOW_MIN = Number(process.env['LOGIN_LOCKOUT_WINDOW_MINUTES'] ?? 15);
 const LOCKOUT_DURATION_MIN = Number(process.env['LOGIN_LOCKOUT_DURATION_MINUTES'] ?? 30);
+
+/** Best-effort client IP. Next/Auth v5 passes a Request to `authorize`; the
+ *  upstream proxies set x-forwarded-for. Fall back to a stable label so the
+ *  limiter still throttles even when the IP is unknown. */
+function ipFromRequest(req: unknown): string {
+  if (req && typeof req === 'object' && 'headers' in req) {
+    const headers = (req as { headers: Headers | Record<string, string> }).headers;
+    const get =
+      typeof (headers as Headers).get === 'function'
+        ? (k: string) => (headers as Headers).get(k)
+        : (k: string) => (headers as Record<string, string>)[k] ?? null;
+    const xff = get('x-forwarded-for');
+    if (xff) return xff.split(',')[0]!.trim();
+    const real = get('x-real-ip');
+    if (real) return real;
+  }
+  return 'unknown';
+}
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -21,10 +40,19 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
       },
-      async authorize(creds) {
+      async authorize(creds, req) {
         const parsed = loginSchema.safeParse(creds);
         if (!parsed.success) return null;
         const { email, password } = parsed.data;
+
+        // Rate limit by IP — 5 attempts per 5 minutes is below typical brute
+        // force thresholds. The same scope/IP key is used across the auth
+        // surface so an attacker cannot rotate between login/forgot/reset.
+        const ip = ipFromRequest(req);
+        const rl = await consumeAuthLimit('login', ip);
+        if (!rl.allowed) {
+          throw new Error('RATE_LIMITED');
+        }
 
         const user = await prisma.user.findUnique({
           where: { email },

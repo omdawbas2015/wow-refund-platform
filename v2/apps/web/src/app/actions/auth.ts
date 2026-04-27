@@ -12,15 +12,31 @@ import { issueOtp, verifyOtp } from '@/lib/otp';
 import { dispatchEmail } from '@/lib/email/dispatcher';
 import { auth, signIn } from '@/auth';
 import { revalidatePath } from 'next/cache';
+import { headers } from 'next/headers';
+import { consumeAuthLimit } from '@/lib/rate-limit';
 
 type ActionResult =
   | { ok: true; message?: string }
   | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
 
+async function clientIp(): Promise<string> {
+  const h = await headers();
+  const xff = h.get('x-forwarded-for');
+  if (xff) return xff.split(',')[0]!.trim();
+  return h.get('x-real-ip') ?? 'unknown';
+}
+
+const RATE_LIMITED: ActionResult = {
+  ok: false,
+  error: 'Too many attempts. Please wait a few minutes and try again.',
+};
+
 /**
  * Signup: creates a user in PENDING status and notifies admins.
  */
 export async function signupAction(formData: FormData): Promise<ActionResult> {
+  const rl = await consumeAuthLimit('signup', await clientIp());
+  if (!rl.allowed) return RATE_LIMITED;
   const raw = Object.fromEntries(formData.entries());
   const parsed = signupSchema.safeParse(raw);
   if (!parsed.success) {
@@ -73,6 +89,8 @@ export async function signupAction(formData: FormData): Promise<ActionResult> {
  * Forgot password step 1 — email a 6-digit OTP.
  */
 export async function forgotPasswordRequestAction(formData: FormData): Promise<ActionResult> {
+  const rl = await consumeAuthLimit('forgot-request', await clientIp());
+  if (!rl.allowed) return RATE_LIMITED;
   const raw = Object.fromEntries(formData.entries());
   const parsed = forgotPasswordRequestSchema.safeParse(raw);
   if (!parsed.success) {
@@ -101,6 +119,8 @@ export async function forgotPasswordRequestAction(formData: FormData): Promise<A
  * Forgot password step 2 — verify OTP and set new password.
  */
 export async function forgotPasswordVerifyAction(formData: FormData): Promise<ActionResult> {
+  const rl = await consumeAuthLimit('forgot-verify', await clientIp());
+  if (!rl.allowed) return RATE_LIMITED;
   const raw = Object.fromEntries(formData.entries());
   const parsed = forgotPasswordVerifySchema.safeParse(raw);
   if (!parsed.success) {
@@ -133,6 +153,8 @@ export async function forgotPasswordVerifyAction(formData: FormData): Promise<Ac
  * Set password (first-login for approved users).
  */
 export async function setPasswordAction(formData: FormData): Promise<ActionResult> {
+  const rl = await consumeAuthLimit('set-password', await clientIp());
+  if (!rl.allowed) return RATE_LIMITED;
   const session = await auth();
   if (!session?.user) return { ok: false, error: 'Not authenticated.' };
 
