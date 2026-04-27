@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/fraud-scan",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/scheduled-reports",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
