@@ -178,11 +178,11 @@ Other reference docs:
 - ✅ **#17 Dashboard sparklines** on KPI cards via recharts `<KpiSparkline>`; data buckets the last 14 days from `RefundCase.createdAt` + `AuditLog` flow events + `User.createdAt`. (commit `2f3ca8b`)
 - ✅ **#11 Scheduled reports UI + cron** — `/admin/scheduled-reports` CRUD with run-now/pause/edit/delete, 5-field cron parser, `/api/cron/scheduled-reports` sweep gated by `CRON_SECRET`, registered in `vercel.json` at `*/5 * * * *`. (commit `dded4a6`)
 
-### Sprint B — Polish features
+### Sprint B — Polish features ✅ DONE 2026-04-27
 
-- ⬜ **#1 Onboarding tour** — first-login guided walkthrough across `/cases`, `/promo`, `/operations`, `/reports`.
-- ⬜ **#2 Changelog banner** — top-bar dismissible banner pointing at `/changelog`.
-- ⬜ **#15 Command palette ⌘K** with action verbs ("Create refund", "Approve batch X", "Export KNET batch").
+- ✅ **#1 Onboarding tour** — 5-step `<OnboardingTour>` modal that walks Cases / Operations / Promo / Reports with per-step CTA navigation; localStorage `onboarding-tour-completed-v1` prevents re-showing. (commit `cb82aa8`)
+- ✅ **#2 Changelog banner** — dismissible top-bar banner that reads `LATEST_CHANGELOG.version` from `app/[locale]/(dashboard)/changelog/entries.ts`; bumping that version re-shows the banner. (commit `80a1585`)
+- ✅ **#15 Command palette ⌘K** — cmdk-based palette with action verbs grouped Navigate / Cases / Operations / Promo / Admin / Help. Role-filtered and bypassed when focus is in an editable element. (commit `7d74be3`)
 
 ### Sprint C — Admin pages
 
