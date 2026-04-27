@@ -222,9 +222,9 @@ Other reference docs:
 
 - ⬜ **#26 Power Automate flows on M365 tenant** — owner builds externally; Next.js side already ready.
 - 🟡 **#28 pino structured logs + OpenTelemetry** — partial. `lib/logger.ts` is a JSON-line shim with the same surface as pino (`info(obj, msg)`, `child(bindings)`); production emits structured log lines that any drain or OTel collector can parse. Real pino + OTel exporter wiring deferred until a log-drain destination is approved (Vercel Log Drains, Datadog, etc.). (commit `e6dcf74`)
-- ⬜ **#29 OpenAPI / Swagger** generation from zod.
+- ✅ **#29 OpenAPI / Swagger** — `GET /api/openapi` emits an OpenAPI 3.1 doc generated live from `@wow/validators` zod schemas via `zod-to-json-schema`. Covers the public auth surface, `/api/health`, `/api/openapi` itself, and the Power Automate inbound webhook. Internal tRPC routers stay excluded by design. (commit `8593a32`)
 - ✅ **#30 axe-core a11y audit** — `tests/a11y.spec.ts` runs `@axe-core/playwright` against `/login` and the post-login dashboard, asserting zero WCAG 2.0/2.1 A and AA violations. Runs alongside the rest of the smoke suite under `pnpm test:e2e`. (commit `a4bbd45`)
-- ⬜ **#31 Storybook** design-system website.
+- 🟡 **#31 Storybook design-system website** — replaced with `/admin/design-tokens` living preview page (semantic palette, typography ramp incl. Cairo + IBM Plex Sans Arabic, component swatches). Renders against the real CSS pipeline so dark-mode + RTL parity is verifiable in one URL, with no Storybook builder install. Full Storybook scaffold can land later if a UI engineer takes ownership. (commit `db55d6a`)
 
 ---
 
