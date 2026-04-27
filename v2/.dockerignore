@@ -1,0 +1,48 @@
+# --- Build artefacts and caches we never want in the image ---
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/build
+**/coverage
+**/.cache
+
+# --- Local secrets / data — must never enter an image ---
+**/.env
+**/.env.*
+!**/.env.example
+**/dev.db
+**/dev.db-journal
+**/*.sqlite
+**/*.sqlite3
+
+# --- VCS / IDE / OS ---
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+*.swp
+*.swo
+
+# --- Tests / docs not needed at runtime ---
+**/*.test.ts
+**/*.test.tsx
+**/__tests__
+**/test-results
+**/playwright-report
+**/test-plan.md
+**/test-report.md
+
+# --- Vercel artifacts (we deploy to K8s) ---
+.vercel
+vercel.json
+
+# --- Local docker / k8s manifests don't go inside the image itself ---
+docker-compose*.yml
+k8s/
+docs/
+HANDOFF.md
+HANDOVER.md
+README.md

@@ -1,0 +1,1228 @@
+// ═══════════════════════════════════════════════════════════════════════
+//  WOW Refund v2 — Prisma Schema (PRODUCTION / Postgres variant)
+//
+//  This file is identical to ../schema.prisma except the datasource block.
+//  Used by the Docker / K8s build via:
+//    pnpm --filter @wow/db generate:pg
+//    pnpm --filter @wow/db migrate:deploy:pg
+//
+//  Migrations for this schema live in ./migrations/ (separate history from
+//  the sqlite migrations under ../migrations/). Local dev keeps using
+//  ../schema.prisma + sqlite so `pnpm dev` / `pnpm db:migrate` work
+//  without a Postgres install.
+//
+//  Keep this file in sync with ../schema.prisma — only the datasource
+//  block is allowed to differ. See v2/docs/DOCKER.md for the workflow.
+// ═══════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 1 — IMMUTABLE WORLD REGISTRIES (seeded once)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// ISO 3166-1 country registry (195 countries, seeded on setup).
+/// The company selects which ones to activate via the `Country` table below.
+model CountryRegistry {
+  code         String  @id // ISO alpha-2: KW, SA, AE, EG, US...
+  codeAlpha3   String  @unique // ISO alpha-3: KWT, SAU, ARE
+  numericCode  String // ISO numeric: 414, 682, 784
+  nameEn       String
+  nameAr       String
+  flag         String // emoji flag
+  dialCode     String // +965
+  currencyCode String // ISO 4217: KWD
+  timezone     String // Asia/Kuwait
+  locale       String // ar-KW
+  continent    String // Asia, Europe, Africa...
+
+  currency  CurrencyRegistry @relation(fields: [currencyCode], references: [code])
+  countries Country[]
+
+  @@index([currencyCode])
+  @@index([continent])
+  @@map("country_registry")
+}
+
+/// ISO 4217 currency registry (170+ currencies, seeded once).
+model CurrencyRegistry {
+  code     String @id // ISO 4217: KWD, SAR, AED, USD, EUR
+  name     String
+  nameAr   String
+  symbol   String // د.ك, ر.س, $, €
+  decimals Int // 3 for KWD, 2 for SAR/USD, 0 for JPY
+
+  countries        CountryRegistry[]
+  ratesFrom        ExchangeRate[]    @relation("rateFrom")
+  ratesTo          ExchangeRate[]    @relation("rateTo")
+  casesOrigin      RefundCase[]      @relation("caseOriginCurrency")
+
+  @@map("currency_registry")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 2 — ORGANIZATION STRUCTURE (admin-managed)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Active country in the company. References CountryRegistry.
+model Country {
+  id              String   @id @default(cuid())
+  registryCode    String   @unique // links to CountryRegistry.code (e.g. KW)
+  isActive        Boolean  @default(true)
+  managerEmail    String? // country manager email for approval batches
+  cutoffTime      String   @default("17:00") // local time HH:mm
+  sortOrder       Int      @default(0)
+  metadata        String? // JSON for future custom fields (SQLite-safe as string)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  registry   CountryRegistry @relation(fields: [registryCode], references: [code])
+  branches   Branch[]
+  cases      RefundCase[]
+  promoConfigs    PromoConfig[]
+  brandCountries  BrandCountry[]
+  approvalBatches ApprovalBatch[]
+
+  @@index([isActive])
+  @@map("country")
+}
+
+/// Physical store/branch within a country.
+model Branch {
+  id        String   @id @default(cuid())
+  countryId String
+  name      String
+  nameAr    String?
+  code      String? // optional internal code (e.g. "KW-01")
+  address   String?
+  phone     String?
+  email     String? // store email for communications
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  country Country      @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  cases   RefundCase[]
+
+  @@unique([countryId, name])
+  @@index([countryId])
+  @@index([isActive])
+  @@map("branch")
+}
+
+/// Brand owned by the company (each can be enabled per-country).
+model Brand {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  nameAr    String?
+  logoUrl   String?
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  countries    BrandCountry[]
+  cases        RefundCase[]
+  promoConfigs PromoConfig[]
+
+  @@index([isActive])
+  @@map("brand")
+}
+
+/// Many-to-many between Brand and Country (which brands operate in which countries).
+model BrandCountry {
+  brandId   String
+  countryId String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  brand   Brand   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@id([brandId, countryId])
+  @@map("brand_country")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 3 — USERS, ROLES, PERMISSIONS (RBAC)
+// ═══════════════════════════════════════════════════════════════════════
+
+enum UserStatus {
+  PENDING       // awaiting admin approval
+  ACTIVE        // approved, can login
+  SUSPENDED     // admin disabled
+  ARCHIVED      // soft-deleted
+}
+
+model User {
+  id                    String     @id @default(cuid())
+  email                 String     @unique
+  emailVerified         DateTime?
+  name                  String
+  nameAr                String?
+  phone                 String?
+  avatarUrl             String?
+  status                UserStatus @default(PENDING)
+
+  // Auth fields
+  passwordHash          String? // null until first-login set password
+  mustChangePassword    Boolean    @default(true)
+  passwordChangedAt     DateTime?
+  lastLoginAt           DateTime?
+  failedLoginAttempts   Int        @default(0)
+  lockedUntil           DateTime?
+
+  // Org assignments
+  primaryCountryId      String? // main country of the user (optional)
+  roleId                String?
+  role                  Role?      @relation(fields: [roleId], references: [id])
+
+  // Manager delegation
+  deputyUserId          String?
+  deputy                User?      @relation("UserDeputy", fields: [deputyUserId], references: [id])
+  delegators            User[]     @relation("UserDeputy")
+  outOfOfficeFrom       DateTime?
+  outOfOfficeUntil      DateTime?
+
+  // Meta
+  approvedById          String?
+  approvedBy            User?      @relation("UserApprover", fields: [approvedById], references: [id])
+  approvedUsers         User[]     @relation("UserApprover")
+  approvedAt            DateTime?
+  rejectedReason        String?
+
+  preferredLocale       String     @default("en") // en | ar
+  preferredCurrency     String? // display-currency preference (e.g. KWD)
+  preferredTheme        String     @default("light") // light | dark | system
+  // Comma-separated list of NotificationType values that the user has
+  // muted. Notifications of those kinds are skipped at dispatch time.
+  mutedNotificationKinds String     @default("")
+
+  deletedAt             DateTime? // soft delete
+
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  // Relations
+  sessions              Session[]
+  otpTokens             OtpToken[]
+  passwordResetTokens   PasswordResetToken[]
+  casesCreated          RefundCase[] @relation("CaseCreatedBy")
+  casesAssigned         RefundCase[] @relation("CaseAssignedTo")
+  casesApprovedByUser   RefundCase[] @relation("CaseApprovedBy")
+  componentsRefunded    RefundComponent[] @relation("ComponentRefundedBy")
+  notesAuthored         CaseNote[]    @relation("NoteAuthor")
+  noteMentions          CaseNoteMention[]
+  approvalBatches       ApprovalBatch[]  @relation("BatchCreatedBy")
+  promoRequests         PromoAllocation[] @relation("PromoRequestedBy")
+  auditLogs             AuditLog[]
+  notifications         Notification[]
+  storeMessages         StoreMessageLog[]
+  savedViews            SavedView[]
+  activityLogs          ActivityLog[]
+
+  @@index([status])
+  @@index([roleId])
+  @@index([primaryCountryId])
+  @@map("user")
+}
+
+/// Role defines a named set of permissions.
+model Role {
+  id           String       @id @default(cuid())
+  key          String       @unique // ADMIN, MANAGER, AGENT, REFUND_AGENT, FINANCE, AUDITOR, READ_ONLY
+  name         String
+  nameAr       String?
+  description  String?
+  isSystem     Boolean      @default(false) // system roles cannot be deleted
+  permissions  RolePermission[]
+  users        User[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@map("role")
+}
+
+/// Permission represents a single capability in the system (fine-grained).
+model Permission {
+  id          String @id @default(cuid())
+  key         String @unique // e.g. "case.create", "batch.send", "admin.users.approve"
+  category    String // e.g. "case", "batch", "admin"
+  description String?
+
+  roles RolePermission[]
+
+  @@index([category])
+  @@map("permission")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permission")
+}
+
+/// Auth.js session table.
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  ipAddress    String?
+  userAgent    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+/// One-time password for forgot-password / account recovery.
+model OtpToken {
+  id         String    @id @default(cuid())
+  userId     String
+  codeHash   String // bcrypt-hashed OTP (never store plaintext)
+  purpose    String    @default("PASSWORD_RESET") // PASSWORD_RESET | EMAIL_VERIFY | 2FA
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("otp_token")
+}
+
+/// Secondary reset-flow tokens (magic link style).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_token")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 4 — PAYMENT METHODS & ROOT CAUSES (dynamic, admin-managed)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Dynamic payment methods. Admin can add new ones (Mada, Tabby, Tamara, etc.)
+model PaymentMethod {
+  id                String   @id @default(cuid())
+  key               String   @unique // VISA, MASTERCARD, MADA, APPLE_PAY, KNET, ...
+  label             String
+  labelAr           String?
+  iconSlug          String? // e.g. 'apple-pay' → /icons/payment/apple-pay.svg
+  iconUrl           String? // or external URL
+  color             String? // hex for badges (#000000 for Apple Pay)
+  requiresAuthCode  Boolean  @default(false) // KNET requires AUTH; others don't
+  executionType     String   @default("MANUAL") // MANUAL | BATCH
+  isActive          Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  components RefundComponent[]
+
+  @@index([isActive])
+  @@map("payment_method")
+}
+
+/// Root cause of a refund (e.g., "Damaged item", "Wrong item", "Customer request").
+model RootCause {
+  id             String   @id @default(cuid())
+  key            String   @unique
+  label          String
+  labelAr        String?
+  category       String? // "Quality", "Shipping", "Customer"
+  requiresEvidence Boolean @default(false)
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  cases RefundCase[]
+
+  @@index([isActive])
+  @@map("root_cause")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 5 — REFUND CASE DOMAIN (core)
+// ═══════════════════════════════════════════════════════════════════════
+
+enum CaseStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  IN_EXECUTION
+  PARTIALLY_REFUNDED
+  REFUNDED
+  REJECTED
+  CANCELLED
+}
+
+enum ComponentStatus {
+  PENDING          // just created, not in a batch yet
+  AWAITING_BATCH   // queued for next batch
+  AWAITING_ARN     // batch sent to Finance/Aura, waiting for ARN/confirmation
+  ARN_RECEIVED     // ARN suggested by Power Automate, awaiting agent verification
+  REFUNDED         // agent verified, customer notified
+  FAILED           // Finance reported an error
+}
+
+enum AuraStatus {
+  NONE
+  PENDING
+  IN_BATCH // claimed by an Aura batch, awaiting team confirmation
+  COMPLETED
+  FAILED
+}
+
+/// Refund case — the main business entity.
+model RefundCase {
+  id              String     @id @default(cuid())
+  caseNumber      String     @unique // REF-KW-2026-000123 (auto-generated per country/year)
+
+  /// External CRM/helpdesk ticket reference the agent types manually when
+  /// creating the refund. Required from new UI submissions (enforced in the
+  /// validator) but nullable at the DB layer so legacy seeded cases remain
+  /// importable. Indexed for fast lookup from ticket searches.
+  externalCaseNumber String?
+
+  // Context
+  countryId       String
+  country         Country    @relation(fields: [countryId], references: [id])
+  branchId        String?
+  branch          Branch?    @relation(fields: [branchId], references: [id])
+  brandId         String
+  brand           Brand      @relation(fields: [brandId], references: [id])
+
+  // Customer
+  customerName    String
+  customerEmail   String     // NOTE: encrypted in production via app-layer
+  customerPhone   String?    // NOTE: encrypted in production via app-layer
+  customerNotes   String?
+
+  // Order
+  orderNumber     String
+  orderDate       DateTime
+  orderAmount     Float      // full original order amount
+  orderCurrency   String     // ISO 4217 (usually matches country's currency)
+  originCurrency  CurrencyRegistry? @relation("caseOriginCurrency", fields: [orderCurrency], references: [code])
+
+  // Refund
+  totalRefundAmount Float    // sum of refund components
+  isPartial         Boolean  @default(false)
+
+  // Aura sidecar (optional; not a payment method)
+  auraPoints        Int?
+  auraStatus        AuraStatus @default(NONE)
+  auraBatchId       String?
+  auraBatch         AuraBatch?  @relation(fields: [auraBatchId], references: [id], onDelete: SetNull)
+  auraProcessedAt   DateTime?
+  auraProcessedById String?
+
+  // Flow
+  status          CaseStatus @default(DRAFT)
+  rootCauseId     String?
+  rootCause       RootCause? @relation(fields: [rootCauseId], references: [id])
+  rootCauseNotes  String?
+
+  // People
+  createdById     String
+  createdBy       User       @relation("CaseCreatedBy", fields: [createdById], references: [id])
+  assignedToId    String?
+  assignedTo      User?      @relation("CaseAssignedTo", fields: [assignedToId], references: [id])
+  approvedById    String?
+  approvedBy      User?      @relation("CaseApprovedBy", fields: [approvedById], references: [id])
+  approvedAt      DateTime?
+  rejectedReason  String?
+  cancelledReason String?
+
+  // SLA
+  slaDueAt        DateTime?
+  slaBreachedAt   DateTime?
+
+  // Customer communication
+  customerNotifiedAt DateTime?
+
+  // Approval linkage
+  approvalBatchId String?
+  approvalBatch   ApprovalBatch? @relation(fields: [approvalBatchId], references: [id])
+
+  // Promo (optional)
+  promoAllocations PromoAllocation[]
+
+  // Metadata
+  customFields    String? // JSON for extensibility
+  deletedAt       DateTime? // soft delete
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  components      RefundComponent[]
+  notes           CaseNote[]
+  activityLogs    ActivityLog[]
+
+  @@index([countryId])
+  @@index([brandId])
+  @@index([status])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([customerEmail])
+  @@index([orderNumber])
+  @@index([externalCaseNumber])
+  @@index([createdAt])
+  @@index([deletedAt])
+  // Composite index supporting the common dashboard / cases-list query
+  // shape: filter by country + status, then order by createdAt desc.
+  @@index([status, countryId, createdAt])
+  @@map("refund_case")
+}
+
+/// A single payment component within a case (each payment method slice).
+model RefundComponent {
+  id               String          @id @default(cuid())
+  caseId           String
+  case             RefundCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  paymentMethodId  String
+  paymentMethod    PaymentMethod   @relation(fields: [paymentMethodId], references: [id])
+
+  amount           Float
+  currency         String // usually matches case.orderCurrency
+
+  // Payment-specific
+  authCode         String? // KNET only
+  last4            String? // optional, for card
+
+  // Execution
+  status           ComponentStatus @default(PENDING)
+  arn              String? // Acquirer Reference Number (set during execution)
+  arnSuggestedAt   DateTime? // when Power Automate parsed it from Finance reply
+  arnVerifiedAt    DateTime? // when agent verified the suggestion
+  refundedById     String?
+  refundedBy       User?           @relation("ComponentRefundedBy", fields: [refundedById], references: [id])
+  refundedAt       DateTime?
+  failureReason    String?
+
+  // Batch linkage (KNET batches only)
+  batchId          String?
+  batch            KnetBatch?      @relation(fields: [batchId], references: [id])
+
+  // Customer notification
+  customerNotifiedAt DateTime?
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([caseId])
+  @@index([paymentMethodId])
+  @@index([status])
+  @@index([batchId])
+  @@map("refund_component")
+}
+
+/// Internal note on a refund case. Supports @mentions.
+model CaseNote {
+  id        String   @id @default(cuid())
+  caseId    String
+  case      RefundCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation("NoteAuthor", fields: [authorId], references: [id])
+  body      String
+  deletedAt DateTime? // soft delete
+  editedAt  DateTime?
+  createdAt DateTime @default(now())
+
+  mentions  CaseNoteMention[]
+
+  @@index([caseId])
+  @@index([authorId])
+  @@map("case_note")
+}
+
+model CaseNoteMention {
+  noteId    String
+  userId    String
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  note CaseNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([noteId, userId])
+  @@map("case_note_mention")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 6 — APPROVAL BATCHES (daily per-country)
+// ═══════════════════════════════════════════════════════════════════════
+
+enum BatchStatus {
+  DRAFT
+  SENT
+  AWAITING_RESPONSE
+  PARTIALLY_DECIDED
+  COMPLETED
+  CANCELLED
+}
+
+/// Daily per-country approval batch sent to the country manager.
+model ApprovalBatch {
+  id             String      @id @default(cuid())
+  batchNumber    String      @unique // APB-KW-2026-0123
+  countryId      String
+  country        Country     @relation(fields: [countryId], references: [id])
+  status         BatchStatus @default(DRAFT)
+
+  createdById    String
+  createdBy      User        @relation("BatchCreatedBy", fields: [createdById], references: [id])
+
+  scheduledFor   DateTime
+  sentAt         DateTime?
+  recipientEmails String // comma-separated (manager + deputy + etc.)
+
+  // Email identifiers
+  powerAutomateRunId String?
+  magicLinkToken     String?   @unique // for web-based approval fallback
+
+  // Response tracking
+  responseReceivedAt DateTime?
+  responseRawBody    String? // raw email reply body
+  responseParsed     String? // JSON of parsed decisions
+
+  totalCases         Int @default(0)
+  approvedCases      Int @default(0)
+  rejectedCases      Int @default(0)
+
+  completedAt        DateTime?
+
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  cases       RefundCase[]
+
+  @@index([countryId])
+  @@index([status])
+  @@index([scheduledFor])
+  @@map("approval_batch")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 7 — KNET EXECUTION BATCHES (daily global)
+// ═══════════════════════════════════════════════════════════════════════
+
+enum KnetBatchStatus {
+  DRAFT
+  SENT
+  AWAITING_ARNS
+  ARNS_RECEIVED
+  COMPLETED
+  CANCELLED
+}
+
+/// Global daily KNET batch sent to Finance team.
+model KnetBatch {
+  id             String          @id @default(cuid())
+  batchNumber    String          @unique // KNET-2026-0098
+  status         KnetBatchStatus @default(DRAFT)
+
+  scheduledFor   DateTime
+  sentAt         DateTime?
+  recipientEmails String
+
+  powerAutomateRunId String?
+
+  responseReceivedAt DateTime?
+  responseRawBody    String?
+  responseParsedArns String? // JSON map of componentId → suggested ARN
+
+  totalComponents    Int      @default(0)
+  arnsReceived       Int      @default(0)
+  verifiedComponents Int      @default(0)
+
+  completedAt        DateTime?
+
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  components         RefundComponent[]
+
+  @@index([status])
+  @@index([scheduledFor])
+  @@map("knet_batch")
+}
+
+/// Aura batches (global, sent to Aura team, order-by-order confirmation).
+model AuraBatch {
+  id             String   @id @default(cuid())
+  batchNumber    String   @unique // AURA-2026-0045
+  status         String   @default("DRAFT") // DRAFT | SENT | AWAITING | COMPLETED | CANCELLED
+
+  scheduledFor   DateTime
+  sentAt         DateTime?
+  recipientEmails String
+
+  powerAutomateRunId String?
+
+  responseReceivedAt DateTime?
+  responseRawBody    String?
+  responseParsed     String? // JSON
+
+  totalCases         Int @default(0)
+  completedCases     Int @default(0)
+
+  /// Snapshot of case ids/components included in the batch (JSON array of
+  /// `{ caseId, caseNumber, customerName, auraPoints }`). Captured at create
+  /// time so the batch is auditable even if cases later change state.
+  caseSnapshot       String?
+
+  completedAt        DateTime?
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  cases              RefundCase[]
+
+  @@index([status])
+  @@index([scheduledFor])
+  @@map("aura_batch")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 8 — PROMO / COMPENSATION SYSTEM
+// ═══════════════════════════════════════════════════════════════════════
+
+enum PromoType {
+  CUSTOMER_COMPENSATION // fixed-value per brand × country, emailed to customer
+  SERVICE_RECOVERY      // 100% internal, shown in UI, never emailed
+}
+
+enum PromoStatus {
+  AVAILABLE
+  ALLOCATED
+  USED
+  EXPIRED
+  DISABLED
+}
+
+/// Configuration of a promo pool (brand × country × type × value).
+model PromoConfig {
+  id         String    @id @default(cuid())
+  brandId    String
+  brand      Brand     @relation(fields: [brandId], references: [id])
+  countryId  String
+  country    Country   @relation(fields: [countryId], references: [id])
+  type       PromoType
+  value      Float // for CUSTOMER_COMPENSATION, the fixed amount; ignored for SERVICE_RECOVERY (100%)
+  currency   String
+  label      String? // internal label
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  codes      PromoCode[]
+
+  @@unique([brandId, countryId, type, value])
+  @@index([brandId])
+  @@index([countryId])
+  @@map("promo_config")
+}
+
+/// Individual promo code (belongs to a pool).
+model PromoCode {
+  id          String       @id @default(cuid())
+  configId    String
+  config      PromoConfig  @relation(fields: [configId], references: [id], onDelete: Cascade)
+  code        String       @unique
+  status      PromoStatus  @default(AVAILABLE)
+  expiresAt   DateTime?
+  uploadedById String?
+  uploadedAt  DateTime     @default(now())
+
+  allocations PromoAllocation[]
+
+  @@index([configId])
+  @@index([status])
+  // Allocation lookups join via the parent PromoConfig — keeping a
+  // composite on (status, configId) means the available-pool query can
+  // be served from the index without scanning all promo codes.
+  @@index([status, configId])
+  @@map("promo_code")
+}
+
+/// An allocation of a promo code to a customer (one code → one allocation).
+model PromoAllocation {
+  id             String     @id @default(cuid())
+  codeId         String
+  code           PromoCode  @relation(fields: [codeId], references: [id])
+  caseId         String?
+  case           RefundCase? @relation(fields: [caseId], references: [id])
+  customerEmail  String
+  customerName   String?
+  requestedById  String
+  requestedBy    User       @relation("PromoRequestedBy", fields: [requestedById], references: [id])
+  reason         String?
+  emailedAt      DateTime? // for CUSTOMER_COMPENSATION
+  powerAutomateRunId String?
+  createdAt      DateTime   @default(now())
+
+  @@index([codeId])
+  @@index([caseId])
+  @@index([customerEmail])
+  @@map("promo_allocation")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 9 — HELP DESK: STORES COMMUNICATION
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Templated issue categories for emailing stores (No Asset ID, etc.).
+/// Purely isolated from refund cases — no auto-fill, no relation.
+model StoreMessageTemplate {
+  id        String   @id @default(cuid())
+  key       String   @unique // NO_ASSET_ID, NO_DESCRIPTION, SOURCE_OF_LEAKAGE, NOT_UNDER_OUR_SCOPE
+  label     String
+  labelAr   String?
+  subject   String // supports {{caseNumber}}
+  body      String
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  logs StoreMessageLog[]
+
+  @@index([isActive])
+  @@map("store_message_template")
+}
+
+/// Log of all store messages sent (for audit + export).
+model StoreMessageLog {
+  id              String   @id @default(cuid())
+  caseNumber      String // plain text, NOT a foreign key
+  storeEmail      String
+  templateId      String
+  template        StoreMessageTemplate @relation(fields: [templateId], references: [id])
+  note            String?
+  renderedSubject String
+  renderedBody    String
+
+  sentById        String
+  sentBy          User     @relation(fields: [sentById], references: [id])
+  sentAt          DateTime @default(now())
+
+  powerAutomateRunId String?
+  deliveryStatus  String   @default("PENDING") // PENDING | SENT | FAILED
+  deliveredAt     DateTime?
+  failureReason   String?
+
+  @@index([sentById])
+  @@index([sentAt])
+  @@index([caseNumber])
+  @@map("store_message_log")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 10 — EMAIL TEMPLATES & DISPATCH LOG
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Dynamic email templates stored in DB (editable from admin panel).
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  key         String // CASE_APPROVED_CUSTOMER, KNET_BATCH_FINANCE, OTP_RESET, etc.
+  category    String // "Customer" | "Manager" | "Finance" | "Aura" | "Store" | "Auth"
+  locale      String   @default("en") // en | ar
+  subject     String
+  body        String
+  placeholders String? // JSON list of supported placeholders
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  logs EmailLog[]
+
+  @@unique([key, locale])
+  @@index([category])
+  @@map("email_template")
+}
+
+/// Every outbound email logged (for audit + delivery tracking).
+model EmailLog {
+  id          String   @id @default(cuid())
+  templateId  String?
+  template    EmailTemplate? @relation(fields: [templateId], references: [id])
+  templateKey String // denormalized, kept even if template deleted
+
+  to          String
+  cc          String?
+  bcc         String?
+  subject     String
+  body        String
+  contextType String? // "CASE" | "BATCH" | "PROMO" | "STORE" | "OTP"
+  contextId   String? // id of the related entity
+
+  status              String    @default("PENDING") // PENDING | SENT | FAILED | BOUNCED
+  powerAutomateRunId  String?
+  sentAt              DateTime?
+  failureReason       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([contextType, contextId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("email_log")
+}
+
+/// Inbound emails (replies from managers, Finance, Aura, customers).
+model InboundEmail {
+  id                 String   @id @default(cuid())
+  direction          String   @default("INBOUND")
+  fromEmail          String
+  toEmail            String
+  subject            String
+  rawBody            String
+  receivedAt         DateTime @default(now())
+
+  // Parsing state
+  parseStatus        String   @default("PENDING") // PENDING | PARSED | FAILED | IGNORED
+  parsedIntent       String? // APPROVAL_RESPONSE | KNET_ARN_REPLY | AURA_CONFIRMATION | CUSTOMER_REPLY
+  parsedPayload      String? // JSON of extracted data
+  parseError         String?
+  parsedAt           DateTime?
+
+  // Linkage (set after parsing)
+  linkedCaseId       String?
+  linkedBatchId      String? // approval batch / knet / aura
+  linkedComponentId  String?
+
+  powerAutomateRunId String?
+
+  @@index([parseStatus])
+  @@index([receivedAt])
+  @@map("inbound_email")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 11 — NOTIFICATIONS (in-app bell)
+// ═══════════════════════════════════════════════════════════════════════
+
+enum NotificationType {
+  CASE_ASSIGNED
+  CASE_APPROVED
+  CASE_REJECTED
+  CASE_NOTE_MENTION
+  ARN_RECEIVED
+  AURA_CONFIRMED
+  CUSTOMER_REPLY
+  STORE_REPLY
+  SLA_WARNING
+  SLA_BREACHED
+  FRAUD_SIGNAL
+  USER_PENDING_APPROVAL
+  SYSTEM
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  title      String
+  body       String?
+  href       String? // where to navigate on click
+  contextType String? // CASE | BATCH | USER | SYSTEM
+  contextId  String?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+  @@map("notification")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 12 — AUDIT / ACTIVITY LOGS
+// ═══════════════════════════════════════════════════════════════════════
+
+/// High-level audit log (admin-facing, compliance-grade).
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  actorEmail String? // denormalized in case user is deleted
+  action     String // e.g. "user.created", "case.approved", "batch.sent"
+  entityType String? // CASE | USER | BATCH | PROMO | SETTINGS
+  entityId   String?
+  beforeData String? // JSON snapshot before change
+  afterData  String? // JSON snapshot after change
+  ipAddress  String?
+  userAgent  String?
+  metadata   String? // JSON for extra context
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+/// Lightweight activity timeline per case (user-facing, not compliance-grade).
+model ActivityLog {
+  id         String   @id @default(cuid())
+  caseId     String?
+  case       RefundCase? @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  actorLabel String? // "Ahmed M." or "System" or "Power Automate"
+  kind       String // case.created, component.arn_received, note.added, batch.sent, email.sent...
+  message    String
+  metadata   String? // JSON
+  createdAt  DateTime @default(now())
+
+  @@index([caseId])
+  @@index([kind])
+  @@index([createdAt])
+  @@map("activity_log")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 13 — SAVED VIEWS / FILTERS
+// ═══════════════════════════════════════════════════════════════════════
+
+model SavedView {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  scope       String // CASES | BATCHES | PROMOS | STORE_MESSAGES | DASHBOARD
+  filters     String // JSON
+  isShared    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, scope])
+  @@map("saved_view")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 14 — EXCHANGE RATES (for currency converter)
+// ═══════════════════════════════════════════════════════════════════════
+
+model ExchangeRate {
+  id           String   @id @default(cuid())
+  fromCurrency String
+  toCurrency   String
+  rate         Float
+  source       String   @default("exchangerate.host")
+  fetchedAt    DateTime @default(now())
+
+  from CurrencyRegistry @relation("rateFrom", fields: [fromCurrency], references: [code])
+  to   CurrencyRegistry @relation("rateTo", fields: [toCurrency], references: [code])
+
+  @@unique([fromCurrency, toCurrency])
+  @@index([fetchedAt])
+  @@map("exchange_rate")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 15 — SYSTEM SETTINGS / FEATURE FLAGS
+// ═══════════════════════════════════════════════════════════════════════
+
+model Setting {
+  key         String   @id
+  value       String // JSON-encoded
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+
+  @@map("setting")
+}
+
+model FeatureFlag {
+  key         String   @id
+  enabled     Boolean  @default(false)
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("feature_flag")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 16 — AUTOMATION RULES & SLA
+// ═══════════════════════════════════════════════════════════════════════
+
+/// IF/THEN automation rules (e.g., "IF amount > 5000 THEN require senior approval").
+model AutomationRule {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  scope       String // CASE | PROMO | BATCH
+  conditions  String // JSON
+  actions     String // JSON
+  priority    Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([scope, isActive])
+  @@map("automation_rule")
+}
+
+model SlaRule {
+  id              String   @id @default(cuid())
+  name            String
+  countryId       String?
+  brandId         String?
+  rootCauseId     String?
+  thresholdHours  Int // max hours from creation to resolution
+  warningHours    Int? // when to start warning
+  escalateToRole  String? // role key to escalate to
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("sla_rule")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 17 — BATCH SCHEDULES & BACKUPS
+// ═══════════════════════════════════════════════════════════════════════
+
+model BatchSchedule {
+  id           String   @id @default(cuid())
+  type         String // APPROVAL | KNET | AURA
+  countryId    String? // null for global (KNET/Aura)
+  cronExpr     String // "0 17 * * *"
+  timezone     String   @default("Asia/Kuwait")
+  isActive     Boolean  @default(true)
+  lastRunAt    DateTime?
+  nextRunAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([type, isActive])
+  @@map("batch_schedule")
+}
+
+/// Per-module on/off switch. Keys are stable strings like "promo", "reports",
+/// "stores", "automation". When disabled, the module's UI surfaces are hidden
+/// from the sidebar and the routes redirect home.
+model ModuleToggle {
+  key         String   @id // promo | reports | stores | automation | scheduled-reports | etc
+  label       String
+  description String?
+  isEnabled   Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  @@map("module_toggle")
+}
+
+/// Singleton backup configuration (id is always "singleton"). Created on
+/// first save by the admin UI.
+model BackupSettings {
+  id              String   @id @default("singleton")
+  enabled         Boolean  @default(false)
+  cronExpr        String   @default("0 2 * * *")
+  timezone        String   @default("Asia/Kuwait")
+  retentionDays   Int      @default(30)
+  destination     String   @default("local") // local | s3 | gcs
+  destinationPath String?
+  notifyEmail     String?
+  updatedAt       DateTime @updatedAt
+  updatedById     String?
+
+  @@map("backup_settings")
+}
+
+model BackupLog {
+  id          String   @id @default(cuid())
+  trigger     String // SCHEDULED | MANUAL
+  status      String   @default("RUNNING") // RUNNING | SUCCESS | FAILED
+  destination String // path or URL
+  sizeBytes   BigInt?
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  failureReason String?
+  triggeredById String?
+
+  @@index([status])
+  @@index([startedAt])
+  @@map("backup_log")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 18 — FRAUD SIGNALS (customer/agent/promo anomalies)
+// ═══════════════════════════════════════════════════════════════════════
+
+model FraudSignal {
+  id          String   @id @default(cuid())
+  kind        String // CUSTOMER_MULTIPLE_REFUNDS | AGENT_HIGH_VOLUME | PROMO_BOMBARDING
+  severity    String   @default("INFO") // INFO | WARNING | HIGH
+  subjectType String // CUSTOMER | AGENT | CASE
+  subjectId   String // email / userId / caseId
+  description String
+  metadata    String? // JSON
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  createdAt   DateTime @default(now())
+
+  @@index([kind])
+  @@index([subjectType, subjectId])
+  @@index([createdAt])
+  @@map("fraud_signal")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTION 19 — SCHEDULED REPORTS
+// ═══════════════════════════════════════════════════════════════════════
+
+model ScheduledReport {
+  id          String   @id @default(cuid())
+  name        String
+  ownerId     String
+  cronExpr    String
+  timezone    String   @default("Asia/Kuwait")
+  scope       String // DASHBOARD | CASES | PROMOS
+  filters     String // JSON
+  recipients  String // comma-separated emails
+  format      String   @default("XLSX") // XLSX | PDF
+  isActive    Boolean  @default(true)
+  lastRunAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("scheduled_report")
+}
