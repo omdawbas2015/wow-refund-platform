@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm --filter @wow/db generate && pnpm --filter @wow/db migrate:deploy && pnpm --filter @wow/web build",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": "nextjs",
+  "outputDirectory": "apps/web/.next",
+  "regions": ["fra1"],
+  "crons": [
+    {
+      "path": "/api/cron/scheduled-reports",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/sla-breach-scan",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/fraud-scan",
+      "schedule": "0 */6 * * *"
+    }
+  ]
+}
