@@ -212,10 +212,10 @@ Other reference docs:
 
 ### Sprint F — Production hardening (requires owner-provided secrets)
 
-- ⬜ **#20 PII encryption at rest** (AES-GCM in Prisma middleware) — needs `PII_ENCRYPTION_KEY`.
-- ⬜ **#21 WebSocket / SSE notifications** via Upstash Redis pub/sub — needs `UPSTASH_REDIS_URL` + `UPSTASH_REDIS_TOKEN`.
-- ⬜ **#22 Sentry SDK** wiring — needs `SENTRY_DSN`.
-- ⬜ **#23 Vercel deploy + Neon Postgres + backup policy** — needs Vercel token + `DATABASE_URL`.
+- 🟡 **#20 PII encryption at rest** — `lib/crypto/pii.ts` exposes AES-256-GCM `encrypt` / `decrypt` / `encryptIfPresent` / `decryptIfPresent`. Reads a 32-byte hex key from `PII_ENCRYPTION_KEY`; if unset the helpers are pass-through, so per-field opt-in works without breaking dev. Storage format `v1:<iv>:<ct>:<tag>` reserves room for algo rotation. Wiring into Prisma `client.$extends` for specific RefundCase / Customer fields is the next step once a column-level rollout plan is approved. (commit `00b1d89`)
+- ⬜ **#21 WebSocket / SSE notifications** via Upstash Redis pub/sub — needs `UPSTASH_REDIS_URL` + `UPSTASH_REDIS_TOKEN`. Polling endpoint `GET /api/notifications` already exists; a streaming endpoint + EventEmitter bridge is the remaining work.
+- 🟡 **#22 Sentry SDK** — `@sentry/nextjs` installed; `sentry.client.config.ts` / `sentry.server.config.ts` / `sentry.edge.config.ts` and `instrumentation.ts` all early-return when `SENTRY_DSN` is unset (zero-cost no-op in dev). The build-time `withSentryConfig()` wrap and source-map upload are the one-line follow-ups once `SENTRY_DSN` + `SENTRY_AUTH_TOKEN` are provided. (commit `cd14af2`)
+- 🟡 **#23 Vercel deploy + Neon Postgres + backup policy** — `v2/vercel.json` pins build / region / cron triggers and `v2/docs/DEPLOY.md` captures the env-var matrix + schema.prisma provider switch + 6-step rollout checklist. Cuts over the moment Neon `DATABASE_URL` + Vercel project are wired. (commit `056d729`)
 - ✅ **#25 Playwright smoke suite** — `@playwright/test` + `playwright.config.ts` + `tests/auth.spec.ts` (login + bad-creds rejection) and `tests/case-list.spec.ts` (cases index loads + bulk-cases reachable). `pnpm test:e2e` runs the suite against `PLAYWRIGHT_BASE_URL` (defaults to `localhost:3000`); CI installs chromium with `pnpm test:e2e:install`. No secrets needed. (commit `94790a2`)
 
 ### Sprint G — Backlog (P2, optional)
